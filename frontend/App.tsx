@@ -1,18 +1,20 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ProductionStage, Status, Project } from './types';
-import { STAGE_CONFIG, MOCK_PROJECTS } from './constants';
+import { STAGE_CONFIG } from './constants';
 import { StageWrapper } from './components/StageWrapper';
 import { ScriptEditor } from './components/ScriptEditor';
 import { DeliverReview } from './components/DeliverReview';
 import { StoryboardEditor } from './components/StoryboardEditor';
 import { AnimationEditor } from './components/AnimationEditor';
 import { AudioEditor } from './components/AudioEditor';
-import { 
-  Bell, 
-  Settings, 
-  LayoutGrid, 
-  Search, 
+import { ImportBookModal } from './components/ImportBookModal';
+import { bookApi, booksToProjects, BookType, CreateBookRequest } from './api';
+import {
+  Bell,
+  Settings,
+  LayoutGrid,
+  Search,
   ChevronRight,
   Monitor,
   Activity,
@@ -25,7 +27,10 @@ import {
   Grid,
   PlusCircle,
   MoreVertical,
-  Play
+  Play,
+  Loader2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 const STATUS_MAP: Record<Status, string> = {
@@ -40,8 +45,60 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'PRODUCTION'>('DASHBOARD');
   const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.SCRIPT);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  
+
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
+
+  // 项目列表状态
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 导入弹窗状态
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // 防抖处理搜索关键词
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(searchKeyword);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchKeyword]);
+
+  // 加载项目列表
+  const loadProjects = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const params: { type?: BookType; keyword?: string; size?: number } = { size: 100 };
+      if (filterType !== 'ALL') {
+        params.type = filterType;
+      }
+      if (debouncedKeyword.trim()) {
+        params.keyword = debouncedKeyword.trim();
+      }
+      const response = await bookApi.list(params);
+      setProjects(booksToProjects(response.data));
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+      setError(err instanceof Error ? err.message : '加载失败，请检查网络连接');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [filterType, debouncedKeyword]);
+
+  // 初始加载和筛选变化时重新加载
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  // 创建新作品
+  const handleCreateBook = async (data: CreateBookRequest) => {
+    await bookApi.create(data);
+    // 重新加载列表
+    await loadProjects();
+  };
 
   // 进入项目
   const enterProject = (project: Project) => {
@@ -50,10 +107,7 @@ const App: React.FC = () => {
     setCurrentStage(ProductionStage.SCRIPT);
   };
 
-  const filteredProjects = useMemo(() => {
-    if (filterType === 'ALL') return MOCK_PROJECTS;
-    return MOCK_PROJECTS.filter(p => p.originalWorkType === filterType);
-  }, [filterType]);
+  const filteredProjects = projects;
 
   const renderDashboard = () => (
     <div className="flex flex-col h-full bg-[#0a0a0a]">
@@ -83,9 +137,17 @@ const App: React.FC = () => {
         <div className="flex items-center gap-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
-            <input className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-64" placeholder="搜索书名、作者..." />
+            <input
+              className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+              placeholder="搜索书名、作者..."
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+            />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
+          >
             <PlusCircle size={16} /> 导入新作品
           </button>
         </div>
@@ -96,49 +158,103 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <header className="mb-10">
             <h2 className="text-3xl font-bold text-white mb-2">欢迎回来</h2>
-            <p className="text-white/30 text-sm">你有 3 个项目正在等待审核反馈</p>
+            <p className="text-white/30 text-sm">
+              {isLoading ? '正在加载...' : `共有 ${filteredProjects.length} 个作品`}
+            </p>
           </header>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-10">
-            {filteredProjects.map(p => (
-              <div 
-                key={p.id}
-                onClick={() => enterProject(p)}
-                className="group relative flex flex-col cursor-pointer"
+          {/* 加载状态 */}
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 size={40} className="text-blue-500 animate-spin mb-4" />
+              <p className="text-white/40 text-sm">正在加载作品列表...</p>
+            </div>
+          )}
+
+          {/* 错误状态 */}
+          {!isLoading && error && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <AlertCircle size={40} className="text-red-400 mb-4" />
+              <p className="text-red-400 text-sm mb-4">{error}</p>
+              <button
+                onClick={loadProjects}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg text-sm hover:bg-white/10 transition-all"
               >
-                <div className="aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-2xl transition-all duration-500 group-hover:-translate-y-2 group-hover:border-blue-500/50">
-                  <img src={p.cover} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={p.title} />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-12 bg-white text-black rounded-xl flex items-center justify-center font-bold text-sm tracking-widest gap-2">
-                        <Play size={16} fill="currentColor" /> 进入制作
-                      </div>
-                      <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 hover:bg-white/20">
-                        <MoreVertical size={20} />
+                <RefreshCw size={16} /> 重新加载
+              </button>
+            </div>
+          )}
+
+          {/* 空状态 */}
+          {!isLoading && !error && filteredProjects.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <BookOpen size={40} className="text-white/20 mb-4" />
+              <p className="text-white/40 text-sm mb-4">
+                {searchKeyword ? '没有找到匹配的作品' : '暂无作品，点击上方按钮导入'}
+              </p>
+              {!searchKeyword && (
+                <button
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
+                >
+                  <PlusCircle size={16} /> 导入新作品
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 作品列表 */}
+          {!isLoading && !error && filteredProjects.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-10">
+              {filteredProjects.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => enterProject(p)}
+                  className="group relative flex flex-col cursor-pointer"
+                >
+                  <div className="aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-2xl transition-all duration-500 group-hover:-translate-y-2 group-hover:border-blue-500/50">
+                    <img src={p.cover} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={p.title} />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-12 bg-white text-black rounded-xl flex items-center justify-center font-bold text-sm tracking-widest gap-2">
+                          <Play size={16} fill="currentColor" /> 进入制作
+                        </div>
+                        <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 hover:bg-white/20">
+                          <MoreVertical size={20} />
+                        </div>
                       </div>
                     </div>
+                    {/* 状态标 */}
+                    <div className="absolute top-4 left-4 flex flex-col gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] font-black uppercase text-white tracking-widest">
+                        {p.originalWorkType}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-widest ${
+                        p.productionStatus === 'IN_PROGRESS' ? 'bg-blue-600/40 border-blue-500 text-blue-100' :
+                        p.productionStatus === 'COMPLETED' ? 'bg-green-600/40 border-green-500 text-green-100' :
+                        'bg-zinc-600/40 border-zinc-500 text-zinc-100'
+                      }`}>
+                        {STATUS_MAP[p.productionStatus]}
+                      </span>
+                    </div>
                   </div>
-                  {/* 状态标 */}
-                  <div className="absolute top-4 left-4 flex flex-col gap-2">
-                    <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] font-black uppercase text-white tracking-widest">
-                      {p.originalWorkType}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-widest ${
-                      p.productionStatus === 'IN_PROGRESS' ? 'bg-blue-600/40 border-blue-500 text-blue-100' : 'bg-green-600/40 border-green-500 text-green-100'
-                    }`}>
-                      {STATUS_MAP[p.productionStatus]}
-                    </span>
+                  <div className="mt-4 px-1">
+                    <h4 className="text-white font-bold text-lg group-hover:text-blue-400 transition-colors truncate">{p.title}</h4>
+                    <p className="text-white/30 text-xs font-medium uppercase tracking-wider">{p.author}</p>
                   </div>
                 </div>
-                <div className="mt-4 px-1">
-                  <h4 className="text-white font-bold text-lg group-hover:text-blue-400 transition-colors truncate">{p.title}</h4>
-                  <p className="text-white/30 text-xs font-medium uppercase tracking-wider">{p.author}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* 导入作品弹窗 */}
+      <ImportBookModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSubmit={handleCreateBook}
+      />
     </div>
   );
 
