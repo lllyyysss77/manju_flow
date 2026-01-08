@@ -25,20 +25,6 @@ services:
     networks:
       - manju-network
 
-  # 前端服务
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: manju-flow-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-    networks:
-      - manju-network
-
   # MySQL 数据库
   db:
     image: mysql:8.0
