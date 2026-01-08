@@ -1,0 +1,8 @@
+{
+  "name": "ManjuFlow - Professional Motion Comic Production Suite",
+  "description": "A comprehensive workflow management platform for adapting novels and comics into motion dramas, featuring script editing, storyboarding, animation tracking, and timestamp-based video review.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
