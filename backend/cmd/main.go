@@ -6,9 +6,26 @@ import (
 	"manju-flow/internal/config"
 	"manju-flow/internal/database"
 	"manju-flow/internal/routes"
+	"manju-flow/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	// 加载.env文件(仅在本地开发环境)
+	if utils.GetEnv("MANJU_ENVIRONMENT", "local") == "local" {
+		// 尝试从项目根目录加载
+		err := godotenv.Load(".env")
+		if err != nil {
+			// 尝试从当前目录加载
+			err = godotenv.Load(".env")
+			if err != nil {
+				log.Printf("无法加载 .env 文件: %v", err)
+			}
+		}
+	}
+}
 
 func main() {
 	// 加载配置

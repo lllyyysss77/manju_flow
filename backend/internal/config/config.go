@@ -1,7 +1,7 @@
 package config
 
 import (
-	"os"
+	"manju-flow/utils"
 )
 
 // Config 应用配置
@@ -31,25 +31,19 @@ type DatabaseConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8080"),
-			Mode: getEnv("GIN_MODE", "debug"),
+			Port: utils.GetEnv("SERVER_PORT", "8080"),
+			Mode: utils.GetEnv("GIN_MODE", "debug"),
 		},
 		Database: DatabaseConfig{
-			Driver:   getEnv("DB_DRIVER", "sqlite"),
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "3306"),
-			User:     getEnv("DB_USER", "root"),
-			Password: getEnv("DB_PASSWORD", ""),
-			DBName:   getEnv("DB_NAME", "manju_flow"),
-			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
+			Driver:   utils.GetEnv("DB_DRIVER", "sqlite"),
+			Host:     utils.GetEnv("DB_HOST", "localhost"),
+			Port:     utils.GetEnv("DB_PORT", "3306"),
+			User:     utils.GetEnv("DB_USER", "root"),
+			Password: utils.GetEnv("DB_PASSWORD", ""),
+			DBName:   utils.GetEnv("DB_NAME", "manju_flow"),
+			SSLMode:  utils.GetEnv("DB_SSL_MODE", "disable"),
 		},
 	}
 }
 
-// getEnv 获取环境变量，如果不存在则返回默认值
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
+
