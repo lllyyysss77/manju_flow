@@ -21,6 +21,7 @@ func NewFileHandler() *FileHandler {
 
 // Upload 上传文件
 // POST /api/files
+// 使用文件内容的 SHA256 作为 key，实现去重
 func (h *FileHandler) Upload(c *gin.Context) {
 	// 检查 OSS 是否配置
 	if !oss.IsConfigured() {
@@ -56,37 +57,53 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		visibility = models.FileVisibilityPrivate
 	}
 
-	// 生成唯一的对象键
-	key := oss.GenerateKey(header.Filename)
-
 	// 获取 MIME 类型
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	// 上传到 OSS
-	ossClient := oss.GetClient()
-	if err := ossClient.Upload(key, file, contentType); err != nil {
+	// 基于文件内容生成 SHA256 key
+	key, content, err := oss.GenerateKeyFromContent(file, header.Filename)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "文件上传失败: " + err.Error(),
+			"error": "处理文件失败: " + err.Error(),
 		})
 		return
 	}
 
-	// 保存文件记录到数据库
+	ossClient := oss.GetClient()
+
+	// 检查 OSS 上是否已存在该文件（去重）
+	exists, err = ossClient.Exists(key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "检查文件失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 如果不存在，上传到 OSS
+	if !exists {
+		if err := ossClient.UploadBytes(key, content, contentType); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "文件上传失败: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// 保存文件记录到数据库（即使 OSS 已存在，也创建新记录）
 	fileRecord := &models.File{
 		Key:          key,
 		OriginalName: header.Filename,
-		Size:         header.Size,
+		Size:         int64(len(content)),
 		MimeType:     contentType,
 		UploaderID:   currentUser.ID,
 		Visibility:   visibility,
 	}
 
 	if err := database.GetDB().Create(fileRecord).Error; err != nil {
-		// 如果数据库保存失败，删除已上传的文件
-		ossClient.Delete(key)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "保存文件记录失败: " + err.Error(),
 		})
@@ -182,6 +199,7 @@ func (h *FileHandler) Get(c *gin.Context) {
 
 // Delete 删除文件
 // DELETE /api/files/*key
+// 如果有多条记录引用同一个 OSS 对象，只删除数据库记录
 func (h *FileHandler) Delete(c *gin.Context) {
 	// 检查 OSS 是否配置
 	if !oss.IsConfigured() {
@@ -212,28 +230,11 @@ func (h *FileHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// 查询文件记录
+	// 查询文件记录（查找当前用户上传的记录）
 	var fileRecord models.File
-	if err := database.GetDB().Where("`key` = ?", key).First(&fileRecord).Error; err != nil {
+	if err := database.GetDB().Where("`key` = ? AND uploader_id = ?", key, currentUser.ID).First(&fileRecord).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": "文件不存在",
-		})
-		return
-	}
-
-	// 检查是否是上传者
-	if currentUser.ID != fileRecord.UploaderID {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "只有上传者可以删除此文件",
-		})
-		return
-	}
-
-	// 从 OSS 删除文件
-	ossClient := oss.GetClient()
-	if err := ossClient.Delete(key); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "删除文件失败: " + err.Error(),
+			"error": "文件不存在或无权删除",
 		})
 		return
 	}
@@ -244,6 +245,23 @@ func (h *FileHandler) Delete(c *gin.Context) {
 			"error": "删除文件记录失败: " + err.Error(),
 		})
 		return
+	}
+
+	// 检查是否还有其他记录引用同一个 key（不包括已软删除的）
+	var count int64
+	database.GetDB().Model(&models.File{}).Where("`key` = ?", key).Count(&count)
+
+	// 如果没有其他引用，从 OSS 删除文件
+	if count == 0 {
+		ossClient := oss.GetClient()
+		if err := ossClient.Delete(key); err != nil {
+			// OSS 删除失败只记录日志，不影响返回结果
+			// 因为数据库记录已删除，文件已对用户不可见
+			c.JSON(http.StatusOK, gin.H{
+				"message": "文件记录已删除，但 OSS 文件清理失败",
+			})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
