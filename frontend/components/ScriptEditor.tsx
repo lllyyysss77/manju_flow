@@ -320,8 +320,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
+  const [resolvedReferenceUrl, setResolvedReferenceUrl] = useState<string | undefined>(undefined);
   const onEpisodesChangeRef = useRef(onEpisodesChange);
   const savedSignaturesRef = useRef<Record<number, string>>({});
+  const referenceUrlCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
     onEpisodesChangeRef.current = onEpisodesChange;
@@ -390,6 +392,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       setChapters(data);
       setActiveChapterId(data[0]?.id ?? null);
       setActiveScene(data[0]?.scenes[0] || null);
+      setResolvedReferenceUrl(data[0]?.scenes[0]?.referenceImageUrl);
       if (data[0]?.scenes[0]) {
         setIsDirty(false);
       }
@@ -402,9 +405,49 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     }
   }, [bookId]);
 
+  const resolveReferenceImage = useCallback(async (raw?: string | null) => {
+    if (!raw) {
+      setResolvedReferenceUrl(undefined);
+      return;
+    }
+    const ref = typeof raw === 'string' ? raw : String(raw);
+    // Base64/data URL — render directly
+    if (ref.startsWith('data:')) {
+      setResolvedReferenceUrl(ref);
+      return;
+    }
+    // Already an absolute URL that is not our file endpoint
+    if (/^https?:\/\//.test(ref) && !ref.includes('/api/files/')) {
+      setResolvedReferenceUrl(ref);
+      return;
+    }
+    const idx = ref.lastIndexOf('/api/files/');
+    const key = idx >= 0 ? ref.slice(idx + '/api/files/'.length) : ref;
+    if (!key) {
+      setResolvedReferenceUrl(undefined);
+      return;
+    }
+    if (referenceUrlCache.current[key]) {
+      setResolvedReferenceUrl(referenceUrlCache.current[key]);
+      return;
+    }
+    try {
+      const signed = await fileApi.getSignedUrl(key);
+      referenceUrlCache.current[key] = signed.url;
+      setResolvedReferenceUrl(signed.url);
+    } catch (e) {
+      console.error('Failed to resolve reference image', e);
+      setResolvedReferenceUrl(ref);
+    }
+  }, []);
+
   useEffect(() => {
     loadChapters();
   }, [loadChapters]);
+
+  useEffect(() => {
+    resolveReferenceImage(activeScene?.referenceImageUrl);
+  }, [activeScene?.referenceImageUrl, resolveReferenceImage]);
 
   const commitChapters = (next: Episode[]) => {
     setChapters(next);
@@ -561,8 +604,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const handleSaveReference = async (file: File) => {
     setIsUploadingReference(true);
     try {
-      const res = await fileApi.upload(file);
-      updateActiveScene(scene => ({ ...scene, referenceImageUrl: res.url }));
+      const res = await fileApi.upload(file, 'private');
+      const signed = await fileApi.getSignedUrl(res.key);
+      referenceUrlCache.current[res.key] = signed.url;
+      updateActiveScene(scene => ({ ...scene, referenceImageUrl: res.key }));
+      setResolvedReferenceUrl(signed.url);
       setToast({ message: '参考图已上传', tone: 'success' });
     } catch (err) {
       console.error('Failed to upload reference image', err);
@@ -576,6 +622,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
 
   const handleRemoveReference = () => {
     updateActiveScene(scene => ({ ...scene, referenceImageUrl: undefined }));
+    setResolvedReferenceUrl(undefined);
   };
 
   useEffect(() => {
@@ -875,13 +922,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                   </div>
                   </div>
 
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-3">
-                      <ImageIcon size={14} className="text-blue-500" />
-                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
-                    </div>
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-3">
+                        <ImageIcon size={14} className="text-blue-500" />
+                        <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
+                      </div>
                     <ReferenceSection 
-                      initialImage={activeScene.referenceImageUrl}
+                      initialImage={resolvedReferenceUrl || activeScene.referenceImageUrl}
                       onUpload={handleSaveReference}
                       onRemove={handleRemoveReference}
                       isUploading={isUploadingReference}

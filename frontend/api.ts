@@ -257,4 +257,10 @@ export const fileApi = {
       body: formData,
     });
   },
+  getSignedUrl: (keyOrUrl: string) => {
+    const idx = keyOrUrl.lastIndexOf('/api/files/');
+    const key = idx >= 0 ? keyOrUrl.slice(idx + '/api/files/'.length) : keyOrUrl;
+    const encodedKey = encodeURIComponent(key);
+    return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`);
+  },
 };
