@@ -328,19 +328,21 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
         title: ch.title,
         index: ch.index,
         status: ch.status as Status,
-        scenes: (ch.scenes || []).map(s => ({
-          id: s.id,
-          index: s.index,
-          description: s.description || '',
-          cameraMovement: s.cameraMovement || '',
-          dialogue: s.dialogue || '',
-          status: s.status as Status,
-          comments: [],
-          referenceImageUrl: s.referenceImageUrl,
-          startFrameUrl: s.startFrameUrl,
-          endFrameUrl: s.endFrameUrl,
-          clipUrl: s.clipUrl,
-        })) as Scene[],
+        scenes: (ch.scenes || [])
+          .map(s => ({
+            id: s.id,
+            index: s.index,
+            description: s.description || '',
+            cameraMovement: s.cameraMovement || '',
+            dialogue: s.dialogue || '',
+            status: s.status as Status,
+            comments: [],
+            referenceImageUrl: s.referenceImageUrl,
+            startFrameUrl: s.startFrameUrl,
+            endFrameUrl: s.endFrameUrl,
+            clipUrl: s.clipUrl,
+          }) as Scene)
+          .sort((a, b) => a.index - b.index),
       })) as Episode[];
       const savedSig: Record<number, string> = {};
       data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));
@@ -371,7 +373,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
 
   const handleAddChapterAt = (insertIndex: number) => {
     const index = computeInsertIndex(chapters, insertIndex);
-    chapterApi.create(bookId, { title: `新章节 ${chapters.length + 1}`, index, status: 'DRAFT' }).then(res => {
+    chapterApi.create(bookId, { title: `章节 ${chapters.length + 1} (点我修改章节名)`, index, status: 'DRAFT' }).then(res => {
       const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as Status, scenes: [] };
       const next = [...chapters];
       next.splice(insertIndex, 0, newChapter);
@@ -416,6 +418,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       await persistScene(activeChapterId, activeScene);
     }
     setActiveChapterId(chapterId);
+    // 选中时也按排序后的顺序生成显示 index
     setActiveScene(scene);
     const sig = getSignature(scene);
     setIsDirty(savedSignaturesRef.current[scene.id] !== sig);
@@ -429,8 +432,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       return;
     }
     const targetChapter = chapters.find(ch => ch.id === chapterId);
+    const sortedScenes = [...(targetChapter?.scenes || [])].sort((a, b) => a.index - b.index);
     setActiveChapterId(chapterId);
-    setActiveScene(targetChapter?.scenes?.[0] || null);
+    setActiveScene(sortedScenes[0] || null);
   };
 
   const handleUpdateChapterTitle = (chapterId: number, title: string) => {
@@ -636,7 +640,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                   <Plus size={12} className="inline-block mr-1" /> 在此插入章节
                 </button>
               </div>
-              {chapters.map((chapter, idx) => (
+            {chapters.map((chapter, idx) => {
+              const sortedScenes = [...(chapter.scenes || [])].sort((a, b) => a.index - b.index);
+              return (
                 <React.Fragment key={chapter.id}>
                   <div className="mb-2 border border-white/5 rounded-2xl overflow-hidden bg-black/30">
                     <div
@@ -710,12 +716,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                             <Plus size={12} className="inline-block mr-1" /> 在此插入场景
                           </button>
                         </div>
-                        {(chapter.scenes || []).length === 0 ? (
+                        {sortedScenes.length === 0 ? (
                           <div className="w-full border border-dashed border-white/10 rounded-xl py-3 text-white/40 text-sm flex items-center justify-center gap-2">
                             暂无场景，请在上方或下方插入
                           </div>
                         ) : (
-                          (chapter.scenes || []).map((scene, sceneIdx) => (
+                          sortedScenes.map((scene, sceneIdx) => (
                             <React.Fragment key={scene.id}>
                               <button
                                 onClick={() => handleSelectScene(chapter.id, scene)}
@@ -725,7 +731,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                               >
                                 <div className="flex justify-between items-center mb-1.5">
                                   <span className={`text-[10px] font-bold uppercase tracking-wider ${activeScene?.id === scene.id ? 'text-white' : 'text-white/20'}`}>
-                                    场景 {scene.index}
+                                    场景 {sceneIdx + 1}
                                   </span>
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
                                     activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
@@ -762,7 +768,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                     </button>
                   </div>
                 </React.Fragment>
-              ))}
+              );
+            })}
             </>
           )}
         </div>
