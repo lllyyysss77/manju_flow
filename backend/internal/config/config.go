@@ -4,11 +4,20 @@ import (
 	"manju-flow/utils"
 )
 
+var Cfg *Config
+
 // Config 应用配置
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	OSS      OSSConfig
+	App      AppConfig
+}
+
+// AppConfig 应用程序配置
+type AppConfig struct {
+	Name        string
+	Environment string
 }
 
 // OSSConfig 阿里云OSS配置
@@ -38,7 +47,11 @@ type DatabaseConfig struct {
 
 // Load 加载配置
 func Load() *Config {
-	return &Config{
+	Cfg = &Config{
+		App: AppConfig{
+			Name:        "manju",
+			Environment: utils.GetEnv("APP_ENV", "local"),
+		},
 		Server: ServerConfig{
 			Port: utils.GetEnv("SERVER_PORT", "8080"),
 			Mode: utils.GetEnv("GIN_MODE", "debug"),
@@ -59,6 +72,7 @@ func Load() *Config {
 			BucketName:      utils.GetEnv("OSS_BUCKET_NAME", ""),
 		},
 	}
+	return Cfg
 }
 
 

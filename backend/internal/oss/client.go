@@ -71,7 +71,7 @@ func GenerateKeyFromContent(reader io.Reader, originalName string) (string, []by
 	ext := filepath.Ext(originalName)
 
 	// 使用哈希前两位作为目录，便于分散存储
-	key := fmt.Sprintf("%s/%s%s", hashStr[:2], hashStr, ext)
+	key := fmt.Sprintf("%s/%s/%s%s", config.Cfg.App.Environment, hashStr[:2], hashStr, ext)
 
 	return key, content, nil
 }

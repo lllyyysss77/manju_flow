@@ -15,7 +15,7 @@ import (
 
 func init() {
 	// 加载.env文件(仅在本地开发环境)
-	if utils.GetEnv("MANJU_ENVIRONMENT", "local") == "local" {
+	if utils.GetEnv("APP_ENV", "local") == "local" {
 		// 尝试从项目根目录加载
 		err := godotenv.Load(".env")
 		if err != nil {
