@@ -32,11 +32,33 @@ func Setup(r *gin.Engine) {
 		bookHandler := handlers.NewBookHandler()
 		books := api.Group("/books")
 		{
-			books.GET("", bookHandler.List)       // 获取书籍列表
-			books.POST("", bookHandler.Create)    // 创建书籍
+			books.GET("", bookHandler.List)        // 获取书籍列表
+			books.POST("", bookHandler.Create)     // 创建书籍
 			books.GET("/:id", bookHandler.GetByID) // 获取书籍详情
 			books.PUT("/:id", bookHandler.Update)  // 更新书籍
 			books.DELETE("/:id", bookHandler.Delete) // 删除书籍
+		}
+
+		// 章节路由
+		chapterHandler := handlers.NewChapterHandler()
+		chapters := api.Group("/books/:bookId/chapters")
+		{
+			chapters.GET("", chapterHandler.List)        // 获取章节列表
+			chapters.POST("", chapterHandler.Create)     // 创建章节
+			chapters.GET("/:id", chapterHandler.GetByID) // 获取章节详情
+			chapters.PUT("/:id", chapterHandler.Update)  // 更新章节
+			chapters.DELETE("/:id", chapterHandler.Delete) // 删除章节
+		}
+
+		// 场景路由
+		sceneHandler := handlers.NewSceneHandler()
+		scenes := api.Group("/books/:bookId/chapters/:chapterId/scenes")
+		{
+			scenes.GET("", sceneHandler.List)        // 获取场景列表
+			scenes.POST("", sceneHandler.Create)     // 创建场景
+			scenes.GET("/:id", sceneHandler.GetByID) // 获取场景详情
+			scenes.PUT("/:id", sceneHandler.Update)  // 更新场景
+			scenes.DELETE("/:id", sceneHandler.Delete) // 删除场景
 		}
 	}
 }
