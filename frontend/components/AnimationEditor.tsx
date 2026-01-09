@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Episode, Scene, Status } from '../types';
 import { 
   MessageSquare, 
@@ -28,11 +28,17 @@ const STATUS_MAP: Record<Status, string> = {
 };
 
 export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => {
+  const sortedScenes = [...episode.scenes].sort((a, b) => a.index - b.index);
   const [activeSceneIndex, setActiveSceneIndex] = useState(0);
+  useEffect(() => {
+    if (activeSceneIndex >= sortedScenes.length) {
+      setActiveSceneIndex(Math.max(0, sortedScenes.length - 1));
+    }
+  }, [activeSceneIndex, sortedScenes.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   
-  const activeScene = episode.scenes[activeSceneIndex];
+  const activeScene = sortedScenes[activeSceneIndex];
 
   if (!activeScene) return null;
 
@@ -48,7 +54,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
     <div className="flex flex-col h-full bg-[#0f0f0f]">
       {/* 顶部场景快速切换 */}
       <div className="h-20 border-b border-white/5 bg-[#141414] flex items-center px-4 gap-2 overflow-x-auto">
-        {episode.scenes.map((scene, idx) => (
+        {sortedScenes.map((scene, idx) => {
+          const displayNumber = idx + 1;
+          return (
           <button
             key={scene.id}
             onClick={() => {
@@ -60,7 +68,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
                 ? 'border-blue-500 ring-1 ring-blue-500' 
                 : 'border-white/10 opacity-50 hover:opacity-100 hover:border-white/30'
             }`}
-          >
+            >
             <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
               {scene.startFrameUrl ? (
                 <img src={scene.startFrameUrl} className="w-full h-full object-cover" alt="" />
@@ -74,10 +82,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
               )}
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
-              #{scene.index}
+              #{displayNumber}
             </div>
           </button>
-        ))}
+        );
+        })}
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -135,7 +144,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-white flex items-center gap-3">
-                  场景 {activeScene.index} 动画制作
+                  场景 {activeSceneIndex + 1} 动画制作
                   <span className={`text-[10px] px-2 py-0.5 rounded border ${
                     activeScene.status === 'COMPLETED' ? 'bg-green-600 text-white border-green-500' : 'bg-blue-600/20 text-blue-400 border-blue-600/30'
                   }`}>

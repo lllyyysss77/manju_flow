@@ -17,7 +17,7 @@ import {
   ChevronDown,
   Trash2
 } from 'lucide-react';
-import { chapterApi, sceneApi } from '../api';
+import { chapterApi, sceneApi, fileApi } from '../api';
 
 interface ScriptEditorProps {
   bookId: number;
@@ -46,18 +46,26 @@ const BRUSH_SIZES = [
 ];
 
 const ReferenceSection: React.FC<{ 
-  initialImage?: string,
-  onSave: (dataUrl: string) => void,
-  onRemove: () => void
-}> = ({ initialImage, onSave, onRemove }) => {
+  initialImage?: string;
+  onUpload: (file: File) => Promise<void>;
+  onRemove: () => void;
+  isUploading?: boolean;
+  onUploadError?: (msg: string) => void;
+}> = ({ initialImage, onUpload, onRemove, isUploading = false, onUploadError }) => {
   const [mode, setMode] = useState<'NONE' | 'DRAW' | 'VIEW'>(initialImage ? 'VIEW' : 'NONE');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [color, setColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(6);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [localUploading, setLocalUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMode(initialImage ? 'VIEW' : 'NONE');
+  }, [initialImage]);
 
   useEffect(() => {
     if (mode === 'DRAW') {
@@ -120,17 +128,29 @@ const ReferenceSection: React.FC<{
     }
   };
 
+  const handleUpload = async (file: File) => {
+    setError(null);
+    setLocalUploading(true);
+    try {
+      await onUpload(file);
+      setMode('VIEW');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传失败，请重试';
+      setError(msg);
+      onUploadError?.(msg);
+    } finally {
+      setLocalUploading(false);
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        onSave(event.target?.result as string);
-        setMode('VIEW');
-      };
-      reader.readAsDataURL(file);
+      handleUpload(file);
     }
   };
+
+  const busy = isUploading || localUploading;
 
   if (mode === 'VIEW' && initialImage) {
     return (
@@ -158,21 +178,23 @@ const ReferenceSection: React.FC<{
     return (
       <div className="grid grid-cols-2 gap-6">
         <button 
-          onClick={() => fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed border-white/5 rounded-2xl hover:bg-white/5 hover:border-blue-500/30 transition-all group"
+          disabled={busy}
+          onClick={() => !busy && fileInputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed border-white/5 rounded-2xl hover:bg-white/5 hover:border-blue-500/30 transition-all group disabled:opacity-60"
         >
           <div className="p-4 rounded-full bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform">
             <Upload size={32} />
           </div>
           <div className="text-center">
-            <span className="block text-sm font-bold text-white mb-1">上传本地参考图</span>
+            <span className="block text-sm font-bold text-white mb-1">{busy ? '上传中...' : '上传本地参考图'}</span>
             <span className="text-[10px] text-white/20 uppercase tracking-widest">保持原始尺寸，不拉伸</span>
           </div>
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
         </button>
         <button 
-          onClick={() => setMode('DRAW')}
-          className="flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed border-white/5 rounded-2xl hover:bg-white/5 hover:border-green-500/30 transition-all group"
+          disabled={busy}
+          onClick={() => !busy && setMode('DRAW')}
+          className="flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed border-white/5 rounded-2xl hover:bg-white/5 hover:border-green-500/30 transition-all group disabled:opacity-60"
         >
           <div className="p-4 rounded-full bg-green-500/10 text-green-500 group-hover:scale-110 transition-transform">
             <Pencil size={32} />
@@ -182,6 +204,11 @@ const ReferenceSection: React.FC<{
             <span className="text-[10px] text-white/20 uppercase tracking-widest">自由调整 16:9 或 9:16</span>
           </div>
         </button>
+        {error && (
+          <div className="col-span-2 text-center text-xs text-red-400">
+            {error}
+          </div>
+        )}
       </div>
     );
   }
@@ -255,16 +282,28 @@ const ReferenceSection: React.FC<{
 
       <div className="flex justify-end gap-3 pt-2">
         <button 
+          disabled={busy}
           onClick={() => {
-            const dataUrl = canvasRef.current?.toDataURL();
-            if (dataUrl) onSave(dataUrl);
-            setMode('VIEW');
+            if (busy) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            canvas.toBlob(blob => {
+              if (!blob) {
+                setError('导出画布失败，请重试');
+                return;
+              }
+              const file = new File([blob], `reference-${Date.now()}.png`, { type: 'image/png' });
+              handleUpload(file);
+            });
           }} 
-          className="px-8 py-3 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 flex items-center gap-2 active:scale-95"
+          className="px-8 py-3 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 flex items-center gap-2 active:scale-95 disabled:opacity-60"
         >
-          <Check size={16} /> 完成绘制并应用
+          <Check size={16} /> {busy ? '上传中...' : '完成绘制并应用'}
         </button>
       </div>
+      {error && (
+        <div className="text-right text-xs text-red-400">{error}</div>
+      )}
     </div>
   );
 };
@@ -280,6 +319,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const [isUploadingReference, setIsUploadingReference] = useState(false);
   const onEpisodesChangeRef = useRef(onEpisodesChange);
   const savedSignaturesRef = useRef<Record<number, string>>({});
 
@@ -518,8 +558,20 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     setSaveError(null);
   };
 
-  const handleSaveReference = (dataUrl: string) => {
-    updateActiveScene(scene => ({ ...scene, referenceImageUrl: dataUrl }));
+  const handleSaveReference = async (file: File) => {
+    setIsUploadingReference(true);
+    try {
+      const res = await fileApi.upload(file);
+      updateActiveScene(scene => ({ ...scene, referenceImageUrl: res.url }));
+      setToast({ message: '参考图已上传', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to upload reference image', err);
+      const msg = err instanceof Error ? err.message : '参考图上传失败';
+      setToast({ message: msg, tone: 'error' });
+      throw err instanceof Error ? err : new Error(msg);
+    } finally {
+      setIsUploadingReference(false);
+    }
   };
 
   const handleRemoveReference = () => {
@@ -830,8 +882,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                     </div>
                     <ReferenceSection 
                       initialImage={activeScene.referenceImageUrl}
-                      onSave={handleSaveReference}
+                      onUpload={handleSaveReference}
                       onRemove={handleRemoveReference}
+                      isUploading={isUploadingReference}
                     />
                   </div>
                 </div>

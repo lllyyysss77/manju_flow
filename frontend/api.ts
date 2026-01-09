@@ -61,11 +61,15 @@ export const authStorage = {
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
 
+  const isFormData = options?.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
   };
-  if (!headers.Authorization) {
+  if (!isFormData) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
+  const hasAuthHeader = Object.prototype.hasOwnProperty.call(headers, 'Authorization');
+  if (!hasAuthHeader) {
     const token = authStorage.getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
@@ -228,4 +232,29 @@ export const sceneApi = {
     }),
   delete: (bookId: number, chapterId: number, sceneId: number) =>
     request(`/api/books/${bookId}/chapters/${chapterId}/scenes/${sceneId}`, { method: 'DELETE' }),
+};
+
+// 文件上传 API（用于参考图等）
+export interface FileUploadResponse {
+  id: number;
+  key: string;
+  originalName: string;
+  size: number;
+  mimeType: string;
+  uploaderId: number;
+  visibility: 'public' | 'private';
+  url: string;
+  createdAt: string;
+}
+
+export const fileApi = {
+  upload: (file: File, visibility: 'public' | 'private' = 'private') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('visibility', visibility);
+    return request<FileUploadResponse>('/api/files', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };

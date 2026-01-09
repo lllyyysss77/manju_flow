@@ -17,7 +17,7 @@ const (
 // File 文件模型
 type File struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
-	Key          string         `gorm:"size:500;not null;uniqueIndex" json:"key"`          // OSS 对象键
+	Key          string         `gorm:"size:500;not null;index" json:"key"`          // OSS 对象键
 	OriginalName string         `gorm:"size:255;not null" json:"originalName"`             // 原始文件名
 	Size         int64          `gorm:"not null" json:"size"`                              // 文件大小（字节）
 	MimeType     string         `gorm:"size:100" json:"mimeType"`                          // MIME 类型
