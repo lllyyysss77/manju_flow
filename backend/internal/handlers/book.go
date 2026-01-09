@@ -137,7 +137,7 @@ func (h *BookHandler) Create(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Router /api/books/{id} [get]
 func (h *BookHandler) GetByID(c *gin.Context) {
-	id := c.Param("id")
+	id := c.Param("bookId")
 
 	var book models.Book
 	db := database.GetDB()
@@ -164,7 +164,7 @@ func (h *BookHandler) GetByID(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Router /api/books/{id} [put]
 func (h *BookHandler) Update(c *gin.Context) {
-	id := c.Param("id")
+	id := c.Param("bookId")
 
 	var book models.Book
 	db := database.GetDB()
@@ -210,7 +210,7 @@ func (h *BookHandler) Update(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Router /api/books/{id} [delete]
 func (h *BookHandler) Delete(c *gin.Context) {
-	id := c.Param("id")
+	id := c.Param("bookId")
 
 	db := database.GetDB()
 	result := db.Delete(&models.Book{}, id)
