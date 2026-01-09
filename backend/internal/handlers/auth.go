@@ -14,11 +14,14 @@ import (
 
 // 注册白名单 - 只有这些用户名可以注册
 var registerWhitelist = map[string]bool{
-	"admin":    true,
-	"sfzman":   true,
-	"test":     true,
-	"xiaoming": true,
-	"zhangsan": true,
+	"sfzman@hotmail.com":    true,
+	"83899474@qq.com":   true, // 牟宗明
+	"1164607971@qq.com":     true, // 金旺
+	"2937342868@qq.com": true, // 培瑶
+	"734231140@qq.com": true, // 王童童
+	"652207305@qq.com": true, // 琪媛
+	"liu584821258@gmail.com": true, // 小刘
+	"1334821692@qq.com": true, // 小圆
 }
 
 // AuthHandler 认证处理器

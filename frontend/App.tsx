@@ -9,7 +9,8 @@ import { StoryboardEditor } from './components/StoryboardEditor';
 import { AnimationEditor } from './components/AnimationEditor';
 import { AudioEditor } from './components/AudioEditor';
 import { ImportBookModal } from './components/ImportBookModal';
-import { bookApi, booksToProjects, BookType, CreateBookRequest } from './api';
+import { authApi, authStorage, bookApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
+import { AuthPage } from './components/AuthPage';
 import {
   Bell,
   Settings,
@@ -47,6 +48,8 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'PRODUCTION'>('DASHBOARD');
   const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.SCRIPT);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthResponse['user'] | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(() => authStorage.getToken());
 
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -66,6 +69,19 @@ const App: React.FC = () => {
   // 导入弹窗状态
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
+  const handleAuthSuccess = (auth: AuthResponse) => {
+    setAuthToken(auth.token);
+    setCurrentUser(auth.user);
+  };
+
+  const handleLogout = () => {
+    authStorage.clear();
+    setAuthToken(null);
+    setCurrentUser(null);
+    setSelectedProject(null);
+    setViewMode('DASHBOARD');
+  };
+
   // 防抖处理搜索关键词
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -76,6 +92,7 @@ const App: React.FC = () => {
 
   // 加载项目列表
   const loadProjects = useCallback(async () => {
+    if (!authToken) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -94,12 +111,31 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [filterType, debouncedKeyword]);
+  }, [filterType, debouncedKeyword, authToken]);
 
   // 初始加载和筛选变化时重新加载
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    if (authToken) {
+      loadProjects();
+    } else {
+      setIsLoading(false);
+    }
+  }, [loadProjects, authToken]);
+
+  // 如果有 token，获取当前用户信息，失效则清空
+  useEffect(() => {
+    const fetchMe = async () => {
+      if (!authToken) return;
+      try {
+        const user = await authApi.me();
+        setCurrentUser(user);
+      } catch (err) {
+        console.error('Failed to fetch user, clearing auth', err);
+        handleLogout();
+      }
+    };
+    fetchMe();
+  }, [authToken]);
 
   // 监听点击关闭下拉菜单
   useEffect(() => {
@@ -181,6 +217,10 @@ const App: React.FC = () => {
     setIsEditLoading(false);
   };
 
+  if (!authToken || !currentUser) {
+    return <AuthPage onSuccess={handleAuthSuccess} />;
+  }
+
   const filteredProjects = projects;
 
   const renderDashboard = () => (
@@ -209,6 +249,21 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm">
+            <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase">
+              {(currentUser.nickname || currentUser.username || '?')[0]}
+            </div>
+            <div>
+              <div className="font-semibold leading-tight">{currentUser.nickname || currentUser.username}</div>
+              <div className="text-white/40 text-xs">{currentUser.username}</div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="text-white/50 text-sm hover:text-white underline underline-offset-4"
+          >
+            退出登录
+          </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
             <input

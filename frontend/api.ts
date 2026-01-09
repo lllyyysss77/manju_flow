@@ -50,15 +50,29 @@ class ApiError extends Error {
   }
 }
 
+const TOKEN_KEY = 'auth_token';
+
+export const authStorage = {
+  getToken: () => localStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  clear: () => localStorage.removeItem(TOKEN_KEY),
+};
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+  if (!headers.Authorization) {
+    const token = authStorage.getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -68,6 +82,32 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 
   return response.json();
 }
+
+// 认证 API
+export interface AuthResponse {
+  token: string;
+  user: {
+    id: number;
+    username: string;
+    nickname: string;
+  };
+}
+
+export const authApi = {
+  login: (payload: { username: string; password: string }) =>
+    request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { Authorization: '' }, // 显式移除 token
+    }),
+  register: (payload: { username: string; password: string; nickname?: string }) =>
+    request<AuthResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { Authorization: '' }, // 显式移除 token
+    }),
+  me: () => request<AuthResponse['user']>('/api/auth/me'),
+};
 
 // 书籍 API
 export const bookApi = {
