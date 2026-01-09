@@ -44,6 +44,7 @@ func Init(cfg *config.DatabaseConfig) error {
 
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
+		&models.User{},
 		&models.Book{},
 		&models.Chapter{},
 		&models.Scene{},
