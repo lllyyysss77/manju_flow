@@ -149,7 +149,7 @@ func (h *ChapterHandler) Create(c *gin.Context) {
 // @Router /api/books/{bookId}/chapters/{id} [get]
 func (h *ChapterHandler) GetByID(c *gin.Context) {
 	bookId := c.Param("bookId")
-	id := c.Param("id")
+	id := c.Param("chapterId")
 
 	db := database.GetDB()
 
@@ -190,7 +190,7 @@ func (h *ChapterHandler) GetByID(c *gin.Context) {
 // @Router /api/books/{bookId}/chapters/{id} [put]
 func (h *ChapterHandler) Update(c *gin.Context) {
 	bookId := c.Param("bookId")
-	id := c.Param("id")
+	id := c.Param("chapterId")
 
 	db := database.GetDB()
 
@@ -244,7 +244,7 @@ func (h *ChapterHandler) Update(c *gin.Context) {
 // @Router /api/books/{bookId}/chapters/{id} [delete]
 func (h *ChapterHandler) Delete(c *gin.Context) {
 	bookId := c.Param("bookId")
-	id := c.Param("id")
+	id := c.Param("chapterId")
 
 	db := database.GetDB()
 
