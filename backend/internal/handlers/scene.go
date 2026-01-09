@@ -140,7 +140,7 @@ func (h *SceneHandler) Create(c *gin.Context) {
 func (h *SceneHandler) GetByID(c *gin.Context) {
 	bookId := c.Param("bookId")
 	chapterId := c.Param("chapterId")
-	id := c.Param("id")
+	id := c.Param("sceneId")
 
 	db := database.GetDB()
 
@@ -181,7 +181,7 @@ func (h *SceneHandler) GetByID(c *gin.Context) {
 func (h *SceneHandler) Update(c *gin.Context) {
 	bookId := c.Param("bookId")
 	chapterId := c.Param("chapterId")
-	id := c.Param("id")
+	id := c.Param("sceneId")
 
 	db := database.GetDB()
 
@@ -252,7 +252,7 @@ func (h *SceneHandler) Update(c *gin.Context) {
 func (h *SceneHandler) Delete(c *gin.Context) {
 	bookId := c.Param("bookId")
 	chapterId := c.Param("chapterId")
-	id := c.Param("id")
+	id := c.Param("sceneId")
 
 	db := database.GetDB()
 
