@@ -7,7 +7,7 @@ export enum ProductionStage {
   REVIEW = 'REVIEW'
 }
 
-export type Status = 'PENDING' | 'IN_PROGRESS' | 'REVIEWING' | 'REVISING' | 'COMPLETED';
+export type Status = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
 
 export interface Comment {
   id: string;
@@ -19,12 +19,11 @@ export interface Comment {
 }
 
 export interface Scene {
-  id: string;
+  id: number;
   index: number;
   description: string;
-  shotType: string;
+  cameraMovement: string;
   dialogue: string;
-  audioNotes: string;
   status: Status;
   comments: Comment[];
   startFrameUrl?: string;
@@ -34,15 +33,15 @@ export interface Scene {
 }
 
 export interface Episode {
-  id: string;
+  id: number;
   title: string;
-  outline: string;
+  index?: number;
   status: Status;
   scenes: Scene[];
 }
 
 export interface Project {
-  id: string;
+  id: number;
   title: string;
   author: string;
   cover: string;

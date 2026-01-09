@@ -24,6 +24,7 @@ type Scene struct {
 	Description    string         `gorm:"type:text;not null" json:"description"`    // 场景描述（必须）
 	CameraMovement string         `gorm:"type:text" json:"cameraMovement"`          // 运镜
 	Dialogue       string         `gorm:"type:text" json:"dialogue"`                // 台词/旁白
+	ReferenceImageUrl string      `gorm:"type:text" json:"referenceImageUrl"`       // 参考图
 	CreatedAt      time.Time      `json:"createdAt"`
 	UpdatedAt      time.Time      `json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
@@ -50,6 +51,7 @@ type CreateSceneRequest struct {
 	Description    string      `json:"description" binding:"required"`
 	CameraMovement string      `json:"cameraMovement"`
 	Dialogue       string      `json:"dialogue"`
+	ReferenceImageUrl string   `json:"referenceImageUrl"`
 }
 
 // UpdateSceneRequest 更新场景请求
@@ -59,4 +61,5 @@ type UpdateSceneRequest struct {
 	Description    *string      `json:"description"`
 	CameraMovement *string      `json:"cameraMovement"`
 	Dialogue       *string      `json:"dialogue"`
+	ReferenceImageUrl *string   `json:"referenceImageUrl"`
 }

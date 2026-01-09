@@ -22,6 +22,7 @@ var registerWhitelist = map[string]bool{
 	"652207305@qq.com": true, // 琪媛
 	"liu584821258@gmail.com": true, // 小刘
 	"1334821692@qq.com": true, // 小圆
+	"w1818hanguahope@163.com": true, // 王紫荆
 }
 
 // AuthHandler 认证处理器

@@ -155,18 +155,18 @@ export const bookApi = {
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式
-import { Project, Status } from './types';
+import { Project, Status, Episode, Scene } from './types';
 
 export function bookToProject(book: Book): Project {
   // 将后端的 adaptationStatus 映射到前端的 productionStatus
   const statusMap: Record<AdaptationStatus, Status> = {
-    'NONE': 'PENDING',
+    'NONE': 'DRAFT',
     'IN_PROGRESS': 'IN_PROGRESS',
     'COMPLETED': 'COMPLETED',
   };
 
   return {
-    id: String(book.id),
+    id: book.id,
     title: book.title,
     author: book.author,
     cover: book.cover || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop',
@@ -180,3 +180,52 @@ export function bookToProject(book: Book): Project {
 export function booksToProjects(books: Book[]): Project[] {
   return books.map(bookToProject);
 }
+
+// 章节/场景 API
+export interface Chapter {
+  id: number;
+  bookId: number;
+  title: string;
+  index: number;
+  status: Status;
+  scenes?: Scene[];
+}
+
+export interface ScenePayload {
+  description: string;
+  cameraMovement: string;
+  dialogue: string;
+  referenceImageUrl?: string;
+}
+
+export const chapterApi = {
+  list: (bookId: number, includeScenes = true) =>
+    request<{ total: number; data: Chapter[] }>(`/api/books/${bookId}/chapters?includeScenes=${includeScenes}`),
+  create: (bookId: number, payload: { title: string; index: number; status?: Status }) =>
+    request<Chapter>(`/api/books/${bookId}/chapters`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (bookId: number, chapterId: number, payload: Partial<{ title: string; index: number; status: Status }>) =>
+    request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (bookId: number, chapterId: number) =>
+    request(`/api/books/${bookId}/chapters/${chapterId}`, { method: 'DELETE' }),
+};
+
+export const sceneApi = {
+  create: (bookId: number, chapterId: number, payload: { index: number } & ScenePayload & { status?: Status }) =>
+    request<Scene>(`/api/books/${bookId}/chapters/${chapterId}/scenes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (bookId: number, chapterId: number, sceneId: number, payload: Partial<{ index: number; status: Status } & ScenePayload>) =>
+    request<Scene>(`/api/books/${bookId}/chapters/${chapterId}/scenes/${sceneId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (bookId: number, chapterId: number, sceneId: number) =>
+    request(`/api/books/${bookId}/chapters/${chapterId}/scenes/${sceneId}`, { method: 'DELETE' }),
+};

@@ -19,10 +19,8 @@ interface StoryboardEditorProps {
 }
 
 const STATUS_MAP: Record<Status, string> = {
-  PENDING: '待处理',
+  DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  REVIEWING: '审核中',
-  REVISING: '修改中',
   COMPLETED: '已完成'
 };
 
@@ -86,7 +84,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episode }) =
               <h3 className="text-xs font-bold uppercase tracking-widest">镜头/构图</h3>
             </div>
             <p className="text-sm text-white/60 font-medium px-1">
-              {activeScene.shotType || '未指定镜头类型'}
+              {activeScene.cameraMovement || '未指定镜头类型'}
             </p>
           </section>
 
@@ -105,11 +103,13 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episode }) =
           <section>
             <div className="flex items-center gap-2 mb-4 text-green-400">
               <Music size={14} />
-              <h3 className="text-xs font-bold uppercase tracking-widest">音效参考</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest">参考图</h3>
             </div>
-            <p className="text-xs text-white/40 leading-relaxed px-1">
-              {activeScene.audioNotes || '暂无备注'}
-            </p>
+            {activeScene.referenceImageUrl ? (
+              <img src={activeScene.referenceImageUrl} className="w-full rounded-lg border border-white/10" alt="参考图" />
+            ) : (
+              <p className="text-xs text-white/40 leading-relaxed px-1">暂无参考图</p>
+            )}
           </section>
         </div>
 

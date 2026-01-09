@@ -113,6 +113,7 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		Description:    req.Description,
 		CameraMovement: req.CameraMovement,
 		Dialogue:       req.Dialogue,
+		ReferenceImageUrl: req.ReferenceImageUrl,
 	}
 
 	if err := db.Create(&scene).Error; err != nil {
@@ -225,6 +226,9 @@ func (h *SceneHandler) Update(c *gin.Context) {
 	}
 	if req.Dialogue != nil {
 		scene.Dialogue = *req.Dialogue
+	}
+	if req.ReferenceImageUrl != nil {
+		scene.ReferenceImageUrl = *req.ReferenceImageUrl
 	}
 
 	if err := db.Save(&scene).Error; err != nil {

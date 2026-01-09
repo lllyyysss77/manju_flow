@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Episode, Scene, Status } from '../types';
 import { 
   Plus, 
@@ -17,17 +17,17 @@ import {
   ChevronDown,
   Trash2
 } from 'lucide-react';
+import { chapterApi, sceneApi } from '../api';
 
 interface ScriptEditorProps {
-  episodes: Episode[];
-  onEpisodesChange: (episodes: Episode[]) => void;
+  bookId: number;
+  episodes?: Episode[];
+  onEpisodesChange?: (episodes: Episode[]) => void;
 }
 
 const STATUS_MAP: Record<Status, string> = {
-  PENDING: '待处理',
+  DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  REVIEWING: '审核中',
-  REVISING: '修改中',
   COMPLETED: '已完成'
 };
 
@@ -269,10 +269,23 @@ const ReferenceSection: React.FC<{
   );
 };
 
-export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodesChange }) => {
+export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [], onEpisodesChange }) => {
   const [chapters, setChapters] = useState<Episode[]>(episodes || []);
-  const [activeChapterId, setActiveChapterId] = useState<string | null>(episodes[0]?.id || null);
-  const [activeScene, setActiveScene] = useState<Scene | null>(episodes[0]?.scenes[0] || null);
+  const [activeChapterId, setActiveChapterId] = useState<number | null>(episodes?.[0]?.id ?? null);
+  const [activeScene, setActiveScene] = useState<Scene | null>(episodes?.[0]?.scenes[0] || null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const onEpisodesChangeRef = useRef(onEpisodesChange);
+  const savedSignaturesRef = useRef<Record<number, string>>({});
+
+  useEffect(() => {
+    onEpisodesChangeRef.current = onEpisodesChange;
+  }, [onEpisodesChange]);
   const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [leftPanelWidth, setLeftPanelWidth] = useState(256);
@@ -285,68 +298,131 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
   const MIN_RIGHT = 260;
   const MAX_RIGHT = 520;
 
+  const computeInsertIndex = (items: { index?: number }[], insertIndex: number) => {
+    if (items.length === 0) return 1;
+    const normalized = items.map(it => it.index ?? 0);
+    if (insertIndex === 0) return (normalized[0] ?? 0) - 1 || 0;
+    if (insertIndex >= items.length) return (normalized[items.length - 1] ?? 0) + 1;
+    const prev = normalized[insertIndex - 1] ?? 0;
+    const next = normalized[insertIndex] ?? prev + 1;
+    return (prev + next) / 2;
+  };
+
+  const getSignature = (scene: Scene) =>
+    JSON.stringify({
+      description: scene.description,
+      cameraMovement: scene.cameraMovement,
+      dialogue: scene.dialogue,
+      status: scene.status,
+      index: scene.index,
+      referenceImageUrl: scene.referenceImageUrl,
+    });
+
+  const loadChapters = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const res = await chapterApi.list(bookId, true);
+      const data = (res.data || []).map(ch => ({
+        id: ch.id,
+        title: ch.title,
+        index: ch.index,
+        status: ch.status as Status,
+        scenes: (ch.scenes || []).map(s => ({
+          id: s.id,
+          index: s.index,
+          description: s.description || '',
+          cameraMovement: s.cameraMovement || '',
+          dialogue: s.dialogue || '',
+          status: s.status as Status,
+          comments: [],
+          referenceImageUrl: s.referenceImageUrl,
+          startFrameUrl: s.startFrameUrl,
+          endFrameUrl: s.endFrameUrl,
+          clipUrl: s.clipUrl,
+        })) as Scene[],
+      })) as Episode[];
+      const savedSig: Record<number, string> = {};
+      data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));
+      savedSignaturesRef.current = savedSig;
+      setChapters(data);
+      setActiveChapterId(data[0]?.id ?? null);
+      setActiveScene(data[0]?.scenes[0] || null);
+      if (data[0]?.scenes[0]) {
+        setIsDirty(false);
+      }
+      onEpisodesChangeRef.current?.(data);
+    } catch (err) {
+      console.error('Failed to load chapters', err);
+      setLoadError(err instanceof Error ? err.message : '加载失败');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [bookId]);
+
   useEffect(() => {
-    setChapters(episodes || []);
-    setActiveChapterId(episodes[0]?.id || null);
-    setActiveScene(episodes[0]?.scenes[0] || null);
-  }, [episodes]);
+    loadChapters();
+  }, [loadChapters]);
 
   const commitChapters = (next: Episode[]) => {
     setChapters(next);
-    onEpisodesChange(next);
+    onEpisodesChange?.(next);
   };
-
-  const createChapter = () => ({
-    id: `chapter-${Date.now()}`,
-    title: `新章节 ${chapters.length + 1}`,
-    outline: '',
-    status: 'PENDING' as Status,
-    scenes: [],
-  });
 
   const handleAddChapterAt = (insertIndex: number) => {
-    const newChapter = createChapter();
-    const next = [...chapters];
-    next.splice(insertIndex, 0, newChapter);
-    commitChapters(next);
-    setActiveChapterId(newChapter.id);
-    setActiveScene(null);
-  };
-
-  const createScene = (chapterId: string): Scene => ({
-    id: `${chapterId}-scene-${Date.now()}`,
-    index: 0,
-    description: '',
-    shotType: '',
-    dialogue: '',
-    audioNotes: '',
-    status: 'PENDING',
-    comments: [],
-  });
-
-  const reindexScenes = (scenes: Scene[]) => scenes.map((scene, idx) => ({ ...scene, index: idx + 1 }));
-
-  const handleAddSceneAt = (chapterId: string, insertIndex: number) => {
-    setActiveChapterId(chapterId);
-    const next = chapters.map(ch => {
-      if (ch.id !== chapterId) return ch;
-      const newScene = createScene(chapterId);
-      const scenes = [...(ch.scenes || [])];
-      scenes.splice(insertIndex, 0, newScene);
-      const reindexed = reindexScenes(scenes);
-      const inserted = reindexed.find(s => s.id === newScene.id) || newScene;
-      setActiveScene(inserted);
-      return { ...ch, scenes: reindexed };
+    const index = computeInsertIndex(chapters, insertIndex);
+    chapterApi.create(bookId, { title: `新章节 ${chapters.length + 1}`, index, status: 'DRAFT' }).then(res => {
+      const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as Status, scenes: [] };
+      const next = [...chapters];
+      next.splice(insertIndex, 0, newChapter);
+      commitChapters(next);
+      setActiveChapterId(newChapter.id);
+      setActiveScene(null);
+    }).catch(err => {
+      console.error('Failed to create chapter', err);
+      alert('创建章节失败，请稍后再试');
     });
-    commitChapters(next);
   };
 
-  const handleSelectScene = (chapterId: string, scene: Scene) => {
+  const handleAddSceneAt = (chapterId: number, insertIndex: number) => {
+    setActiveChapterId(chapterId);
+    const chapter = chapters.find(c => c.id === chapterId);
+    const index = computeInsertIndex(chapter?.scenes || [], insertIndex);
+    sceneApi.create(bookId, chapterId, {
+      index,
+      description: '待补充描述',
+      cameraMovement: '',
+      dialogue: '',
+      status: 'DRAFT',
+    }).then(newScene => {
+      const created: Scene = { ...newScene, comments: newScene.comments || [] };
+      savedSignaturesRef.current[created.id] = getSignature(created);
+      const next = chapters.map(ch => {
+        if (ch.id !== chapterId) return ch;
+        const scenes = [...(ch.scenes || []), created].sort((a, b) => a.index - b.index);
+        const inserted = scenes.find(s => s.id === created.id) || created;
+        setActiveScene(inserted);
+        return { ...ch, scenes };
+      });
+      commitChapters(next);
+    }).catch(err => {
+      console.error('Failed to create scene', err);
+      alert('创建场景失败，请稍后再试');
+    });
+  };
+
+  const handleSelectScene = async (chapterId: number, scene: Scene) => {
+    if (activeScene && activeChapterId && isDirty) {
+      await persistScene(activeChapterId, activeScene);
+    }
     setActiveChapterId(chapterId);
     setActiveScene(scene);
+    const sig = getSignature(scene);
+    setIsDirty(savedSignaturesRef.current[scene.id] !== sig);
+    setSaveError(null);
   };
 
-  const handleToggleChapter = (chapterId: string) => {
+  const handleToggleChapter = (chapterId: number) => {
     if (activeChapterId === chapterId) {
       setActiveChapterId(null);
       setActiveScene(null);
@@ -357,27 +433,71 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
     setActiveScene(targetChapter?.scenes?.[0] || null);
   };
 
-  const handleUpdateChapterTitle = (chapterId: string, title: string) => {
+  const handleUpdateChapterTitle = (chapterId: number, title: string) => {
     const next = chapters.map(ch => (ch.id === chapterId ? { ...ch, title } : ch));
     commitChapters(next);
+    chapterApi.update(bookId, chapterId, { title }).catch(err => {
+      console.error('Failed to update chapter title', err);
+    });
   };
 
-  const handleDeleteChapter = (chapterId: string) => {
-    const next = chapters.filter(ch => ch.id !== chapterId);
-    commitChapters(next);
-    if (activeChapterId === chapterId) {
-      const fallback = next[0];
-      setActiveChapterId(fallback?.id || null);
-      setActiveScene(fallback?.scenes?.[0] || null);
-    } else if (activeScene) {
-      const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
-      if (!stillExists) {
-        setActiveScene(null);
+  const handleDeleteChapter = (chapterId: number) => {
+    chapterApi.delete(bookId, chapterId).then(() => {
+      const next = chapters.filter(ch => ch.id !== chapterId);
+      commitChapters(next);
+      const remainingScenes = next.flatMap(ch => ch.scenes || []);
+      const newSignatures: Record<number, string> = {};
+      remainingScenes.forEach(s => { newSignatures[s.id] = savedSignaturesRef.current[s.id]; });
+      savedSignaturesRef.current = newSignatures;
+      if (activeChapterId === chapterId) {
+        const fallback = next[0];
+        setActiveChapterId(fallback?.id || null);
+        setActiveScene(fallback?.scenes?.[0] || null);
+      } else if (activeScene) {
+        const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
+        if (!stillExists) {
+          setActiveScene(null);
+        }
       }
-    }
+    }).catch(err => {
+      console.error('Failed to delete chapter', err);
+      alert('删除章节失败，请稍后再试');
+    });
   };
 
   const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
+
+  const persistScene = async (chapterId: number, scene: Scene): Promise<boolean> => {
+    const currentSig = getSignature(scene);
+    if (savedSignaturesRef.current[scene.id] === currentSig) {
+      setIsDirty(false);
+      return false;
+    }
+    setIsSaving(true);
+    try {
+      const updated = await sceneApi.update(bookId, chapterId, scene.id, {
+        index: scene.index,
+        status: scene.status,
+        description: scene.description,
+        cameraMovement: scene.cameraMovement,
+        dialogue: scene.dialogue,
+        referenceImageUrl: scene.referenceImageUrl,
+      });
+      savedSignaturesRef.current[scene.id] = getSignature(updated);
+      setIsDirty(false);
+      setLastSavedAt(new Date());
+      setSaveError(null);
+      // 仅手动保存会触发 toast，自动保存不设置
+      return true;
+    } catch (err) {
+      console.error('Failed to save scene', err);
+      setSaveError('保存失败，请重试');
+      setToast({ message: '保存失败，请重试', tone: 'error' });
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const updateActiveScene = (updater: (scene: Scene) => Scene) => {
     if (!activeScene || !activeChapterId) return;
@@ -389,6 +509,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
     });
     setActiveScene(nextScene);
     commitChapters(next);
+    const sig = getSignature(nextScene);
+    setIsDirty(savedSignaturesRef.current[nextScene.id] !== sig);
+    setSaveError(null);
   };
 
   const handleSaveReference = (dataUrl: string) => {
@@ -429,8 +552,51 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
     };
   }, [isResizingRight]);
 
+  // Toast 自动隐藏
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // 定时保存
+  useEffect(() => {
+    if (!isDirty || !activeScene || !activeChapterId) return;
+    const timer = setTimeout(() => {
+      persistScene(activeChapterId, activeScene);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isDirty, activeScene, activeChapterId]);
+
   return (
-    <div className="flex h-full bg-[#121212]">
+    <div className="flex h-full bg-[#121212] relative">
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
+          <div
+            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
+              toast.tone === 'success'
+                ? 'bg-green-500/20 border-green-500/40 text-green-100'
+                : toast.tone === 'error'
+                ? 'bg-red-500/20 border-red-500/40 text-red-100'
+                : 'bg-white/10 border-white/20 text-white'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
+      {isLoading && chapters.length === 0 && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="px-4 py-2 bg-white/10 rounded-xl text-white text-sm">加载中...</div>
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="px-6 py-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200">
+            加载章节失败：{loadError}
+          </div>
+        </div>
+      )}
       {/* 1. 左侧：章节/场景导航 */}
       <div style={{ width: leftPanelWidth }} className="border-r border-white/5 flex flex-col bg-[#161616]">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
@@ -621,30 +787,33 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
                 <div className="max-w-4xl mx-auto space-y-12">
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
-                    <textarea 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
-                      defaultValue={activeScene.description}
-                      placeholder="详细描述画面内容，包括角色动作、环境变化等..."
+                  <textarea 
+                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
+                    value={activeScene.description}
+                    onChange={(e) => updateActiveScene(scene => ({ ...scene, description: e.target.value }))}
+                    placeholder="详细描述画面内容，包括角色动作、环境变化等..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-10">
+                  <div className="space-y-4">
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头/运镜 (Camera Movement)</label>
+                    <input 
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+                      value={activeScene.cameraMovement}
+                      onChange={(e) => updateActiveScene(scene => ({ ...scene, cameraMovement: e.target.value }))}
+                      placeholder="特写 / 全景 / 俯视... "
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-10">
-                    <div className="space-y-4">
-                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头规格 (Shot)</label>
-                      <input 
-                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 transition-colors"
-                        defaultValue={activeScene.shotType}
-                        placeholder="特写 / 全景 / 俯视..."
-                      />
-                    </div>
-                    <div className="space-y-4">
-                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
-                      <textarea 
-                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
-                        defaultValue={activeScene.dialogue}
-                        placeholder="角色的台词或剧情叙述..."
-                      />
-                    </div>
+                  <div className="space-y-4">
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
+                    <textarea 
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
+                      value={activeScene.dialogue}
+                      onChange={(e) => updateActiveScene(scene => ({ ...scene, dialogue: e.target.value }))}
+                      placeholder="角色的台词或剧情叙述..."
+                    />
+                  </div>
                   </div>
 
                   <div className="space-y-6">
@@ -662,12 +831,32 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodes
               </div>
               
               <div className="h-16 bg-[#1a1a1a] border-t border-white/5 flex justify-between items-center px-10">
-                 <div className="flex items-center gap-3 text-[10px] font-bold text-white/20 uppercase tracking-widest">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]" />
-                    <span>实时保存中：所有创作已即时同步</span>
-                 </div>
-                 <button className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 active:scale-95">
-                    <Save size={16} /> 保存剧本
+                 <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest">
+                 <div className={`w-1.5 h-1.5 rounded-full ${saveError ? 'bg-red-500 shadow-[0_0_8px_#ef4444]' : isSaving ? 'bg-yellow-400 shadow-[0_0_8px_#fbbf24]' : 'bg-green-500 shadow-[0_0_8px_#22c55e]'}`} />
+                 <span className={saveError ? 'text-red-300' : 'text-white/40'}>
+                   {saveError
+                     ? saveError
+                     : isSaving
+                       ? '保存中...'
+                       : `实时保存：${lastSavedAt ? `上次 ${lastSavedAt.toLocaleTimeString()}` : '尚未保存'}`}
+                 </span>
+               </div>
+                 <button
+                   onClick={async () => {
+                     if (!activeScene || !activeChapterId) return;
+                     if (!isDirty) {
+                       setToast({ message: '无改动，无需保存', tone: 'info' });
+                       return;
+                     }
+                     const ok = await persistScene(activeChapterId, activeScene);
+                     if (ok) {
+                       setToast({ message: '保存成功', tone: 'success' });
+                     }
+                   }}
+                   className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 active:scale-95 disabled:opacity-60"
+                   disabled={isSaving || !activeScene || !activeChapterId}
+                 >
+                    <Save size={16} /> 手动保存
                  </button>
               </div>
             </>

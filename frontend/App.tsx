@@ -37,10 +37,8 @@ import {
 } from 'lucide-react';
 
 const STATUS_MAP: Record<Status, string> = {
-  PENDING: '待处理',
+  DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  REVIEWING: '审核中',
-  REVISING: '修改中',
   COMPLETED: '已完成'
 };
 
@@ -54,10 +52,10 @@ const App: React.FC = () => {
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingBookId, setEditingBookId] = useState<string | null>(null);
+  const [editingBookId, setEditingBookId] = useState<number | null>(null);
   const [editingData, setEditingData] = useState<CreateBookRequest | null>(null);
   const [isEditLoading, setIsEditLoading] = useState(false);
 
@@ -163,11 +161,11 @@ const App: React.FC = () => {
     setProjects(prev => prev.map(p => (p.id === selectedProject?.id ? { ...p, episodes } : p)));
   };
 
-  const handleDeleteBook = async (projectId: string) => {
+  const handleDeleteBook = async (projectId: number) => {
     if (!window.confirm('确定删除该作品吗？此操作不可撤销。')) return;
     setDeletingId(projectId);
     try {
-      await bookApi.delete(Number(projectId));
+      await bookApi.delete(projectId);
       await loadProjects();
     } catch (err) {
       console.error('Failed to delete project:', err);
@@ -182,7 +180,7 @@ const App: React.FC = () => {
     setIsEditModalOpen(true);
     setIsEditLoading(true);
     try {
-      const book = await bookApi.getById(Number(project.id));
+      const book = await bookApi.getById(project.id);
       setEditingData({
         title: book.title,
         author: book.author,
@@ -206,7 +204,7 @@ const App: React.FC = () => {
 
   const handleUpdateBook = async (data: CreateBookRequest) => {
     if (!editingBookId) return;
-    await bookApi.update(Number(editingBookId), data);
+    await bookApi.update(editingBookId, data);
     await loadProjects();
   };
 
@@ -445,6 +443,7 @@ const App: React.FC = () => {
         case ProductionStage.SCRIPT:
           return (
             <ScriptEditor
+              bookId={selectedProject.id}
               episodes={selectedProject.episodes}
               onEpisodesChange={handleEpisodesChange}
             />

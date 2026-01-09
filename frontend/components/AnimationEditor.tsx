@@ -22,10 +22,8 @@ interface AnimationEditorProps {
 }
 
 const STATUS_MAP: Record<Status, string> = {
-  PENDING: '待处理',
+  DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  REVIEWING: '审核中',
-  REVISING: '修改中',
   COMPLETED: '已完成'
 };
 
@@ -95,7 +93,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
             </div>
             <div className="grid grid-cols-1 gap-2">
               <div className="flex justify-between items-center text-[10px] font-bold text-white/30 uppercase">
-                <span>镜头: {activeScene.shotType}</span>
+                <span>镜头: {activeScene.cameraMovement}</span>
               </div>
             </div>
           </section>

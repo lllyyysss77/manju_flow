@@ -24,10 +24,8 @@ interface AudioEditorProps {
 }
 
 const STATUS_MAP: Record<Status, string> = {
-  PENDING: '待处理',
+  DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  REVIEWING: '审核中',
-  REVISING: '修改中',
   COMPLETED: '已完成'
 };
 
@@ -113,7 +111,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
               <h3 className="text-[10px] font-bold uppercase tracking-widest">音频备注</h3>
             </div>
             <p className="text-xs text-white/50 leading-relaxed px-1 italic">
-              {activeScene.audioNotes || '主编暂无额外音效备注'}
+              {activeScene.dialogue || '主编暂无额外备注'}
             </p>
           </section>
         </div>
