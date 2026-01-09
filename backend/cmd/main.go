@@ -5,6 +5,7 @@ import (
 
 	"manju-flow/internal/config"
 	"manju-flow/internal/database"
+	"manju-flow/internal/oss"
 	"manju-flow/internal/routes"
 	"manju-flow/utils"
 
@@ -37,6 +38,18 @@ func main() {
 	// 初始化数据库
 	if err := database.Init(&cfg.Database); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	// 初始化 OSS（可选，如果未配置则跳过）
+	if cfg.OSS.Endpoint != "" {
+		if err := oss.Init(&cfg.OSS); err != nil {
+			log.Printf("Warning: Failed to initialize OSS: %v", err)
+			log.Println("File upload/download features will be disabled")
+		} else {
+			log.Println("OSS initialized successfully")
+		}
+	} else {
+		log.Println("OSS not configured, file upload/download features will be disabled")
 	}
 
 	// 创建 Gin 引擎

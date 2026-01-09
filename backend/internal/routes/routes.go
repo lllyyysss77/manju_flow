@@ -37,12 +37,20 @@ func Setup(r *gin.Engine) {
 			auth.POST("/login", authHandler.Login)       // 登录
 		}
 
+		// 文件路由（获取文件支持可选认证）
+		fileHandler := handlers.NewFileHandler()
+		api.GET("/files/*key", middleware.AuthOptional(), fileHandler.Get) // 获取文件（支持公开/私有）
+
 		// 需要认证的路由
 		authorized := api.Group("")
 		authorized.Use(middleware.AuthRequired())
 		{
 			// 获取当前用户信息
 			authorized.GET("/auth/me", authHandler.GetCurrentUser)
+
+			// 文件路由（需要认证）
+			authorized.POST("/files", fileHandler.Upload)       // 上传文件
+			authorized.DELETE("/files/*key", fileHandler.Delete) // 删除文件
 
 			// 书库路由
 			bookHandler := handlers.NewBookHandler()
