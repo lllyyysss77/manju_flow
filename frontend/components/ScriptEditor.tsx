@@ -13,11 +13,14 @@ import {
   Maximize2, 
   Smartphone,
   Check,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ChevronDown,
+  Trash2
 } from 'lucide-react';
 
 interface ScriptEditorProps {
-  episode: Episode;
+  episodes: Episode[];
+  onEpisodesChange: (episodes: Episode[]) => void;
 }
 
 const STATUS_MAP: Record<Status, string> = {
@@ -266,166 +269,486 @@ const ReferenceSection: React.FC<{
   );
 };
 
-export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episode }) => {
-  const [activeScene, setActiveScene] = useState<Scene | null>(episode.scenes[0] || null);
+export const ScriptEditor: React.FC<ScriptEditorProps> = ({ episodes, onEpisodesChange }) => {
+  const [chapters, setChapters] = useState<Episode[]>(episodes || []);
+  const [activeChapterId, setActiveChapterId] = useState<string | null>(episodes[0]?.id || null);
+  const [activeScene, setActiveScene] = useState<Scene | null>(episodes[0]?.scenes[0] || null);
+  const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [leftPanelWidth, setLeftPanelWidth] = useState(256);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+
+  const MIN_LEFT = 200;
+  const MAX_LEFT = 360;
+  const MIN_RIGHT = 260;
+  const MAX_RIGHT = 520;
+
+  useEffect(() => {
+    setChapters(episodes || []);
+    setActiveChapterId(episodes[0]?.id || null);
+    setActiveScene(episodes[0]?.scenes[0] || null);
+  }, [episodes]);
+
+  const commitChapters = (next: Episode[]) => {
+    setChapters(next);
+    onEpisodesChange(next);
+  };
+
+  const createChapter = () => ({
+    id: `chapter-${Date.now()}`,
+    title: `新章节 ${chapters.length + 1}`,
+    outline: '',
+    status: 'PENDING' as Status,
+    scenes: [],
+  });
+
+  const handleAddChapterAt = (insertIndex: number) => {
+    const newChapter = createChapter();
+    const next = [...chapters];
+    next.splice(insertIndex, 0, newChapter);
+    commitChapters(next);
+    setActiveChapterId(newChapter.id);
+    setActiveScene(null);
+  };
+
+  const createScene = (chapterId: string): Scene => ({
+    id: `${chapterId}-scene-${Date.now()}`,
+    index: 0,
+    description: '',
+    shotType: '',
+    dialogue: '',
+    audioNotes: '',
+    status: 'PENDING',
+    comments: [],
+  });
+
+  const reindexScenes = (scenes: Scene[]) => scenes.map((scene, idx) => ({ ...scene, index: idx + 1 }));
+
+  const handleAddSceneAt = (chapterId: string, insertIndex: number) => {
+    setActiveChapterId(chapterId);
+    const next = chapters.map(ch => {
+      if (ch.id !== chapterId) return ch;
+      const newScene = createScene(chapterId);
+      const scenes = [...(ch.scenes || [])];
+      scenes.splice(insertIndex, 0, newScene);
+      const reindexed = reindexScenes(scenes);
+      const inserted = reindexed.find(s => s.id === newScene.id) || newScene;
+      setActiveScene(inserted);
+      return { ...ch, scenes: reindexed };
+    });
+    commitChapters(next);
+  };
+
+  const handleSelectScene = (chapterId: string, scene: Scene) => {
+    setActiveChapterId(chapterId);
+    setActiveScene(scene);
+  };
+
+  const handleToggleChapter = (chapterId: string) => {
+    if (activeChapterId === chapterId) {
+      setActiveChapterId(null);
+      setActiveScene(null);
+      return;
+    }
+    const targetChapter = chapters.find(ch => ch.id === chapterId);
+    setActiveChapterId(chapterId);
+    setActiveScene(targetChapter?.scenes?.[0] || null);
+  };
+
+  const handleUpdateChapterTitle = (chapterId: string, title: string) => {
+    const next = chapters.map(ch => (ch.id === chapterId ? { ...ch, title } : ch));
+    commitChapters(next);
+  };
+
+  const handleDeleteChapter = (chapterId: string) => {
+    const next = chapters.filter(ch => ch.id !== chapterId);
+    commitChapters(next);
+    if (activeChapterId === chapterId) {
+      const fallback = next[0];
+      setActiveChapterId(fallback?.id || null);
+      setActiveScene(fallback?.scenes?.[0] || null);
+    } else if (activeScene) {
+      const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
+      if (!stillExists) {
+        setActiveScene(null);
+      }
+    }
+  };
+
+  const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
+
+  const updateActiveScene = (updater: (scene: Scene) => Scene) => {
+    if (!activeScene || !activeChapterId) return;
+    const nextScene = updater(activeScene);
+    const next = chapters.map(ch => {
+      if (ch.id !== activeChapterId) return ch;
+      const scenes = (ch.scenes || []).map(s => (s.id === activeScene.id ? nextScene : s));
+      return { ...ch, scenes };
+    });
+    setActiveScene(nextScene);
+    commitChapters(next);
+  };
 
   const handleSaveReference = (dataUrl: string) => {
-    if (activeScene) {
-      activeScene.referenceImageUrl = dataUrl;
-    }
+    updateActiveScene(scene => ({ ...scene, referenceImageUrl: dataUrl }));
   };
 
   const handleRemoveReference = () => {
-    if (activeScene) {
-      activeScene.referenceImageUrl = undefined;
-      setActiveScene({...activeScene});
-    }
+    updateActiveScene(scene => ({ ...scene, referenceImageUrl: undefined }));
   };
 
-  const renderAddSceneDivider = (index: number) => (
-    <div className="relative group/divider h-4 flex items-center justify-center my-1">
-      <div className="absolute inset-x-0 h-[1px] bg-blue-500/0 group-hover/divider:bg-blue-500/40 transition-all" />
-      <button className="relative z-10 opacity-0 group-hover/divider:opacity-100 bg-blue-600 text-white px-3 py-1 rounded-full text-[9px] font-bold flex items-center gap-1 shadow-lg transition-all scale-90 group-hover/divider:scale-100 hover:bg-blue-500">
-        <Plus size={10} /> 在此处添加场景
-      </button>
-    </div>
-  );
+  useEffect(() => {
+    if (!isResizingLeft) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_LEFT, Math.max(MIN_LEFT, e.clientX));
+      setLeftPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingLeft(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingLeft]);
+
+  useEffect(() => {
+    if (!isResizingRight) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_RIGHT, Math.max(MIN_RIGHT, window.innerWidth - e.clientX));
+      setRightPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingRight(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingRight]);
 
   return (
     <div className="flex h-full bg-[#121212]">
-      {/* 1. 左侧：场景导航 */}
-      <div className="w-64 border-r border-white/5 flex flex-col bg-[#161616]">
-        <div className="p-4 border-b border-white/5">
-          <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">场景索引</span>
+      {/* 1. 左侧：章节/场景导航 */}
+      <div style={{ width: leftPanelWidth }} className="border-r border-white/5 flex flex-col bg-[#161616]">
+        <div className="p-4 border-b border-white/5 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">章节 / 场景</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveChapterId(null);
+              setActiveScene(null);
+            }}
+            className="px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          >
+            折叠全部
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-4">
-          {renderAddSceneDivider(0)}
-          {episode.scenes.map((scene, idx) => (
-            <React.Fragment key={scene.id}>
+          {chapters.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-white/30">
+              <AlertCircle size={32} />
+              <p className="text-xs font-semibold">暂无章节，点击下方按钮插入</p>
               <button
-                onClick={() => setActiveScene(scene)}
-                className={`w-full p-4 text-left rounded-xl transition-all group mb-1 ${
-                  activeScene?.id === scene.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/20' : 'hover:bg-white/5'
-                }`}
+                onClick={() => handleAddChapterAt(0)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
               >
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${activeScene?.id === scene.id ? 'text-white' : 'text-white/20'}`}>
-                    场景 {scene.index}
-                  </span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                    activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
-                  }`}>
-                    {STATUS_MAP[scene.status]}
-                  </span>
-                </div>
-                <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
-                  {scene.description || '点击添加描述...'}
-                </p>
+                <Plus size={14} /> 新建章节
               </button>
-              {renderAddSceneDivider(idx + 1)}
-            </React.Fragment>
-          ))}
+            </div>
+          )}
+          {chapters.length > 0 && (
+            <>
+              <div className="relative flex justify-center my-1 group">
+                <div className="w-full max-w-[200px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
+                <button
+                  onClick={() => handleAddChapterAt(0)}
+                  className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                >
+                  <Plus size={12} className="inline-block mr-1" /> 在此插入章节
+                </button>
+              </div>
+              {chapters.map((chapter, idx) => (
+                <React.Fragment key={chapter.id}>
+                  <div className="mb-2 border border-white/5 rounded-2xl overflow-hidden bg-black/30">
+                    <div
+                      className={`w-full px-3 py-3 flex items-center justify-between cursor-pointer transition-colors ${
+                        chapter.id === activeChapterId ? 'bg-white/5 text-white' : 'text-white/60 hover:bg-white/5'
+                      }`}
+                      onClick={() => handleToggleChapter(chapter.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-1 rounded-md bg-white/5 text-white/60 transition-transform ${chapter.id === activeChapterId ? 'rotate-180 text-white' : ''}`}>
+                          <ChevronDown size={14} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold uppercase tracking-widest">章节</span>
+                          {editingChapterId === chapter.id ? (
+                            <input
+                              value={editingTitle}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onBlur={() => {
+                                handleUpdateChapterTitle(chapter.id, editingTitle.trim() || '未命名章节');
+                                setEditingChapterId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.target as HTMLInputElement).blur();
+                                } else if (e.key === 'Escape') {
+                                  setEditingChapterId(null);
+                                  setEditingTitle(chapter.title);
+                                }
+                              }}
+                              className="bg-transparent border-b border-white/20 focus:border-blue-500 focus:outline-none text-sm font-semibold text-white"
+                            />
+                          ) : (
+                            <button
+                              className="text-left text-sm font-semibold hover:text-blue-300 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingChapterId(chapter.id);
+                                setEditingTitle(chapter.title || '未命名章节');
+                              }}
+                            >
+                              {chapter.title || '未命名章节'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="p-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteChapter(chapter.id);
+                          }}
+                          title="删除章节"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {chapter.id === activeChapterId && (
+                      <div className="px-2 pb-3 pt-1 space-y-2">
+                        <div className="relative flex justify-center my-1 group">
+                          <div className="w-full max-w-[180px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
+                          <button
+                            onClick={() => handleAddSceneAt(chapter.id, 0)}
+                            className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                          >
+                            <Plus size={12} className="inline-block mr-1" /> 在此插入场景
+                          </button>
+                        </div>
+                        {(chapter.scenes || []).length === 0 ? (
+                          <div className="w-full border border-dashed border-white/10 rounded-xl py-3 text-white/40 text-sm flex items-center justify-center gap-2">
+                            暂无场景，请在上方或下方插入
+                          </div>
+                        ) : (
+                          (chapter.scenes || []).map((scene, sceneIdx) => (
+                            <React.Fragment key={scene.id}>
+                              <button
+                                onClick={() => handleSelectScene(chapter.id, scene)}
+                                className={`w-full p-4 text-left rounded-xl transition-all ${
+                                  activeScene?.id === scene.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/20' : 'hover:bg-white/5'
+                                }`}
+                              >
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider ${activeScene?.id === scene.id ? 'text-white' : 'text-white/20'}`}>
+                                    场景 {scene.index}
+                                  </span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                    activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
+                                  }`}>
+                                    {STATUS_MAP[scene.status]}
+                                  </span>
+                                </div>
+                                <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
+                                  {scene.description || '点击添加描述...'}
+                                </p>
+                              </button>
+                              <div className="relative flex justify-center my-1 group">
+                                <div className="w-full max-w-[180px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
+                                <button
+                                  onClick={() => handleAddSceneAt(chapter.id, sceneIdx + 1)}
+                                  className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                                >
+                                  <Plus size={12} className="inline-block mr-1" /> 在此插入场景
+                                </button>
+                              </div>
+                            </React.Fragment>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative flex justify-center my-1 group">
+                    <div className="w-full max-w-[200px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
+                    <button
+                      onClick={() => handleAddChapterAt(idx + 1)}
+                      className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                    >
+                      <Plus size={12} className="inline-block mr-1" /> 在此插入章节
+                    </button>
+                  </div>
+                </React.Fragment>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
-      {/* 2. 中间：创作核心区 */}
-      <div className="flex-1 flex flex-col h-full bg-[#0f0f0f]">
-        {activeScene ? (
-          <>
-            <div className="flex-1 overflow-y-auto p-12">
-              <div className="max-w-4xl mx-auto space-y-12">
-                <div className="space-y-4">
-                  <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
-                  <textarea 
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
-                    defaultValue={activeScene.description}
-                    placeholder="详细描述画面内容，包括角色动作、环境变化等..."
-                  />
-                </div>
+      {/* 左侧与中间的分隔线 */}
+      <div
+        className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingLeft ? 'bg-white/20' : ''}`}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setIsResizingLeft(true);
+        }}
+      />
 
-                <div className="grid grid-cols-2 gap-10">
+      {/* 2 & 3. 中间区域 + 右侧反馈，可拖拽分隔 */}
+      <div className="flex flex-1 h-full">
+        {/* 中间：创作核心区 */}
+        <div className="flex-1 flex flex-col h-full bg-[#0f0f0f]">
+          {activeScene ? (
+            <>
+              <div className="flex-1 overflow-y-auto p-12">
+                <div className="max-w-4xl mx-auto space-y-12">
                   <div className="space-y-4">
-                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头规格 (Shot)</label>
-                    <input 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 transition-colors"
-                      defaultValue={activeScene.shotType}
-                      placeholder="特写 / 全景 / 俯视..."
-                    />
-                  </div>
-                  <div className="space-y-4">
-                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
                     <textarea 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
-                      defaultValue={activeScene.dialogue}
-                      placeholder="角色的台词或剧情叙述..."
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
+                      defaultValue={activeScene.description}
+                      placeholder="详细描述画面内容，包括角色动作、环境变化等..."
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-10">
+                    <div className="space-y-4">
+                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头规格 (Shot)</label>
+                      <input 
+                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+                        defaultValue={activeScene.shotType}
+                        placeholder="特写 / 全景 / 俯视..."
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
+                      <textarea 
+                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
+                        defaultValue={activeScene.dialogue}
+                        placeholder="角色的台词或剧情叙述..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                      <ImageIcon size={14} className="text-blue-500" />
+                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
+                    </div>
+                    <ReferenceSection 
+                      initialImage={activeScene.referenceImageUrl}
+                      onSave={handleSaveReference}
+                      onRemove={handleRemoveReference}
                     />
                   </div>
                 </div>
-
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <ImageIcon size={14} className="text-blue-500" />
-                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
+              </div>
+              
+              <div className="h-16 bg-[#1a1a1a] border-t border-white/5 flex justify-between items-center px-10">
+                 <div className="flex items-center gap-3 text-[10px] font-bold text-white/20 uppercase tracking-widest">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]" />
+                    <span>实时保存中：所有创作已即时同步</span>
+                 </div>
+                 <button className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 active:scale-95">
+                    <Save size={16} /> 保存剧本
+                 </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              {chapters.length === 0 ? (
+                <>
+                  <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center text-white/40">
+                    <Plus size={28} />
                   </div>
-                  <ReferenceSection 
-                    initialImage={activeScene.referenceImageUrl}
-                    onSave={handleSaveReference}
-                    onRemove={handleRemoveReference}
-                  />
-                </div>
-              </div>
-            </div>
-            
-            <div className="h-16 bg-[#1a1a1a] border-t border-white/5 flex justify-between items-center px-10">
-               <div className="flex items-center gap-3 text-[10px] font-bold text-white/20 uppercase tracking-widest">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]" />
-                  <span>实时保存中：所有创作已即时同步</span>
-               </div>
-               <button className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 active:scale-95">
-                  <Save size={16} /> 保存剧本
-               </button>
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center opacity-10">
-            <AlertCircle size={64} strokeWidth={1} />
-            <p className="mt-4 text-sm font-bold uppercase tracking-widest italic">请从左侧选择一个场景开始编辑</p>
-          </div>
-        )}
-      </div>
-
-      {/* 3. 右侧：反馈侧边栏 */}
-      <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
-        <div className="p-4 border-b border-white/5 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">审核反馈</span>
-          <MessageSquare size={16} className="text-white/20" />
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {activeScene?.comments.length ? activeScene.comments.map(c => (
-            <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all">
-              <div className="flex justify-between mb-2">
-                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">{c.author}</span>
-                <span className="text-[9px] text-white/20">{c.timestamp}</span>
-              </div>
-              <p className="text-sm text-white/70 leading-relaxed font-medium">{c.text}</p>
-            </div>
-          )) : (
-            <div className="h-full flex flex-col items-center justify-center gap-4 opacity-10">
-              <MessageSquare size={48} strokeWidth={1} />
-              <p className="text-[10px] font-bold uppercase tracking-widest">暂无修改意见</p>
+                  <div className="text-center space-y-2">
+                    <p className="text-lg font-semibold text-white">还没有任何章节</p>
+                    <p className="text-sm text-white/40">先创建章节，再为章节添加场景</p>
+                  </div>
+                  <button
+                    onClick={() => handleAddChapterAt(0)}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+                  >
+                    <Plus size={16} /> 新建章节
+                  </button>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={48} className="text-white/30" />
+                  <p className="text-sm font-bold uppercase tracking-widest text-white/60">请选择或创建一个场景开始创作</p>
+                  {activeChapter && (
+                    <button
+                      onClick={() => handleAddSceneAt(activeChapter.id, activeChapter.scenes?.length || 0)}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+                    >
+                      <Plus size={16} /> 在当前章节添加场景
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
 
-        <div className="p-4 bg-[#161616] border-t border-white/5">
-          <textarea 
-            className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/10 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3 transition-all"
-            placeholder="输入您的修改意见或审核回复..."
-          />
-          <button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl border border-white/10 transition-all active:scale-95">
-            发布评论
-          </button>
+        {/* 可拖拽分隔线 */}
+        <div
+          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsResizingRight(true);
+          }}
+        />
+
+        {/* 右侧：反馈侧边栏 */}
+        <div style={{ width: rightPanelWidth }} className="border-l border-white/5 bg-[#121212] flex flex-col">
+          <div className="p-4 border-b border-white/5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">审核反馈</span>
+            <MessageSquare size={16} className="text-white/20" />
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {activeScene?.comments.length ? activeScene.comments.map(c => (
+              <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all">
+                <div className="flex justify-between mb-2">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">{c.author}</span>
+                  <span className="text-[9px] text-white/20">{c.timestamp}</span>
+                </div>
+                <p className="text-sm text-white/70 leading-relaxed font-medium">{c.text}</p>
+              </div>
+            )) : (
+              <div className="h-full flex flex-col items-center justify-center gap-4 opacity-10">
+                <MessageSquare size={48} strokeWidth={1} />
+                <p className="text-[10px] font-bold uppercase tracking-widest">暂无修改意见</p>
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 bg-[#161616] border-t border-white/5">
+            <textarea 
+              className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/10 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3 transition-all"
+              placeholder="输入您的修改意见或审核回复..."
+            />
+            <button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl border border-white/10 transition-all active:scale-95">
+              发布评论
+            </button>
+          </div>
         </div>
       </div>
     </div>

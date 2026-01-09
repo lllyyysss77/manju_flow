@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ProductionStage, Status, Project } from './types';
+import { ProductionStage, Status, Project, Episode } from './types';
 import { STAGE_CONFIG } from './constants';
 import { StageWrapper } from './components/StageWrapper';
 import { ScriptEditor } from './components/ScriptEditor';
@@ -30,7 +30,9 @@ import {
   Play,
   Loader2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 const STATUS_MAP: Record<Status, string> = {
@@ -49,6 +51,12 @@ const App: React.FC = () => {
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingBookId, setEditingBookId] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState<CreateBookRequest | null>(null);
+  const [isEditLoading, setIsEditLoading] = useState(false);
 
   // 项目列表状态
   const [projects, setProjects] = useState<Project[]>([]);
@@ -93,6 +101,13 @@ const App: React.FC = () => {
     loadProjects();
   }, [loadProjects]);
 
+  // 监听点击关闭下拉菜单
+  useEffect(() => {
+    const handleClick = () => setActiveMenuId(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
   // 创建新作品
   const handleCreateBook = async (data: CreateBookRequest) => {
     await bookApi.create(data);
@@ -102,9 +117,68 @@ const App: React.FC = () => {
 
   // 进入项目
   const enterProject = (project: Project) => {
-    setSelectedProject(project);
+    setSelectedProject({ ...project, episodes: project.episodes || [] });
     setViewMode('PRODUCTION');
     setCurrentStage(ProductionStage.SCRIPT);
+  };
+
+  const handleEpisodesChange = (episodes: Episode[]) => {
+    setSelectedProject(prev => (prev ? { ...prev, episodes } : prev));
+    setProjects(prev => prev.map(p => (p.id === selectedProject?.id ? { ...p, episodes } : p)));
+  };
+
+  const handleDeleteBook = async (projectId: string) => {
+    if (!window.confirm('确定删除该作品吗？此操作不可撤销。')) return;
+    setDeletingId(projectId);
+    try {
+      await bookApi.delete(Number(projectId));
+      await loadProjects();
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      alert('删除失败，请稍后再试');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleEditBook = async (project: Project) => {
+    setEditingBookId(project.id);
+    setIsEditModalOpen(true);
+    setIsEditLoading(true);
+    try {
+      const book = await bookApi.getById(Number(project.id));
+      setEditingData({
+        title: book.title,
+        author: book.author,
+        cover: book.cover || '',
+        type: book.type,
+        description: book.description || '',
+      });
+    } catch (err) {
+      console.error('Failed to load book detail:', err);
+      setEditingData({
+        title: project.title,
+        author: project.author,
+        cover: project.cover,
+        type: project.originalWorkType,
+        description: '',
+      });
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleUpdateBook = async (data: CreateBookRequest) => {
+    if (!editingBookId) return;
+    await bookApi.update(Number(editingBookId), data);
+    await loadProjects();
+  };
+
+  const closeEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingBookId(null);
+    setEditingData(null);
+    setIsEditLoading(false);
   };
 
   const filteredProjects = projects;
@@ -219,8 +293,49 @@ const App: React.FC = () => {
                         <div className="flex-1 h-12 bg-white text-black rounded-xl flex items-center justify-center font-bold text-sm tracking-widest gap-2">
                           <Play size={16} fill="currentColor" /> 进入制作
                         </div>
-                        <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 hover:bg-white/20">
-                          <MoreVertical size={20} />
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuId(activeMenuId === p.id ? null : p.id);
+                            }}
+                            className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white border border-white/20 hover:bg-white/20"
+                          >
+                            <MoreVertical size={20} />
+                          </button>
+                          {activeMenuId === p.id && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 bottom-14 w-40 bg-[#101010] border border-white/10 rounded-xl shadow-2xl py-1 z-30"
+                            >
+                              <button
+                                className="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/5 flex items-center gap-2 transition-colors"
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  handleEditBook(p);
+                                }}
+                              >
+                                <Pencil size={16} />
+                                <span>编辑</span>
+                              </button>
+                              <button
+                                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                disabled={deletingId === p.id}
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  handleDeleteBook(p.id);
+                                }}
+                              >
+                                {deletingId === p.id ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={16} />
+                                )}
+                                <span>{deletingId === p.id ? '删除中...' : '删除'}</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -255,6 +370,14 @@ const App: React.FC = () => {
         onClose={() => setIsImportModalOpen(false)}
         onSubmit={handleCreateBook}
       />
+      <ImportBookModal
+        isOpen={isEditModalOpen}
+        onClose={closeEditModal}
+        onSubmit={handleUpdateBook}
+        initialData={editingData || undefined}
+        mode="edit"
+        isLoading={isEditLoading}
+      />
     </div>
   );
 
@@ -265,7 +388,12 @@ const App: React.FC = () => {
       const episode = selectedProject.episodes[0];
       switch (currentStage) {
         case ProductionStage.SCRIPT:
-          return episode ? <ScriptEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无剧本</div>;
+          return (
+            <ScriptEditor
+              episodes={selectedProject.episodes}
+              onEpisodesChange={handleEpisodesChange}
+            />
+          );
         case ProductionStage.ART:
           return episode ? <StoryboardEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无剧本</div>;
         case ProductionStage.ANIMATE:
