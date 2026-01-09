@@ -8,6 +8,15 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
+	OSS      OSSConfig
+}
+
+// OSSConfig 阿里云OSS配置
+type OSSConfig struct {
+	Endpoint        string
+	AccessKeyID     string
+	AccessKeySecret string
+	BucketName      string
 }
 
 // ServerConfig 服务器配置
@@ -42,6 +51,12 @@ func Load() *Config {
 			Password: utils.GetEnv("DB_PASSWORD", ""),
 			DBName:   utils.GetEnv("DB_NAME", "manju_flow"),
 			SSLMode:  utils.GetEnv("DB_SSL_MODE", "disable"),
+		},
+		OSS: OSSConfig{
+			Endpoint:        utils.GetEnv("OSS_ENDPOINT", ""),
+			AccessKeyID:     utils.GetEnv("OSS_ACCESS_KEY_ID", ""),
+			AccessKeySecret: utils.GetEnv("OSS_ACCESS_KEY_SECRET", ""),
+			BucketName:      utils.GetEnv("OSS_BUCKET_NAME", ""),
 		},
 	}
 }

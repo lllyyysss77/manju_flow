@@ -33,11 +33,15 @@ manju_flow/
 │   │   ├── handlers/            # API 处理器
 │   │   │   ├── book.go          # 书库 CRUD
 │   │   │   ├── chapter.go       # 章节 CRUD
-│   │   │   └── scene.go         # 场景 CRUD
+│   │   │   ├── scene.go         # 场景 CRUD
+│   │   │   └── file.go          # 文件上传/获取
 │   │   ├── models/              # 数据模型
 │   │   │   ├── book.go
 │   │   │   ├── chapter.go
-│   │   │   └── scene.go
+│   │   │   ├── scene.go
+│   │   │   └── file.go
+│   │   ├── oss/                 # 阿里云 OSS 工具
+│   │   │   └── client.go
 │   │   └── routes/routes.go     # 路由配置
 │   ├── go.mod
 │   └── Makefile
@@ -86,6 +90,17 @@ manju_flow/
 | CameraMovement | string | 运镜 |
 | Dialogue | string | 台词/旁白 |
 
+### File (文件)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| Key | string | OSS 对象键 |
+| OriginalName | string | 原始文件名 |
+| Size | int64 | 文件大小（字节） |
+| MimeType | string | MIME 类型 |
+| UploaderID | uint | 上传者 ID |
+| Visibility | FileVisibility | public / private |
+
 ## API 路由
 
 ```
@@ -111,6 +126,11 @@ POST   /api/books/:bookId/chapters/:chapterId/scenes      # 创建
 GET    /api/books/:bookId/chapters/:chapterId/scenes/:id  # 详情
 PUT    /api/books/:bookId/chapters/:chapterId/scenes/:id  # 更新
 DELETE /api/books/:bookId/chapters/:chapterId/scenes/:id  # 删除
+
+# 文件 (需要配置 OSS)
+POST   /api/files                  # 上传文件 (multipart/form-data, field: file, visibility: public/private)
+GET    /api/files/*key             # 获取文件 (?redirect=true 跳转到签名URL，否则返回JSON)
+DELETE /api/files/*key             # 删除文件 (仅上传者可删)
 ```
 
 ## 开发命令
@@ -153,6 +173,12 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=password
 GIN_MODE=debug            # 或 release
+
+# 阿里云 OSS (可选，用于文件上传)
+OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_ACCESS_KEY_ID=your_access_key_id
+OSS_ACCESS_KEY_SECRET=your_access_key_secret
+OSS_BUCKET_NAME=your_bucket_name
 ```
 
 ## 注意事项
@@ -161,3 +187,5 @@ GIN_MODE=debug            # 或 release
 2. 软删除: 所有 DELETE 操作是软删除，数据仍在数据库
 3. 级联删除: 删除章节会同时删除其下所有场景
 4. CORS: 后端允许所有来源 (`*`)
+5. 文件上传: 需要配置阿里云 OSS，否则文件相关 API 返回 503
+6. 文件权限: public 文件任何人可访问，private 文件仅上传者可访问

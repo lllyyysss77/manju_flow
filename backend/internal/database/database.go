@@ -48,6 +48,7 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.Book{},
 		&models.Chapter{},
 		&models.Scene{},
+		&models.File{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
