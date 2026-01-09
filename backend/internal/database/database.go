@@ -43,7 +43,11 @@ func Init(cfg *config.DatabaseConfig) error {
 	}
 
 	// 自动迁移表结构
-	if err := db.AutoMigrate(&models.Book{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Book{},
+		&models.Chapter{},
+		&models.Scene{},
+	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 

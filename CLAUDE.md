@@ -1,0 +1,163 @@
+# Manju Flow - 漫剧制作流程管理系统
+
+## 项目概述
+
+将小说/漫画改编为漫剧的全流程管理工具，支持剧本创作、分镜绘制、配音制作等环节。
+
+## 技术栈
+
+### 后端
+- **语言**: Go 1.24
+- **框架**: Gin v1.9.1
+- **ORM**: GORM v1.25.5
+- **数据库**: SQLite (开发) / MySQL 8.0 (生产)
+- **入口**: `backend/cmd/main.go`
+- **端口**: 8080
+
+### 前端
+- **框架**: Next.js 15 (App Router)
+- **语言**: TypeScript
+- **UI**: Tailwind CSS + shadcn/ui
+- **入口**: `frontend/src/app`
+- **端口**: 3000
+
+## 目录结构
+
+```
+manju_flow/
+├── backend/
+│   ├── cmd/main.go              # 程序入口
+│   ├── internal/
+│   │   ├── config/config.go     # 配置管理
+│   │   ├── database/database.go # 数据库初始化
+│   │   ├── handlers/            # API 处理器
+│   │   │   ├── book.go          # 书库 CRUD
+│   │   │   ├── chapter.go       # 章节 CRUD
+│   │   │   └── scene.go         # 场景 CRUD
+│   │   ├── models/              # 数据模型
+│   │   │   ├── book.go
+│   │   │   ├── chapter.go
+│   │   │   └── scene.go
+│   │   └── routes/routes.go     # 路由配置
+│   ├── go.mod
+│   └── Makefile
+│
+└── frontend/
+    ├── src/
+    │   ├── app/                 # Next.js App Router 页面
+    │   ├── components/          # React 组件
+    │   ├── lib/                 # 工具函数
+    │   └── types/               # TypeScript 类型
+    ├── package.json
+    └── tailwind.config.ts
+```
+
+## 数据模型
+
+### Book (书库)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| Title | string | 标题 |
+| Author | string | 作者 |
+| Cover | string | 封面 URL |
+| Type | BookType | NOVEL / COMIC |
+| Description | string | 描述 |
+| AdaptationStatus | AdaptationStatus | NONE / IN_PROGRESS / COMPLETED |
+| ChapterCount | int | 章节数 |
+
+### Chapter (章节)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| BookID | uint | 关联书籍 |
+| Title | string | 标题 |
+| Index | float64 | 排序索引 (浮点数支持中间插入) |
+| Status | ChapterStatus | DRAFT / IN_PROGRESS / COMPLETED |
+
+### Scene (场景)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| ChapterID | uint | 关联章节 |
+| Index | float64 | 排序索引 |
+| Status | SceneStatus | DRAFT / IN_PROGRESS / COMPLETED |
+| Description | string | 场景描述 (必填，用于预览) |
+| CameraMovement | string | 运镜 |
+| Dialogue | string | 台词/旁白 |
+
+## API 路由
+
+```
+GET    /health                                    # 健康检查
+
+# 书库
+GET    /api/books                                 # 列表 (?page, ?size, ?type, ?keyword)
+POST   /api/books                                 # 创建
+GET    /api/books/:id                             # 详情
+PUT    /api/books/:id                             # 更新
+DELETE /api/books/:id                             # 删除
+
+# 章节
+GET    /api/books/:bookId/chapters                # 列表 (?includeScenes=true)
+POST   /api/books/:bookId/chapters                # 创建
+GET    /api/books/:bookId/chapters/:id            # 详情
+PUT    /api/books/:bookId/chapters/:id            # 更新
+DELETE /api/books/:bookId/chapters/:id            # 删除 (级联删除场景)
+
+# 场景
+GET    /api/books/:bookId/chapters/:chapterId/scenes      # 列表
+POST   /api/books/:bookId/chapters/:chapterId/scenes      # 创建
+GET    /api/books/:bookId/chapters/:chapterId/scenes/:id  # 详情
+PUT    /api/books/:bookId/chapters/:chapterId/scenes/:id  # 更新
+DELETE /api/books/:bookId/chapters/:chapterId/scenes/:id  # 删除
+```
+
+## 开发命令
+
+```bash
+# 后端
+cd backend
+make run          # 开发运行
+make build        # 编译
+make test         # 测试
+
+# 前端
+cd frontend
+pnpm dev          # 开发运行
+pnpm build        # 构建
+pnpm lint         # 检查
+```
+
+## 代码规范
+
+### 后端
+- Handler 结构: `NewXxxHandler()` 构造函数 + CRUD 方法
+- 所有模型使用 GORM 软删除 (`gorm.DeletedAt`)
+- `Index` 字段用 `float64` 支持中间插入
+- SQL 中 `index` 是保留字，需用反引号: `` `index` ``
+
+### 前端
+- 页面放 `app/` 目录，使用 App Router
+- 组件放 `components/`，UI 组件用 shadcn/ui
+- API 调用统一在 `lib/api.ts`
+
+## 环境变量
+
+```env
+# backend/.env
+DB_DRIVER=sqlite          # 或 mysql
+DB_NAME=manju_flow
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=password
+GIN_MODE=debug            # 或 release
+```
+
+## 注意事项
+
+1. 浮点数 Index: 在两元素间插入时计算 `(prev + next) / 2`
+2. 软删除: 所有 DELETE 操作是软删除，数据仍在数据库
+3. 级联删除: 删除章节会同时删除其下所有场景
+4. CORS: 后端允许所有来源 (`*`)
