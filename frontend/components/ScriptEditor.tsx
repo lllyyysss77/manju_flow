@@ -321,6 +321,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
   const [resolvedReferenceUrl, setResolvedReferenceUrl] = useState<string | undefined>(undefined);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: 'chapter' | 'scene';
+    chapterId: number;
+    sceneId?: number;
+    label: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const onEpisodesChangeRef = useRef(onEpisodesChange);
   const savedSignaturesRef = useRef<Record<number, string>>({});
   const referenceUrlCache = useRef<Record<string, string>>({});
@@ -496,6 +503,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     });
   };
 
+  const handleDeleteScene = (chapterId: number, sceneId: number, label: string) => {
+    setConfirmDelete({
+      type: 'scene',
+      chapterId,
+      sceneId,
+      label,
+    });
+  };
+
   const handleSelectScene = async (chapterId: number, scene: Scene) => {
     if (activeScene && activeChapterId && isDirty) {
       await persistScene(activeChapterId, activeScene);
@@ -529,26 +545,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   };
 
   const handleDeleteChapter = (chapterId: number) => {
-    chapterApi.delete(bookId, chapterId).then(() => {
-      const next = chapters.filter(ch => ch.id !== chapterId);
-      commitChapters(next);
-      const remainingScenes = next.flatMap(ch => ch.scenes || []);
-      const newSignatures: Record<number, string> = {};
-      remainingScenes.forEach(s => { newSignatures[s.id] = savedSignaturesRef.current[s.id]; });
-      savedSignaturesRef.current = newSignatures;
-      if (activeChapterId === chapterId) {
-        const fallback = next[0];
-        setActiveChapterId(fallback?.id || null);
-        setActiveScene(fallback?.scenes?.[0] || null);
-      } else if (activeScene) {
-        const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
-        if (!stillExists) {
-          setActiveScene(null);
-        }
-      }
-    }).catch(err => {
-      console.error('Failed to delete chapter', err);
-      alert('删除章节失败，请稍后再试');
+    const target = chapters.find(ch => ch.id === chapterId);
+    setConfirmDelete({
+      type: 'chapter',
+      chapterId,
+      label: target?.title || '未命名章节',
     });
   };
 
@@ -625,6 +626,55 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     setResolvedReferenceUrl(undefined);
   };
 
+  const executeDelete = async () => {
+    if (!confirmDelete) return;
+    setIsDeleting(true);
+    try {
+      if (confirmDelete.type === 'chapter') {
+        const chapterId = confirmDelete.chapterId;
+        await chapterApi.delete(bookId, chapterId);
+        const next = chapters.filter(ch => ch.id !== chapterId);
+        commitChapters(next);
+        const remainingScenes = next.flatMap(ch => ch.scenes || []);
+        const newSignatures: Record<number, string> = {};
+        remainingScenes.forEach(s => { newSignatures[s.id] = savedSignaturesRef.current[s.id]; });
+        savedSignaturesRef.current = newSignatures;
+        if (activeChapterId === chapterId) {
+          const fallback = next[0];
+          setActiveChapterId(fallback?.id || null);
+          setActiveScene(fallback?.scenes?.[0] || null);
+        } else if (activeScene) {
+          const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
+          if (!stillExists) {
+            setActiveScene(null);
+          }
+        }
+      } else {
+        const { chapterId, sceneId } = confirmDelete;
+        if (!sceneId) return;
+        await sceneApi.delete(bookId, chapterId, sceneId);
+        const next = chapters.map(ch => {
+          if (ch.id !== chapterId) return ch;
+          const scenes = (ch.scenes || []).filter(s => s.id !== sceneId);
+          return { ...ch, scenes };
+        });
+        commitChapters(next);
+        if (activeScene?.id === sceneId) {
+          const targetChapter = next.find(c => c.id === chapterId);
+          const sortedScenes = [...(targetChapter?.scenes || [])].sort((a, b) => a.index - b.index);
+          setActiveScene(sortedScenes[0] || null);
+        }
+      }
+      setToast({ message: '删除成功', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to delete', err);
+      setToast({ message: '删除失败，请稍后重试', tone: 'error' });
+    } finally {
+      setIsDeleting(false);
+      setConfirmDelete(null);
+    }
+  };
+
   useEffect(() => {
     if (!isResizingLeft) return;
     const handleMove = (e: MouseEvent) => {
@@ -673,6 +723,40 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
 
   return (
     <div className="flex h-full bg-[#121212] relative">
+      {confirmDelete && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 w-[380px] shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-200">
+                <Trash2 size={16} />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-bold">
+                  {confirmDelete.type === 'chapter' ? '删除章节' : '删除场景'}
+                </p>
+                <h3 className="text-lg font-bold text-white mt-0.5">{confirmDelete.label}</h3>
+              </div>
+            </div>
+            <p className="text-sm text-white/70 mb-6">该操作不可恢复，确认要删除吗？</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-lg border border-white/10 text-white/70 hover:text-white hover:border-white/30 transition-colors"
+                disabled={isDeleting}
+              >
+                取消
+              </button>
+              <button
+                onClick={executeDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold hover:bg-red-500 transition-colors disabled:opacity-60"
+              >
+                {isDeleting ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
           <div
@@ -832,11 +916,23 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                                   <span className={`text-[10px] font-bold uppercase tracking-wider ${activeScene?.id === scene.id ? 'text-white' : 'text-white/20'}`}>
                                     场景 {sceneIdx + 1}
                                   </span>
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                                    activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
-                                  }`}>
-                                    {STATUS_MAP[scene.status]}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                      activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
+                                    }`}>
+                                      {STATUS_MAP[scene.status]}
+                                    </span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteScene(chapter.id, scene.id, `场景 ${sceneIdx + 1}`);
+                                      }}
+                                      className="p-1 rounded-md text-red-300 hover:text-red-100 hover:bg-red-500/20 transition-colors"
+                                      title="删除场景"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
                                 </div>
                                 <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
                                   {scene.description || '点击添加描述...'}
