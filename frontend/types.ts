@@ -36,6 +36,7 @@ export interface Episode {
   id: number;
   title: string;
   index?: number;
+  synopsis?: string;
   status: Status;
   scenes: Scene[];
 }

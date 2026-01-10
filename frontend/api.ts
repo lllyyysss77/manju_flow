@@ -192,6 +192,7 @@ export interface Chapter {
   title: string;
   index: number;
   status: Status;
+  synopsis?: string;
   scenes?: Scene[];
 }
 
@@ -205,12 +206,12 @@ export interface ScenePayload {
 export const chapterApi = {
   list: (bookId: number, includeScenes = true) =>
     request<{ total: number; data: Chapter[] }>(`/api/books/${bookId}/chapters?includeScenes=${includeScenes}`),
-  create: (bookId: number, payload: { title: string; index: number; status?: Status }) =>
+  create: (bookId: number, payload: { title: string; index: number; status?: Status; synopsis?: string }) =>
     request<Chapter>(`/api/books/${bookId}/chapters`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  update: (bookId: number, chapterId: number, payload: Partial<{ title: string; index: number; status: Status }>) =>
+  update: (bookId: number, chapterId: number, payload: Partial<{ title: string; index: number; status: Status; synopsis?: string }>) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),

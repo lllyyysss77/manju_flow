@@ -328,9 +328,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     label: string;
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [synopsisDraft, setSynopsisDraft] = useState('');
+  const [isSavingSynopsis, setIsSavingSynopsis] = useState(false);
+  const [isSynopsisDirty, setIsSynopsisDirty] = useState(false);
   const onEpisodesChangeRef = useRef(onEpisodesChange);
   const savedSignaturesRef = useRef<Record<number, string>>({});
+  const savedChapterSynopsisRef = useRef<Record<number, string>>({});
   const referenceUrlCache = useRef<Record<string, string>>({});
+  const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
 
   useEffect(() => {
     onEpisodesChangeRef.current = onEpisodesChange;
@@ -367,6 +372,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       referenceImageUrl: scene.referenceImageUrl,
     });
 
+  const getSynopsisSignature = (synopsis?: string) => synopsis || '';
+
   const loadChapters = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
@@ -376,6 +383,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
         id: ch.id,
         title: ch.title,
         index: ch.index,
+        synopsis: (ch as any).synopsis || '',
         status: ch.status as Status,
         scenes: (ch.scenes || [])
           .map(s => ({
@@ -396,13 +404,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       const savedSig: Record<number, string> = {};
       data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));
       savedSignaturesRef.current = savedSig;
+      const savedChapterSig: Record<number, string> = {};
+      data.forEach(ch => { savedChapterSig[ch.id] = getSynopsisSignature(ch.synopsis); });
+      savedChapterSynopsisRef.current = savedChapterSig;
       setChapters(data);
-      setActiveChapterId(data[0]?.id ?? null);
-      setActiveScene(data[0]?.scenes[0] || null);
-      setResolvedReferenceUrl(data[0]?.scenes[0]?.referenceImageUrl);
-      if (data[0]?.scenes[0]) {
-        setIsDirty(false);
-      }
+      const firstChapterId = data[0]?.id ?? null;
+      setActiveChapterId(firstChapterId);
+      setActiveScene(null);
+      setResolvedReferenceUrl(undefined);
+      setIsDirty(false);
+      setIsSynopsisDirty(false);
       onEpisodesChangeRef.current?.(data);
     } catch (err) {
       console.error('Failed to load chapters', err);
@@ -455,6 +466,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   useEffect(() => {
     resolveReferenceImage(activeScene?.referenceImageUrl);
   }, [activeScene?.referenceImageUrl, resolveReferenceImage]);
+
+  useEffect(() => {
+    setSynopsisDraft(activeChapter?.synopsis || '');
+    if (activeChapter?.id != null) {
+      const sig = getSynopsisSignature(activeChapter.synopsis);
+      setIsSynopsisDirty(savedChapterSynopsisRef.current[activeChapter.id] !== sig);
+    } else {
+      setIsSynopsisDirty(false);
+    }
+  }, [activeChapter?.id, activeChapter?.synopsis]);
 
   const commitChapters = (next: Episode[]) => {
     setChapters(next);
@@ -513,11 +534,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   };
 
   const handleSelectScene = async (chapterId: number, scene: Scene) => {
+    if (activeChapterId && isSynopsisDirty && activeChapter) {
+      await persistChapterSynopsis(activeChapterId, synopsisDraft);
+    }
     if (activeScene && activeChapterId && isDirty) {
       await persistScene(activeChapterId, activeScene);
     }
     setActiveChapterId(chapterId);
-    // 选中时也按排序后的顺序生成显示 index
     setActiveScene(scene);
     const sig = getSignature(scene);
     setIsDirty(savedSignaturesRef.current[scene.id] !== sig);
@@ -525,15 +548,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   };
 
   const handleToggleChapter = (chapterId: number) => {
+    if (activeChapterId && isSynopsisDirty && activeChapter) {
+      persistChapterSynopsis(activeChapterId, synopsisDraft);
+    }
     if (activeChapterId === chapterId) {
       setActiveChapterId(null);
       setActiveScene(null);
       return;
     }
-    const targetChapter = chapters.find(ch => ch.id === chapterId);
-    const sortedScenes = [...(targetChapter?.scenes || [])].sort((a, b) => a.index - b.index);
     setActiveChapterId(chapterId);
-    setActiveScene(sortedScenes[0] || null);
+    setActiveScene(null); // 选中章节但不自动选场景，便于展示/编辑梗概
   };
 
   const handleUpdateChapterTitle = (chapterId: number, title: string) => {
@@ -544,16 +568,44 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     });
   };
 
+  const persistChapterSynopsis = async (chapterId: number, synopsis: string): Promise<boolean> => {
+    const currentSig = getSynopsisSignature(synopsis);
+    if (savedChapterSynopsisRef.current[chapterId] === currentSig) {
+      setIsSynopsisDirty(false);
+      return false;
+    }
+    setIsSavingSynopsis(true);
+    try {
+      await chapterApi.update(bookId, chapterId, { synopsis });
+      savedChapterSynopsisRef.current[chapterId] = currentSig;
+      setIsSynopsisDirty(false);
+      setToast({ message: '章节梗概已保存', tone: 'success' });
+      return true;
+    } catch (err) {
+      console.error('Failed to update chapter synopsis', err);
+      setToast({ message: '保存梗概失败，请重试', tone: 'error' });
+      return false;
+    } finally {
+      setIsSavingSynopsis(false);
+    }
+  };
+
+  const handleSaveChapterSynopsis = async () => {
+    if (!activeChapter) return;
+    const next = chapters.map(ch => (ch.id === activeChapter.id ? { ...ch, synopsis: synopsisDraft } : ch));
+    commitChapters(next);
+    await persistChapterSynopsis(activeChapter.id, synopsisDraft);
+  };
+
   const handleDeleteChapter = (chapterId: number) => {
     const target = chapters.find(ch => ch.id === chapterId);
+    delete savedChapterSynopsisRef.current[chapterId];
     setConfirmDelete({
       type: 'chapter',
       chapterId,
       label: target?.title || '未命名章节',
     });
   };
-
-  const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
 
   const persistScene = async (chapterId: number, scene: Scene): Promise<boolean> => {
     const currentSig = getSignature(scene);
@@ -720,6 +772,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     }, 5000);
     return () => clearTimeout(timer);
   }, [isDirty, activeScene, activeChapterId]);
+
+  // 梗概定时保存
+  useEffect(() => {
+    if (!isSynopsisDirty || !activeChapterId) return;
+    const timer = setTimeout(() => {
+      persistChapterSynopsis(activeChapterId, synopsisDraft);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isSynopsisDirty, activeChapterId, synopsisDraft, persistChapterSynopsis]);
 
   return (
     <div className="flex h-full bg-[#121212] relative">
@@ -1064,7 +1125,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+            <div className="flex-1 flex flex-col items-start justify-start gap-6 px-10 py-10 text-left">
               {chapters.length === 0 ? (
                 <>
                   <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center text-white/40">
@@ -1081,18 +1142,43 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                     <Plus size={16} /> 新建章节
                   </button>
                 </>
+              ) : activeChapter ? (
+                <>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner max-w-3xl w-full">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] bg-blue-600/20 text-blue-200 rounded">
+                          章节故事梗概
+                        </div>
+                        <span className="text-[10px] text-white/30">点击章节时展示的概要</span>
+                      </div>
+                      <button
+                        onClick={handleSaveChapterSynopsis}
+                        disabled={isSavingSynopsis}
+                        className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-60"
+                      >
+                        {isSavingSynopsis ? '保存中...' : '保存梗概'}
+                      </button>
+                    </div>
+                    <textarea
+                      rows={10}
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[200px] resize-none"
+                      value={synopsisDraft}
+                      onChange={(e) => {
+                        setSynopsisDraft(e.target.value);
+                        if (activeChapter?.id != null) {
+                          const sig = getSynopsisSignature(e.target.value);
+                          setIsSynopsisDirty(savedChapterSynopsisRef.current[activeChapter.id] !== sig);
+                        }
+                      }}
+                      placeholder="填写章节的故事梗概，便于团队快速理解剧情走向"
+                    />
+                  </div>
+                </>
               ) : (
                 <>
                   <AlertCircle size={48} className="text-white/30" />
                   <p className="text-sm font-bold uppercase tracking-widest text-white/60">请选择或创建一个场景开始创作</p>
-                  {activeChapter && (
-                    <button
-                      onClick={() => handleAddSceneAt(activeChapter.id, activeChapter.scenes?.length || 0)}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
-                    >
-                      <Plus size={16} /> 在当前章节添加场景
-                    </button>
-                  )}
                 </>
               )}
             </div>
