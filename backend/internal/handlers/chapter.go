@@ -116,10 +116,11 @@ func (h *ChapterHandler) Create(c *gin.Context) {
 	}
 
 	chapter := models.Chapter{
-		BookID: uint(bookIdUint),
-		Title:  req.Title,
-		Index:  req.Index,
-		Status: status,
+		BookID:   uint(bookIdUint),
+		Title:    req.Title,
+		Synopsis: req.Synopsis,
+		Index:    req.Index,
+		Status:   status,
 	}
 
 	if err := db.Create(&chapter).Error; err != nil {
@@ -213,6 +214,9 @@ func (h *ChapterHandler) Update(c *gin.Context) {
 	// 部分更新
 	if req.Title != nil {
 		chapter.Title = *req.Title
+	}
+	if req.Synopsis != nil {
+		chapter.Synopsis = *req.Synopsis
 	}
 	if req.Index != nil {
 		chapter.Index = *req.Index

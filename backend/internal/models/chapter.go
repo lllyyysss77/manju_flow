@@ -20,7 +20,8 @@ type Chapter struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	BookID    uint           `gorm:"not null;index" json:"bookId"`
 	Title     string         `gorm:"size:255;not null" json:"title"`
-	Index     float64        `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
+	Synopsis  string         `gorm:"type:text" json:"synopsis"` // 故事梗概
+	Index     float64        `gorm:"not null" json:"index"`     // 使用浮点数便于中间插入
 	Status    ChapterStatus  `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
@@ -44,14 +45,16 @@ type ChapterListResponse struct {
 
 // CreateChapterRequest 创建章节请求
 type CreateChapterRequest struct {
-	Title string        `json:"title" binding:"required"`
-	Index float64       `json:"index" binding:"required"`
-	Status ChapterStatus `json:"status"`
+	Title    string        `json:"title" binding:"required"`
+	Synopsis string        `json:"synopsis"` // 故事梗概
+	Index    float64       `json:"index" binding:"required"`
+	Status   ChapterStatus `json:"status"`
 }
 
 // UpdateChapterRequest 更新章节请求
 type UpdateChapterRequest struct {
-	Title  *string        `json:"title"`
-	Index  *float64       `json:"index"`
-	Status *ChapterStatus `json:"status"`
+	Title    *string        `json:"title"`
+	Synopsis *string        `json:"synopsis"` // 故事梗概
+	Index    *float64       `json:"index"`
+	Status   *ChapterStatus `json:"status"`
 }
