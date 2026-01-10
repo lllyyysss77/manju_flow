@@ -484,7 +484,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
 
   const handleAddChapterAt = (insertIndex: number) => {
     const index = computeInsertIndex(chapters, insertIndex);
-    chapterApi.create(bookId, { title: `章节 ${chapters.length + 1} (点我修改章节名)`, index, status: 'DRAFT' }).then(res => {
+    chapterApi.create(bookId, { title: `新章节(点我修改章节名)`, index, status: 'DRAFT' }).then(res => {
       const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as Status, scenes: [] };
       const next = [...chapters];
       next.splice(insertIndex, 0, newChapter);
@@ -897,10 +897,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                     >
                       <div className="flex items-center gap-3">
                         <div className={`p-1 rounded-md bg-white/5 text-white/60 transition-transform ${chapter.id === activeChapterId ? 'rotate-180 text-white' : ''}`}>
-                          <ChevronDown size={14} />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-bold uppercase tracking-widest">章节</span>
+                      <ChevronDown size={14} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold uppercase tracking-widest">章节 {idx + 1}</span>
                           {editingChapterId === chapter.id ? (
                             <input
                               value={editingTitle}
@@ -1146,12 +1146,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                 <>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-inner max-w-3xl w-full">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] bg-blue-600/20 text-blue-200 rounded">
-                          章节故事梗概
-                        </div>
-                        <span className="text-[10px] text-white/30">点击章节时展示的概要</span>
+                    <div className="flex items-center gap-3">
+                      <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] bg-blue-600/20 text-blue-200 rounded">
+                        章节故事梗概
                       </div>
+                      <span className="text-[10px] text-white/30">点击章节时展示的概要</span>
+                      <span className="text-[10px] text-white/30">序号 #{chapters.findIndex(c => c.id === activeChapter.id) + 1}</span>
+                    </div>
                       <button
                         onClick={handleSaveChapterSynopsis}
                         disabled={isSavingSynopsis}
