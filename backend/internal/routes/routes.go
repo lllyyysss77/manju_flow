@@ -84,6 +84,19 @@ func Setup(r *gin.Engine) {
 				scenes.PUT("/:sceneId", sceneHandler.Update)    // 更新场景
 				scenes.DELETE("/:sceneId", sceneHandler.Delete) // 删除场景
 			}
+
+			// 分镜路由
+			storyboardHandler := handlers.NewStoryboardHandler()
+			storyboard := authorized.Group("/scenes/:sceneId/storyboard")
+			{
+				storyboard.GET("", storyboardHandler.GetInfo)                              // 获取分镜信息
+				storyboard.PUT("/start-frame", storyboardHandler.UpdateStartFrame)         // 更新起始帧
+				storyboard.PUT("/end-frame", storyboardHandler.UpdateEndFrame)             // 更新结束帧
+				storyboard.GET("/start-frame/versions", storyboardHandler.ListStartFrameVersions) // 起始帧版本历史
+				storyboard.GET("/end-frame/versions", storyboardHandler.ListEndFrameVersions)     // 结束帧版本历史
+				storyboard.PUT("/start-frame/revert/:version", storyboardHandler.RevertStartFrame) // 回滚起始帧
+				storyboard.PUT("/end-frame/revert/:version", storyboardHandler.RevertEndFrame)     // 回滚结束帧
+			}
 		}
 	}
 }
