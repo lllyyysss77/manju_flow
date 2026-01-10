@@ -17,17 +17,22 @@ const (
 
 // Scene 场景模型 - 每个章节包含多个场景
 type Scene struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	ChapterID      uint           `gorm:"not null;index" json:"chapterId"`
-	Index          float64        `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
-	Status         SceneStatus    `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
-	Description    string         `gorm:"type:text;not null" json:"description"`    // 场景描述（必须）
-	CameraMovement string         `gorm:"type:text" json:"cameraMovement"`          // 运镜
-	Dialogue       string         `gorm:"type:text" json:"dialogue"`                // 台词/旁白
-	ReferenceImageUrl string      `gorm:"type:text" json:"referenceImageUrl"`       // 参考图
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                uint           `gorm:"primaryKey" json:"id"`
+	ChapterID         uint           `gorm:"not null;index" json:"chapterId"`
+	Index             float64        `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
+	Status            SceneStatus    `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
+	Description       string         `gorm:"type:text;not null" json:"description"`    // 场景描述（必须）
+	CameraMovement    string         `gorm:"type:text" json:"cameraMovement"`          // 运镜
+	Dialogue          string         `gorm:"type:text" json:"dialogue"`                // 台词/旁白
+	ReferenceImageUrl string         `gorm:"type:text" json:"referenceImageUrl"`       // 参考图
+	// 分镜绘制 - 当前帧
+	StartFrameUrl     string         `gorm:"type:text" json:"startFrameUrl"`           // 起始帧URL
+	StartFrameVersion int            `gorm:"default:0" json:"startFrameVersion"`       // 起始帧版本号
+	EndFrameUrl       string         `gorm:"type:text" json:"endFrameUrl"`             // 结束帧URL
+	EndFrameVersion   int            `gorm:"default:0" json:"endFrameVersion"`         // 结束帧版本号
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联
 	Chapter Chapter `gorm:"foreignKey:ChapterID" json:"-"`
