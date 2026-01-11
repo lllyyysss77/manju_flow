@@ -30,6 +30,9 @@ type Scene struct {
 	StartFrameVersion int            `gorm:"default:0" json:"startFrameVersion"`       // 起始帧版本号
 	EndFrameUrl       string         `gorm:"type:text" json:"endFrameUrl"`             // 结束帧URL
 	EndFrameVersion   int            `gorm:"default:0" json:"endFrameVersion"`         // 结束帧版本号
+	// 动画制作 - 当前动画
+	AnimationUrl      string         `gorm:"type:text" json:"animationUrl"`            // 动画视频URL
+	AnimationVersion  int            `gorm:"default:0" json:"animationVersion"`        // 动画版本号
 	CreatedAt         time.Time      `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
