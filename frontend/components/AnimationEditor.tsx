@@ -37,38 +37,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   }, [episode, episodes]);
 
   const normalizedChapters = useMemo<Episode[]>(() => {
-    const fallbackScenes: Scene[] = [
-      {
-        id: 1,
-        index: 1,
-        description: '夜幕下的街头，女主孤身前行，霓虹在雨水中被拉出拖影。',
-        cameraMovement: '跟拍 + 缓推',
-        dialogue: '“我知道，这条路只能我自己走完。”',
-        status: 'IN_PROGRESS',
-        comments: []
-      },
-      {
-        id: 2,
-        index: 2,
-        description: '街角灯箱映出她的剪影，一辆车疾驰掠过，镜头快速摇移切入车内。',
-        cameraMovement: '摇移 + 切入',
-        dialogue: '“别回头，风暴还在后面。”',
-        status: 'IN_PROGRESS',
-        comments: []
-      }
-    ];
-
-    const chapters = sourceChapters.length ? sourceChapters : [{
-      id: episode?.id || 1,
-      title: episode?.title || '默认章节',
-      index: episode?.index || 1,
-      status: episode?.status || 'IN_PROGRESS',
-      synopsis: episode?.synopsis,
-      scenes: episode?.scenes?.length ? episode.scenes : fallbackScenes
-    }];
-
     const normalizeScenes = (scenes: Scene[]) =>
-      (scenes?.length ? scenes : fallbackScenes).map((scene, idx) => ({
+      (scenes || []).map((scene, idx) => ({
         ...scene,
         comments: scene.comments || [],
         dialogue: scene.dialogue || '此处补充对白与情绪提示',
@@ -81,24 +51,25 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
         animationVersion: scene.animationVersion,
       }));
 
-    return chapters.map(ch => ({
+    return (sourceChapters || []).map(ch => ({
       ...ch,
       title: ch.title || `第 ${ch.index || 1} 章`,
       scenes: normalizeScenes(ch.scenes || []),
     }));
   }, [episode, sourceChapters]);
 
-  const [activeChapterId, setActiveChapterId] = useState<number>(normalizedChapters[0]?.id || episode?.id || 1);
+  const hasChapters = normalizedChapters.length > 0;
+  const [activeChapterId, setActiveChapterId] = useState<number | null>(normalizedChapters[0]?.id || null);
   const activeChapter = useMemo(
     () => normalizedChapters.find(c => c.id === activeChapterId) || normalizedChapters[0],
     [activeChapterId, normalizedChapters]
   );
   useEffect(() => {
-    setActiveChapterId(normalizedChapters[0]?.id || episode?.id || 1);
-  }, [episode?.id, normalizedChapters]);
+    setActiveChapterId(normalizedChapters[0]?.id || null);
+  }, [normalizedChapters]);
 
   const sortedScenes = useMemo(
-    () => (activeChapter ? [...activeChapter.scenes].sort((a, b) => a.index - b.index) : []),
+    () => (activeChapter ? [...(activeChapter.scenes || [])].sort((a, b) => a.index - b.index) : []),
     [activeChapter]
   );
   const [activeSceneIndex, setActiveSceneIndex] = useState(0);
@@ -129,6 +100,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   const [previewSource, setPreviewSource] = useState<{ url?: string; version?: number } | null>(null);
   
   const activeScene = sortedScenes[activeSceneIndex];
+  const hasScene = sortedScenes.length > 0;
 
   useEffect(() => {
     if (!toast) return;
@@ -173,7 +145,15 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   );
 
   useEffect(() => {
-    if (!activeScene?.id) return;
+    if (!activeScene?.id) {
+      setAnimationMap({});
+      setVersionMap({});
+      setResolvedVideoUrl(undefined);
+      setPreviewSource(null);
+      setAnimationError(null);
+      setLoadingAnimation(false);
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       setLoadingAnimation(true);
@@ -238,7 +218,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
 
   useEffect(() => {
-    if (!activeScene?.id) return;
+    if (!activeScene?.id) {
+      if (previewVideoRef.current) {
+        previewVideoRef.current.pause();
+        previewVideoRef.current.currentTime = 0;
+      }
+      setPreviewSource(null);
+      return;
+    }
     if (previewVideoRef.current) {
       previewVideoRef.current.pause();
       previewVideoRef.current.currentTime = 0;
@@ -246,22 +233,23 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     setPreviewSource(null);
   }, [activeScene?.id]);
 
-  if (!activeScene) return null;
-
-  const sceneOverlay = animationMap[activeScene.id] || {};
-  const activeSceneData = {
-    ...activeScene,
-    animationUrl: sceneOverlay.url || activeScene.animationUrl || activeScene.clipUrl,
-    clipUrl: sceneOverlay.url || activeScene.clipUrl || activeScene.animationUrl,
-    animationVersion: sceneOverlay.version ?? activeScene.animationVersion,
-  };
-  const currentVersions = versionMap[activeScene.id] || [];
-  const currentVersionLabel = activeSceneData.animationVersion ?? currentVersions[0]?.version ?? '—';
+  const sceneOverlay = activeScene ? animationMap[activeScene.id] || {} : {};
+  const activeSceneData = activeScene
+    ? {
+        ...activeScene,
+        animationUrl: sceneOverlay.url || activeScene.animationUrl || activeScene.clipUrl,
+        clipUrl: sceneOverlay.url || activeScene.clipUrl || activeScene.animationUrl,
+        animationVersion: sceneOverlay.version ?? activeScene.animationVersion,
+      }
+    : null;
+  const currentVersions = activeScene ? versionMap[activeScene.id] || [] : [];
+  const currentVersionLabel =
+    (activeSceneData?.animationVersion ?? currentVersions[0]?.version ?? undefined) ?? '—';
   const currentVersionData =
-    currentVersions.find(v => v.version === activeSceneData.animationVersion) ||
+    (activeSceneData && currentVersions.find(v => v.version === activeSceneData.animationVersion)) ||
     currentVersions.find(v => v.version === currentVersions[0]?.version) ||
     undefined;
-  const displayClipUrl = currentVersionData?.videoUrl || activeSceneData.animationUrl || activeSceneData.clipUrl;
+  const displayClipUrl = currentVersionData?.videoUrl || activeSceneData?.animationUrl || activeSceneData?.clipUrl;
   useEffect(() => {
     if (!displayClipUrl) {
       setResolvedVideoUrl(undefined);
@@ -277,8 +265,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     };
   }, [displayClipUrl, resolveFileUrl]);
 
-  const startFrameResolved = framePreviewCache[activeScene.id]?.start || activeSceneData.startFrameUrl;
-  const endFrameResolved = framePreviewCache[activeScene.id]?.end || activeSceneData.endFrameUrl;
+  const startFrameResolved = activeScene?.id
+    ? framePreviewCache[activeScene.id]?.start || activeSceneData?.startFrameUrl
+    : undefined;
+  const endFrameResolved = activeScene?.id
+    ? framePreviewCache[activeScene.id]?.end || activeSceneData?.endFrameUrl
+    : undefined;
   const playbackUrl = resolvedVideoUrl || displayClipUrl;
   useEffect(() => {
     if (!videoRef.current) return;
@@ -372,6 +364,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     setPreviewSource(null);
   };
 
+  if (!hasChapters) {
+    return (
+      <div className="flex items-center justify-center h-full text-white/40 text-sm bg-[#0f0f0f]">
+        暂无章节数据，请先在剧本阶段创建章节与场景
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-[#0f0f0f] relative">
       {previewSource && (
@@ -458,64 +458,74 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
           ))}
         </div>
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
-          {sortedScenes.map((scene, idx) => {
-            const displayNumber = idx + 1;
-            const sceneClip = animationMap[scene.id]?.url || scene.animationUrl || scene.clipUrl;
-            const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
-            return (
-            <button
-              key={scene.id}
-              onClick={() => {
-                setActiveSceneIndex(idx);
-                setIsPlaying(false);
-              }}
-              className={`flex-shrink-0 w-32 h-14 rounded border transition-all relative overflow-hidden group ${
-                activeSceneIndex === idx 
-                  ? 'border-blue-500 ring-1 ring-blue-500' 
-                  : 'border-white/10 opacity-50 hover:opacity-100 hover:border-white/30'
-              }`}
-              >
-              <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
-                {thumb ? (
-                  <img src={thumb} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <Film size={16} className="text-white/10" />
-                )}
-                {sceneClip && (
-                  <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
-                    <Play size={12} fill="currentColor" className="text-white" />
+          {sortedScenes.length === 0 ? (
+            <div className="text-white/30 text-xs px-2">该章节暂无场景</div>
+          ) : (
+            sortedScenes.map((scene, idx) => {
+              const displayNumber = idx + 1;
+              const sceneClip = animationMap[scene.id]?.url || scene.animationUrl || scene.clipUrl;
+              const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
+              return (
+              <button
+                key={scene.id}
+                onClick={() => {
+                  setActiveSceneIndex(idx);
+                  setIsPlaying(false);
+                }}
+                className={`flex-shrink-0 w-32 h-14 rounded border transition-all relative overflow-hidden group ${
+                  activeSceneIndex === idx 
+                    ? 'border-blue-500 ring-1 ring-blue-500' 
+                    : 'border-white/10 opacity-50 hover:opacity-100 hover:border-white/30'
+                }`}
+                >
+                <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
+                  {thumb ? (
+                    <img src={thumb} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    <Film size={16} className="text-white/10" />
+                  )}
+                  {sceneClip && (
+                    <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
+                      <Play size={12} fill="currentColor" className="text-white" />
+                    </div>
+                  )}
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
+                  #{displayNumber}
+                </div>
+                {scene.status === 'COMPLETED' && (
+                  <div className="absolute top-1 right-1">
+                    <CheckCircle2 size={10} className="text-green-500 shadow-sm" />
                   </div>
                 )}
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
-                #{displayNumber}
-              </div>
-              {scene.status === 'COMPLETED' && (
-                <div className="absolute top-1 right-1">
-                  <CheckCircle2 size={10} className="text-green-500 shadow-sm" />
-                </div>
-              )}
-            </button>
-          );
-          })}
+              </button>
+            );
+            })
+          )}
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {animationError && (
+        {hasScene && animationError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
             <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
               动画数据加载失败：{animationError}
             </div>
           </div>
         )}
-        {loadingAnimation && (
+        {hasScene && loadingAnimation && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
               正在同步动画数据...
             </div>
           </div>
         )}
+        {!hasScene ? (
+          <div className="flex-1 flex items-center justify-center text-white/40 text-sm">
+            该章节暂无场景，先去剧本阶段创建场景后再上传动画
+          </div>
+        ) : (
+          <>
         {/* 左侧：剧本参考区（与分镜风格统一） */}
         <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
           <section>
@@ -525,7 +535,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
             </div>
             <div className="bg-white/5 rounded-lg p-4 border border-white/5">
               <p className="text-sm text-white/90 leading-relaxed italic">
-                "{activeSceneData.description}"
+                "{activeSceneData?.description || '暂无描述'}"
               </p>
             </div>
           </section>
@@ -536,7 +546,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
               <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
             </div>
             <p className="text-sm text-white/60 font-medium px-1">
-              {activeSceneData.cameraMovement || '未指定镜头类型'}
+              {activeSceneData?.cameraMovement || '未指定镜头类型'}
             </p>
           </section>
 
@@ -576,7 +586,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
             </div>
             <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
               <p className="text-sm text-white/80 leading-snug">
-                {activeSceneData.dialogue || <span className="text-white/20 italic">（无台词）</span>}
+                {activeSceneData?.dialogue || <span className="text-white/20 italic">（无台词）</span>}
               </p>
             </div>
           </section>
@@ -590,9 +600,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                 <h2 className="text-lg font-bold text-white flex items-center gap-3">
                   场景 {activeSceneIndex + 1} 动画制作
                   <span className={`text-[10px] px-2 py-0.5 rounded ${
-                    activeSceneData.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
+                    activeSceneData?.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
                   }`}>
-                    {STATUS_MAP[activeSceneData.status]}
+                    {activeSceneData ? STATUS_MAP[activeSceneData.status] : '—'}
                   </span>
                 </h2>
                 <div className="flex gap-2">
@@ -645,7 +655,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                               )}
                               {currentVersions.map(version => {
                                 const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
-                                const isActive = activeSceneData.animationVersion === version.version;
+                                const isActive = activeSceneData?.animationVersion === version.version;
                                 const isPreviewing = previewSource?.version === version.version;
                                 return (
                                   <div
@@ -767,7 +777,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {activeSceneData.comments.length > 0 ? activeSceneData.comments.map(c => (
+            {activeSceneData?.comments?.length ? activeSceneData.comments.map(c => (
               <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 border-l-4 border-l-red-500/50">
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] font-bold text-red-400 uppercase">{c.author}</span>
@@ -791,6 +801,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
             <button className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg">发布评论</button>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

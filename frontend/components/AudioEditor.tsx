@@ -46,38 +46,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   }, [episode, episodes]);
 
   const normalizedChapters = useMemo<Episode[]>(() => {
-    const fallbackScenes: Scene[] = [
-      {
-        id: 1,
-        index: 1,
-        description: '夜幕下的街头，女主孤身前行，霓虹在雨水中被拉出拖影。',
-        cameraMovement: '跟拍 + 缓推',
-        dialogue: '“我知道，这条路只能我自己走完。”',
-        status: 'IN_PROGRESS',
-        comments: []
-      },
-      {
-        id: 2,
-        index: 2,
-        description: '街角灯箱映出她的剪影，一辆车疾驰掠过，镜头快速摇移切入车内。',
-        cameraMovement: '摇移 + 切入',
-        dialogue: '“别回头，风暴还在后面。”',
-        status: 'IN_PROGRESS',
-        comments: []
-      }
-    ];
-
-    const chapters = sourceChapters.length ? sourceChapters : [{
-      id: episode?.id || 1,
-      title: episode?.title || '默认章节',
-      index: episode?.index || 1,
-      status: episode?.status || 'IN_PROGRESS',
-      synopsis: episode?.synopsis,
-      scenes: episode?.scenes?.length ? episode.scenes : fallbackScenes
-    }];
-
     const normalizeScenes = (scenes: Scene[]) =>
-      (scenes?.length ? scenes : fallbackScenes).map((scene, idx) => ({
+      (scenes || []).map((scene, idx) => ({
         ...scene,
         comments: scene.comments || [],
         dialogue: scene.dialogue || '此处补充对白与情绪提示',
@@ -90,24 +60,26 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         audios: scene.audios || [],
       }));
 
-    return chapters.map(ch => ({
+    return (sourceChapters || []).map(ch => ({
       ...ch,
       title: ch.title || `第 ${ch.index || 1} 章`,
       scenes: normalizeScenes(ch.scenes || []),
     }));
-  }, [episode, sourceChapters]);
+  }, [sourceChapters]);
 
-  const [activeChapterId, setActiveChapterId] = useState<number>(normalizedChapters[0]?.id || episode?.id || 1);
+  const hasChapters = normalizedChapters.length > 0;
+
+  const [activeChapterId, setActiveChapterId] = useState<number | null>(normalizedChapters[0]?.id || null);
   const activeChapter = useMemo(
     () => normalizedChapters.find(c => c.id === activeChapterId) || normalizedChapters[0],
     [activeChapterId, normalizedChapters]
   );
   useEffect(() => {
-    setActiveChapterId(normalizedChapters[0]?.id || episode?.id || 1);
-  }, [episode?.id, normalizedChapters]);
+    setActiveChapterId(normalizedChapters[0]?.id || null);
+  }, [normalizedChapters]);
 
   const sortedScenes = useMemo(
-    () => (activeChapter ? [...activeChapter.scenes].sort((a, b) => a.index - b.index) : []),
+    () => (activeChapter ? [...(activeChapter.scenes || [])].sort((a, b) => a.index - b.index) : []),
     [activeChapter]
   );
 
@@ -144,6 +116,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [creatingTrack, setCreatingTrack] = useState(false);
   const [newTrackRole, setNewTrackRole] = useState('');
   const [roleDraft, setRoleDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<SceneAudioTrack | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -189,13 +162,36 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   );
 
   const activeScene = sortedScenes[activeSceneIndex];
-  if (!activeScene) return null;
+  const hasScene = sortedScenes.length > 0;
 
   useEffect(() => {
-    if (!activeScene?.id) return;
+    if (!activeScene?.id) {
+      setAudioTracks([]);
+      setVersionMap({});
+      setResolvingVersion(false);
+      setSelectedAudioId(null);
+      setResolvedAudioUrl(undefined);
+      setVersionMenuOpen(false);
+      setPreviewPlayingVersion(null);
+      setCreatingTrack(false);
+      setNewTrackRole('');
+      setAudioError(null);
+      setLoadingAudio(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setIsAudioPlaying(false);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+      }
+      return;
+    }
     let cancelled = false;
     setAudioTracks([]);
     setVersionMap({});
+    setResolvingVersion(false);
     setSelectedAudioId(null);
     setResolvedAudioUrl(undefined);
     setVersionMenuOpen(false);
@@ -309,7 +305,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     (currentVersionNumber ? currentVersions.find(v => v.version === currentVersionNumber) : undefined) ||
     currentVersions[0];
   const displayAudioUrl = currentVersionData?.audioUrl || selectedTrack?.audioUrl;
-  const displayVideoUrl = activeScene.animationUrl || activeScene.clipUrl;
+  const displayVideoUrl = activeScene?.animationUrl || activeScene?.clipUrl;
   const currentVersionLabel = currentVersionNumber ?? '—';
   const hasAudio = Boolean(selectedTrack && (displayAudioUrl || currentVersions.length > 0));
   const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
@@ -343,21 +339,21 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     return () => {
       cancelled = true;
     };
-  }, [displayAudioUrl, resolveFileUrl, activeScene.id, selectedAudioId]);
+  }, [displayAudioUrl, resolveFileUrl, activeScene?.id, selectedAudioId]);
 
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.pause();
     videoRef.current.load();
     setIsVideoPlaying(false);
-  }, [resolvedVideoUrl, activeScene.id]);
+  }, [resolvedVideoUrl, activeScene?.id]);
 
   useEffect(() => {
     if (!audioRef.current) return;
     audioRef.current.pause();
     audioRef.current.load();
     setIsAudioPlaying(false);
-  }, [resolvedAudioUrl, activeScene.id, selectedAudioId]);
+  }, [resolvedAudioUrl, activeScene?.id, selectedAudioId]);
 
   useEffect(() => {
     if (!hasAudio) setVersionMenuOpen(false);
@@ -366,7 +362,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       previewAudioRef.current.currentTime = 0;
     }
     setPreviewPlayingVersion(null);
-  }, [hasAudio, activeScene.id, selectedAudioId]);
+  }, [hasAudio, activeScene?.id, selectedAudioId]);
 
   const handlePlayVersion = (version: number) => {
     if (!activeScene?.id || !selectedTrack) return;
@@ -577,8 +573,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     if (!activeScene?.id) return;
     const target = audioTracks.find(t => t.id === audioId);
     if (!target) return;
-    const confirmed = window.confirm('删除该音轨将清空其所有版本，确定继续吗？');
-    if (!confirmed) return;
     setLoadingAudio(true);
     setAudioError(null);
     try {
@@ -603,6 +597,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       setToast({ message: '删除音轨失败，请重试', tone: 'error' });
     } finally {
       setLoadingAudio(false);
+      setDeleteTarget(null);
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
@@ -610,6 +605,14 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       setIsAudioPlaying(false);
     }
   };
+
+  if (!hasChapters) {
+    return (
+      <div className="flex items-center justify-center h-full text-white/40 text-sm bg-[#0f0f0f]">
+        暂无章节数据，请先在剧本阶段创建章节与场景
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-[#0f0f0f] relative">
@@ -667,163 +670,202 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
           ))}
         </div>
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
-          {sortedScenes.map((scene, idx) => {
-            const displayNumber = idx + 1;
-            const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
-            return (
-            <button
-              key={scene.id}
-              onClick={() => {
-                setActiveSceneIndex(idx);
-                setIsVideoPlaying(false);
-                setIsAudioPlaying(false);
-              }}
-              className={`flex-shrink-0 w-32 h-14 rounded border transition-all relative overflow-hidden group ${
-                activeSceneIndex === idx 
-                  ? 'border-blue-500 ring-1 ring-blue-500' 
-                  : 'border-white/10 opacity-50 hover:opacity-100 hover:border-white/30'
-              }`}
-              >
-              <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
-                {thumb ? (
-                  <img src={thumb} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <Mic2 size={16} className="text-white/10" />
-                )}
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <div className="p-1 rounded bg-black/50 border border-white/10">
-                    <Volume2 size={10} className="text-amber-300" />
+          {sortedScenes.length === 0 ? (
+            <div className="text-white/30 text-xs px-2">该章节暂无场景</div>
+          ) : (
+            sortedScenes.map((scene, idx) => {
+              const displayNumber = idx + 1;
+              const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
+              return (
+              <button
+                key={scene.id}
+                onClick={() => {
+                  setActiveSceneIndex(idx);
+                  setIsVideoPlaying(false);
+                  setIsAudioPlaying(false);
+                }}
+                className={`flex-shrink-0 w-32 h-14 rounded border transition-all relative overflow-hidden group ${
+                  activeSceneIndex === idx 
+                    ? 'border-blue-500 ring-1 ring-blue-500' 
+                    : 'border-white/10 opacity-50 hover:opacity-100 hover:border-white/30'
+                }`}
+                >
+                <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
+                  {thumb ? (
+                    <img src={thumb} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    <Mic2 size={16} className="text-white/10" />
+                  )}
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="p-1 rounded bg-black/50 border border-white/10">
+                      <Volume2 size={10} className="text-amber-300" />
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
-                #{displayNumber}
-              </div>
-              {scene.status === 'COMPLETED' && (
-                <div className="absolute top-1 right-1">
-                  <CheckCircle2 size={10} className="text-green-500 shadow-sm" />
+                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
+                  #{displayNumber}
                 </div>
-              )}
-            </button>
-          );
-          })}
+                {scene.status === 'COMPLETED' && (
+                  <div className="absolute top-1 right-1">
+                    <CheckCircle2 size={10} className="text-green-500 shadow-sm" />
+                  </div>
+                )}
+              </button>
+            );
+            })
+          )}
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {audioError && (
+        {deleteTarget && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-[360px] rounded-2xl border border-white/10 bg-[#111111] shadow-2xl p-5 space-y-4">
+              <div className="flex items-center gap-2 text-white">
+                <div className="p-2 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
+                  <Trash2 size={16} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">删除音轨</p>
+                  <p className="text-xs text-white/50">音轨「{deleteTarget.role || '未命名音轨'}」的所有版本都会被清空，确认继续？</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleDeleteTrack(deleteTarget.id)}
+                  className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold border border-red-500/60 shadow-md"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {hasScene && audioError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
             <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
               音频数据加载失败：{audioError}
             </div>
           </div>
         )}
-        {(loadingAudio || resolvingVersion) && (
+        {hasScene && (loadingAudio || (resolvingVersion && selectedTrack)) && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
               {loadingAudio ? '正在同步音轨数据...' : '正在解析历史版本...'}
             </div>
           </div>
         )}
-        {/* 左侧：剧本参考区（与分镜风格统一） */}
-        <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-orange-400">
-              <Camera size={14} />
-              <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
-            </div>
-            <p className="text-sm text-white/60 font-medium px-1">
-              {activeScene.cameraMovement || '未指定镜头类型'}
-            </p>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-purple-400">
-              <Type size={14} />
-              <h3 className="text-xs font-bold uppercase tracking-widest">台词/旁白</h3>
-            </div>
-            <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
-              <p className="text-sm text-white/80 leading-snug">
-                {activeScene.dialogue || <span className="text-white/20 italic">（无台词）</span>}
-              </p>
-            </div>
-          </section>
-        </div>
-
-        {/* 中间：动画参考 + 音频版本管理 */}
-        <div className="flex-1 flex flex-col bg-[#0a0a0a]">
-          <div className="flex-1 p-8 overflow-y-auto">
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-bold text-white flex items-center gap-3">
-                  场景 {activeSceneIndex + 1} 音频后期
-                  <span className={`text-[10px] px-2 py-0.5 rounded ${
-                    activeScene.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
-                  }`}>
-                    {STATUS_MAP[activeScene.status]}
-                  </span>
-                </h2>
-                <div className="flex gap-2">
-                  <button 
-                    disabled={activeSceneIndex === 0}
-                    onClick={() => setActiveSceneIndex(prev => Math.max(0, prev - 1))}
-                    className="p-2 hover:bg-white/5 rounded text-white/40 hover:text-white disabled:opacity-10 transition-all"
-                  >
-                    <ChevronLeft size={20} />
-                  </button>
-                  <button 
-                    disabled={activeSceneIndex === sortedScenes.length - 1}
-                    onClick={() => setActiveSceneIndex(prev => Math.min(sortedScenes.length - 1, prev + 1))}
-                    className="p-2 hover:bg-white/5 rounded text-white/40 hover:text-white disabled:opacity-10 transition-all"
-                  >
-                    <ChevronRight size={20} />
-                  </button>
-                </div>
+        {!hasScene ? (
+          <div className="flex-1 flex items-center justify-center text-white/40 text-sm">
+            该章节暂无场景，先去剧本阶段创建场景后再上传音频
+          </div>
+        ) : (
+          <>
+          {/* 左侧：剧本参考区（与分镜风格统一） */}
+          <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
+            <section>
+              <div className="flex items-center gap-2 mb-4 text-orange-400">
+                <Camera size={14} />
+                <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
               </div>
+              <p className="text-sm text-white/60 font-medium px-1">
+                {activeScene?.cameraMovement || '未指定镜头类型'}
+              </p>
+            </section>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">动画参考</span>
-                    <span className="px-2 py-1 text-[11px] rounded bg-white/5 border border-white/10 text-white/70 flex items-center gap-2">
-                      <Film size={12} /> 对口型 / 氛围对齐
+            <section>
+              <div className="flex items-center gap-2 mb-4 text-purple-400">
+                <Type size={14} />
+                <h3 className="text-xs font-bold uppercase tracking-widest">台词/旁白</h3>
+              </div>
+              <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
+                <p className="text-sm text-white/80 leading-snug">
+                  {activeScene?.dialogue || <span className="text-white/20 italic">（无台词）</span>}
+                </p>
+              </div>
+            </section>
+          </div>
+
+          {/* 中间：动画参考 + 音频版本管理 */}
+          <div className="flex-1 flex flex-col bg-[#0a0a0a]">
+            <div className="flex-1 p-8 overflow-y-auto">
+              <div className="max-w-4xl mx-auto space-y-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-3">
+                    场景 {activeSceneIndex + 1} 音频后期
+                    <span className={`text-[10px] px-2 py-0.5 rounded ${
+                      activeScene?.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
+                    }`}>
+                      {activeScene ? STATUS_MAP[activeScene.status] : '—'}
                     </span>
+                  </h2>
+                  <div className="flex gap-2">
+                    <button 
+                      disabled={activeSceneIndex === 0}
+                      onClick={() => setActiveSceneIndex(prev => Math.max(0, prev - 1))}
+                      className="p-2 hover:bg-white/5 rounded text-white/40 hover:text-white disabled:opacity-10 transition-all"
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button 
+                      disabled={activeSceneIndex === sortedScenes.length - 1}
+                      onClick={() => setActiveSceneIndex(prev => Math.min(sortedScenes.length - 1, prev + 1))}
+                      className="p-2 hover:bg-white/5 rounded text-white/40 hover:text-white disabled:opacity-10 transition-all"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
                   </div>
                 </div>
-                <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
-                  {playbackVideoUrl ? (
-                    <>
-                      <video 
-                        ref={videoRef}
-                        src={playbackVideoUrl}
-                        className="w-full h-full object-contain"
-                        onPlay={() => setIsVideoPlaying(true)}
-                        onPause={() => setIsVideoPlaying(false)}
-                        onClick={toggleVideoPlay}
-                      />
-                      {!isVideoPlaying && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={toggleVideoPlay}>
-                          <div className="p-5 rounded-full bg-blue-600 text-white shadow-xl scale-100 group-hover:scale-110 transition-transform">
-                            <Play fill="currentColor" size={32} />
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div
-                      className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-default"
-                    >
-                      <div className="p-6 rounded-full bg-white/5 text-white/20 transition-all">
-                        <MonitorPlay size={48} />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-white/40 mb-1">暂无动画片段，请先完成动画制作</p>
-                        <p className="text-[10px] text-white/20 uppercase tracking-widest">上传动画后可对齐口型节奏</p>
-                      </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">动画参考</span>
+                      <span className="px-2 py-1 text-[11px] rounded bg-white/5 border border-white/10 text-white/70 flex items-center gap-2">
+                        <Film size={12} /> 对口型 / 氛围对齐
+                      </span>
                     </div>
-                  )}
+                  </div>
+                  <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
+                    {playbackVideoUrl ? (
+                      <>
+                        <video 
+                          ref={videoRef}
+                          src={playbackVideoUrl}
+                          className="w-full h-full object-contain"
+                          onPlay={() => setIsVideoPlaying(true)}
+                          onPause={() => setIsVideoPlaying(false)}
+                          onClick={toggleVideoPlay}
+                        />
+                        {!isVideoPlaying && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={toggleVideoPlay}>
+                            <div className="p-5 rounded-full bg-blue-600 text-white shadow-xl scale-100 group-hover:scale-110 transition-transform">
+                              <Play fill="currentColor" size={32} />
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div
+                        className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-default"
+                      >
+                        <div className="p-6 rounded-full bg-white/5 text-white/20 transition-all">
+                          <MonitorPlay size={48} />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-bold text-white/40 mb-1">暂无动画片段，请先完成动画制作</p>
+                          <p className="text-[10px] text-white/20 uppercase tracking-widest">上传动画后可对齐口型节奏</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
               <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1033,7 +1075,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                           )}
                         </div>
                         <button
-                          onClick={() => handleDeleteTrack(selectedTrack.id)}
+                          onClick={() => setDeleteTarget(selectedTrack)}
                           className="px-2.5 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-red-300 hover:text-white hover:border-red-500/40 hover:bg-red-500/20 flex items-center gap-1"
                         >
                           <Trash2 size={12} /> 删除音轨
@@ -1147,28 +1189,30 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
           </div>
         </div>
 
-        {/* 右侧：修改意见 */}
-        <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <span className="text-xs font-bold text-white/40 uppercase tracking-widest">音频修正意见</span>
-            <MessageSquare size={16} className="text-white/20" />
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-              <Volume2 size={32} />
-              <p className="text-xs">暂无音频反馈</p>
+          {/* 右侧：修改意见 */}
+          <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
+            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+              <span className="text-xs font-bold text-white/40 uppercase tracking-widest">音频修正意见</span>
+              <MessageSquare size={16} className="text-white/20" />
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                <Volume2 size={32} />
+                <p className="text-xs">暂无音频反馈</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#161616] border-t border-white/5">
+              <textarea 
+                className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3"
+                placeholder="添加修改意见或反馈..."
+              />
+              <button className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg">发布评论</button>
             </div>
           </div>
-
-          <div className="p-4 bg-[#161616] border-t border-white/5">
-            <textarea 
-              className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3"
-              placeholder="添加修改意见或反馈..."
-            />
-            <button className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg">发布评论</button>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
