@@ -108,14 +108,18 @@ func Setup(r *gin.Engine) {
 				animation.PUT("/revert/:version", animationHandler.Revert)      // 回滚动画
 			}
 
-			// 音频路由
+			// 音频轨道路由（支持多音频）
 			audioHandler := handlers.NewAudioHandler()
-			audio := authorized.Group("/scenes/:sceneId/audio")
+			audios := authorized.Group("/scenes/:sceneId/audios")
 			{
-				audio.GET("", audioHandler.GetInfo)                     // 获取音频信息
-				audio.PUT("", audioHandler.Update)                      // 更新音频
-				audio.GET("/versions", audioHandler.ListVersions)       // 音频版本历史
-				audio.PUT("/revert/:version", audioHandler.Revert)      // 回滚音频
+				audios.GET("", audioHandler.List)                                  // 获取音频轨道列表
+				audios.POST("", audioHandler.Create)                               // 创建音频轨道
+				audios.GET("/:audioId", audioHandler.GetByID)                      // 获取单个音频轨道
+				audios.PUT("/:audioId", audioHandler.Update)                       // 更新音频轨道信息
+				audios.DELETE("/:audioId", audioHandler.Delete)                    // 删除音频轨道
+				audios.PUT("/:audioId/upload", audioHandler.Upload)                // 上传新版本音频
+				audios.GET("/:audioId/versions", audioHandler.ListVersions)        // 音频版本历史
+				audios.PUT("/:audioId/revert/:version", audioHandler.Revert)       // 回滚音频
 			}
 		}
 	}

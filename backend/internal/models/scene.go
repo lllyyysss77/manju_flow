@@ -31,12 +31,10 @@ type Scene struct {
 	EndFrameUrl       string         `gorm:"type:text" json:"endFrameUrl"`             // 结束帧URL
 	EndFrameVersion   int            `gorm:"default:0" json:"endFrameVersion"`         // 结束帧版本号
 	// 动画制作 - 当前动画
-	AnimationUrl      string         `gorm:"type:text" json:"animationUrl"`            // 动画视频URL
-	AnimationVersion  int            `gorm:"default:0" json:"animationVersion"`        // 动画版本号
-	// 音频后期 - 当前音频
-	AudioUrl          string         `gorm:"type:text" json:"audioUrl"`                // 音频URL
-	AudioVersion      int            `gorm:"default:0" json:"audioVersion"`            // 音频版本号
-	CreatedAt         time.Time      `json:"createdAt"`
+	AnimationUrl     string         `gorm:"type:text" json:"animationUrl"`     // 动画视频URL
+	AnimationVersion int            `gorm:"default:0" json:"animationVersion"` // 动画版本号
+	// 音频后期 - 使用 SceneAudio 表存储多音频轨道，不再在 Scene 表中存储
+	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
 
