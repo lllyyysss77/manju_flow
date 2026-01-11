@@ -548,8 +548,12 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
 
         {/* 历史版本侧滑面板 */}
         {historyPanel.open && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-30 flex justify-end">
-            <div className="w-[360px] h-full bg-[#0f0f0f] border-l border-white/10 shadow-2xl animate-in fade-in slide-in-from-right">
+          <div className="fixed inset-0 z-30">
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setHistoryPanel({ ...historyPanel, open: false })}
+            />
+            <div className="absolute right-0 top-0 bottom-0 w-[360px] bg-[#0f0f0f] border-l border-white/10 shadow-2xl animate-in fade-in slide-in-from-right">
               <div className="p-4 border-b border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <History size={16} className="text-blue-400" />
@@ -558,12 +562,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                     <p className="text-sm text-white/80">{historyPanel.type === 'start' ? '起始帧' : '结束帧'}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setHistoryPanel({ ...historyPanel, open: false })}
-                  className="px-3 py-1 text-[11px] font-bold rounded-lg bg-white/5 hover:bg-white/10 text-white/60"
-                >
-                  关闭
-                </button>
               </div>
               <div className="p-4 space-y-3 overflow-y-auto h-full">
                 {(historyPanel.type === 'start' ? currentVersions.start : currentVersions.end).map(item => {
@@ -586,17 +584,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setHistorySelection(prev => ({
-                                ...prev,
-                                [historyPanel.type]: url,
-                              }));
-                            }}
-                            className="text-[11px] px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/80"
-                          >
-                            预览
-                          </button>
                           <button
                             onClick={() => applyVersion(historyPanel.type, item.version)}
                             className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"

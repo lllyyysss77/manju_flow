@@ -399,7 +399,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
             startFrameVersion: s.startFrameVersion,
             endFrameUrl: s.endFrameUrl,
             endFrameVersion: s.endFrameVersion,
-            clipUrl: s.clipUrl,
+            animationUrl: (s as any).animationUrl,
+            animationVersion: (s as any).animationVersion,
+            clipUrl: (s as any).clipUrl || (s as any).animationUrl,
           }) as Scene)
           .sort((a, b) => a.index - b.index),
       })) as Episode[];

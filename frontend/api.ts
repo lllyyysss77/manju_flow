@@ -323,3 +323,40 @@ export const storyboardApi = {
       method: 'PUT',
     }),
 };
+
+// 动画制作 API
+export interface AnimationInfo {
+  sceneId: number;
+  animationUrl?: string;
+  animationVersion?: number;
+  latestVersion?: AnimationVersion;
+}
+
+export interface AnimationVersion {
+  id: number;
+  sceneId: number;
+  videoUrl: string;
+  version: number;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface AnimationVersionListResponse {
+  total: number;
+  data: AnimationVersion[];
+}
+
+export const animationApi = {
+  getInfo: (sceneId: number) => request<AnimationInfo>(`/api/scenes/${sceneId}/animation`),
+  update: (sceneId: number, videoUrl: string) =>
+    request<AnimationVersion>(`/api/scenes/${sceneId}/animation`, {
+      method: 'PUT',
+      body: JSON.stringify({ videoUrl }),
+    }),
+  listVersions: (sceneId: number) =>
+    request<AnimationVersionListResponse>(`/api/scenes/${sceneId}/animation/versions`),
+  revert: (sceneId: number, version: number) =>
+    request<Scene>(`/api/scenes/${sceneId}/animation/revert/${version}`, {
+      method: 'PUT',
+    }),
+};

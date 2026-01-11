@@ -459,7 +459,7 @@ const App: React.FC = () => {
         case ProductionStage.AUDIO:
           return episode ? <AudioEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无动画</div>;
         case ProductionStage.REVIEW:
-          return <DeliverReview videoUrl={episode?.scenes[0]?.clipUrl} />;
+          return <DeliverReview videoUrl={episode?.scenes[0]?.animationUrl || episode?.scenes[0]?.clipUrl} />;
         default:
           return null;
       }

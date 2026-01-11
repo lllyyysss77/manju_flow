@@ -1,9 +1,9 @@
 
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Episode, Scene, Status } from '../types';
+import { fileApi, animationApi, AnimationVersion } from '../api';
 import { 
   MessageSquare, 
-  Upload, 
   CheckCircle2, 
   AlertCircle, 
   ChevronLeft, 
@@ -59,7 +59,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
       description: scene.description || '此镜头暂无描述，请补充。',
       index: scene.index || idx + 1,
       cameraMovement: scene.cameraMovement || '平移',
-      status: scene.status || 'IN_PROGRESS'
+      status: scene.status || 'IN_PROGRESS',
+      animationUrl: scene.animationUrl || scene.clipUrl,
+      clipUrl: scene.clipUrl || scene.animationUrl,
+      animationVersion: scene.animationVersion,
     }));
   }, [episode.scenes]);
 
@@ -125,62 +128,268 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
   }, [activeSceneIndex, sortedScenes.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [animationMap, setAnimationMap] = useState<Record<number, { url?: string; version?: number }>>({});
+  const [versionMap, setVersionMap] = useState<Record<number, AnimationVersion[]>>({});
+  const [selectedVersionByScene, setSelectedVersionByScene] = useState<Record<number, number | null>>({});
+  const [loadingAnimation, setLoadingAnimation] = useState(false);
+  const [animationError, setAnimationError] = useState<string | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const [urlCache, setUrlCache] = useState<Record<string, string>>({});
+  const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
+  const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const [resolvingVersion, setResolvingVersion] = useState(false);
   
   const activeScene = sortedScenes[activeSceneIndex];
 
-  const versionHistory = useMemo(
-    () => [
-      {
-        id: 'v3',
-        label: 'v3 · 质感加强',
-        url: activeScene?.clipUrl,
-        uploadedAt: '今天 18:42',
-        size: '48 MB',
-        notes: '镜头跟焦优化，加入雾效和蓝色冷光。',
-        reviewer: '陈导'
-      },
-      {
-        id: 'v2',
-        label: 'v2 · 节奏校准',
-        url: activeScene?.clipUrl,
-        uploadedAt: '昨天 22:10',
-        size: '46 MB',
-        notes: '节奏压缩 8%，口型提前 2 帧。',
-        reviewer: '梁审片'
-      },
-      {
-        id: 'v1',
-        label: 'v1 · 初版出片',
-        url: activeScene?.clipUrl,
-        uploadedAt: '周一 11:05',
-        size: '52 MB',
-        notes: '基础动作走位，未加灯光特效。',
-        reviewer: '自动生成'
-      }
-    ],
-    [activeScene?.clipUrl]
-  );
-  const [selectedVersionId, setSelectedVersionId] = useState<string>(versionHistory[0]?.id || 'v3');
   useEffect(() => {
-    setSelectedVersionId(versionHistory[0]?.id || 'v3');
-  }, [activeSceneIndex, activeChapterId, versionHistory.length, versionHistory]);
-  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const resolveFileUrl = useCallback(async (raw?: string | null) => {
+    if (!raw) return '';
+    const isApiFile = raw.startsWith('http') && raw.includes('/api/files/');
+    if (raw.startsWith('http') && !isApiFile) return raw;
+    const cached = urlCache[raw];
+    if (cached) return cached;
+    try {
+      const res = await fileApi.getSignedUrl(raw);
+      const resolved = res.url || raw;
+      setUrlCache(prev => ({ ...prev, [raw]: resolved }));
+      return resolved;
+    } catch (err) {
+      console.error('Failed to resolve file url', err);
+      return raw;
+    }
+  }, [urlCache]);
+
+  const resolveVersions = useCallback(
+    async (sceneId: number, versions: AnimationVersion[]) => {
+      setResolvingVersion(true);
+      try {
+        const resolved = await Promise.all(
+          versions.map(async v => ({
+            ...v,
+            videoUrl: await resolveFileUrl(v.videoUrl),
+          }))
+        );
+        setVersionMap(prev => ({ ...prev, [sceneId]: resolved }));
+        return resolved;
+      } finally {
+        setResolvingVersion(false);
+      }
+    },
+    [resolveFileUrl]
+  );
+
+  useEffect(() => {
+    if (!activeScene?.id) return;
+    let cancelled = false;
+    const load = async () => {
+      setLoadingAnimation(true);
+      setAnimationError(null);
+      try {
+        const [info, versionsRes] = await Promise.all([
+          animationApi.getInfo(activeScene.id),
+          animationApi.listVersions(activeScene.id),
+        ]);
+        if (cancelled) return;
+        const resolvedUrl = await resolveFileUrl(info.animationUrl || activeScene.clipUrl);
+        if (cancelled) return;
+        setAnimationMap(prev => ({
+          ...prev,
+          [activeScene.id]: { url: resolvedUrl || activeScene.clipUrl, version: info.animationVersion },
+        }));
+        const versions = await resolveVersions(activeScene.id, versionsRes.data || []);
+        setSelectedVersionByScene(prev => ({
+          ...prev,
+          [activeScene.id]: info.animationVersion || versions[0]?.version || null,
+        }));
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load animation info', err);
+        setAnimationError(err instanceof Error ? err.message : '加载动画信息失败');
+      } finally {
+        if (!cancelled) setLoadingAnimation(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, resolveFileUrl, resolveVersions]);
+
+  useEffect(() => {
+    if (!activeScene?.id) return;
+    let cancelled = false;
+    (async () => {
+      const [start, end] = await Promise.all([
+        resolveFileUrl(activeScene.startFrameUrl),
+        resolveFileUrl(activeScene.endFrameUrl),
+      ]);
+      if (cancelled) return;
+      setFramePreviewCache(prev => ({
+        ...prev,
+        [activeScene.id]: { start: start || undefined, end: end || undefined },
+      }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, activeScene?.startFrameUrl, activeScene?.endFrameUrl, resolveFileUrl]);
+
+  useEffect(() => {
+    sortedScenes.forEach(scene => {
+      const raw = scene.startFrameUrl;
+      if (!raw) return;
+      if (sceneThumbCache[scene.id]) return;
+      resolveFileUrl(raw).then(url => {
+        setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
+      });
+    });
+  }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
 
   if (!activeScene) return null;
 
-  const currentVersion = versionHistory.find(v => v.id === selectedVersionId) || versionHistory[0];
-  const displayClipUrl = currentVersion?.url || activeScene.clipUrl;
+  const sceneOverlay = animationMap[activeScene.id] || {};
+  const activeSceneData = {
+    ...activeScene,
+    animationUrl: sceneOverlay.url || activeScene.animationUrl || activeScene.clipUrl,
+    clipUrl: sceneOverlay.url || activeScene.clipUrl || activeScene.animationUrl,
+    animationVersion: sceneOverlay.version ?? activeScene.animationVersion,
+  };
+  const currentVersions = versionMap[activeScene.id] || [];
+  const selectedVersion = selectedVersionByScene[activeScene.id];
+  const selectedVersionData = currentVersions.find(v => v.version === selectedVersion);
+  const displayClipUrl = selectedVersionData?.videoUrl || activeSceneData.animationUrl || activeSceneData.clipUrl;
+  const currentVersionLabel = selectedVersion ?? activeSceneData.animationVersion ?? '—';
+  useEffect(() => {
+    if (!displayClipUrl) {
+      setResolvedVideoUrl(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const url = await resolveFileUrl(displayClipUrl);
+      if (!cancelled) setResolvedVideoUrl(url || displayClipUrl);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [displayClipUrl, resolveFileUrl]);
 
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) videoRef.current.pause();
-      else videoRef.current.play();
-      setIsPlaying(!isPlaying);
+  const startFrameResolved = framePreviewCache[activeScene.id]?.start || activeSceneData.startFrameUrl;
+  const endFrameResolved = framePreviewCache[activeScene.id]?.end || activeSceneData.endFrameUrl;
+  const playbackUrl = resolvedVideoUrl || displayClipUrl;
+  useEffect(() => {
+    if (!videoRef.current) return;
+    videoRef.current.pause();
+    videoRef.current.load();
+    setIsPlaying(false);
+  }, [playbackUrl]);
+
+  const handleUploadVideo = async (file?: File | null) => {
+    if (!file || !activeSceneData?.id) return;
+    setUploadingVideo(true);
+    setAnimationError(null);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const rawUrl = uploaded.key || uploaded.url;
+      const resolvedUploadUrl = await resolveFileUrl(rawUrl);
+      const version = await animationApi.update(activeSceneData.id, rawUrl || '');
+      const resolvedVersionUrl = await resolveFileUrl(version.videoUrl);
+      setAnimationMap(prev => ({
+        ...prev,
+        [activeSceneData.id]: { url: resolvedVersionUrl || resolvedUploadUrl, version: version.version },
+      }));
+      setSelectedVersionByScene(prev => ({ ...prev, [activeSceneData.id]: version.version }));
+      const versionsRes = await animationApi.listVersions(activeSceneData.id);
+      await resolveVersions(activeSceneData.id, versionsRes.data || []);
+      setToast({ message: '新动画版本已上传', tone: 'success' });
+    } catch (err) {
+      console.error('Upload animation failed', err);
+      setAnimationError(err instanceof Error ? err.message : '上传失败，请重试');
+      setToast({ message: '上传失败，请重试', tone: 'error' });
+    } finally {
+      setUploadingVideo(false);
+      if (videoInputRef.current) videoInputRef.current.value = '';
     }
   };
 
+  const handlePreviewVersion = (version: number) => {
+    if (!activeSceneData?.id) return;
+    const versionData = currentVersions.find(v => v.version === version);
+    if (!versionData?.videoUrl) {
+      setToast({ message: '该版本缺少视频链接，无法预览', tone: 'error' });
+      return;
+    }
+    setSelectedVersionByScene(prev => ({ ...prev, [activeSceneData.id]: version }));
+    setIsPlaying(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  };
+
+  const handleRevertVersion = async (version: number) => {
+    if (!activeSceneData?.id) return;
+    setLoadingAnimation(true);
+    setAnimationError(null);
+    try {
+      const scene = await animationApi.revert(activeSceneData.id, version);
+      const resolvedSceneUrl = await resolveFileUrl(scene.animationUrl || activeSceneData.animationUrl);
+      setAnimationMap(prev => ({
+        ...prev,
+        [activeSceneData.id]: { url: resolvedSceneUrl || scene.animationUrl, version: scene.animationVersion },
+      }));
+      setSelectedVersionByScene(prev => ({ ...prev, [activeSceneData.id]: scene.animationVersion || version }));
+      const versionsRes = await animationApi.listVersions(activeSceneData.id);
+      setVersionMap(prev => ({ ...prev, [activeSceneData.id]: versionsRes.data || [] }));
+      setToast({ message: `已回滚到版本 #${version}`, tone: 'success' });
+      setHistoryPanelOpen(false);
+    } catch (err) {
+      console.error('Revert animation failed', err);
+      setAnimationError(err instanceof Error ? err.message : '回滚失败，请重试');
+      setToast({ message: '回滚失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingAnimation(false);
+      setIsPlaying(false);
+    }
+  };
+
+  const togglePlay = () => {
+    if (!videoRef.current || !playbackUrl) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+    } else {
+      videoRef.current.play().catch(err => {
+        console.error('Video play failed', err);
+        setToast({ message: '无法播放该视频，请检查链接', tone: 'error' });
+      });
+    }
+    setIsPlaying(prev => !prev);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#0f0f0f]">
+    <div className="flex flex-col h-full bg-[#0f0f0f] relative">
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
+          <div
+            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
+              toast.tone === 'success'
+                ? 'bg-green-500/20 border-green-500/40 text-green-100'
+                : 'bg-red-500/20 border-red-500/40 text-red-100'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       {/* 顶部：章节选择 + 场景切换（与分镜风格保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -222,6 +431,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
+            const sceneClip = animationMap[scene.id]?.url || scene.animationUrl || scene.clipUrl;
+            const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
             return (
             <button
               key={scene.id}
@@ -236,12 +447,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
               }`}
               >
               <div className="w-full h-full bg-zinc-900 flex items-center justify-center relative">
-                {scene.startFrameUrl ? (
-                  <img src={scene.startFrameUrl} className="w-full h-full object-cover" alt="" />
+                {thumb ? (
+                  <img src={thumb} className="w-full h-full object-cover" alt="" />
                 ) : (
                   <Film size={16} className="text-white/10" />
                 )}
-                {scene.clipUrl && (
+                {sceneClip && (
                   <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
                     <Play size={12} fill="currentColor" className="text-white" />
                   </div>
@@ -261,7 +472,21 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
+        {animationError && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
+            <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
+              动画数据加载失败：{animationError}
+            </div>
+          </div>
+        )}
+        {loadingAnimation && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+            <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
+              正在同步动画数据...
+            </div>
+          </div>
+        )}
         {/* 左侧：参考区（剧本 + 首尾帧 + 台词） */}
         <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-5 flex flex-col gap-6">
           <section>
@@ -270,11 +495,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
               <h3 className="text-[10px] font-bold uppercase tracking-widest">剧本需求参考</h3>
             </div>
             <div className="bg-white/5 rounded-lg p-3 border border-white/5 text-[13px] text-white/70 leading-relaxed italic mb-4">
-              "{activeScene.description}"
+              "{activeSceneData.description}"
             </div>
             <div className="grid grid-cols-1 gap-2">
               <div className="flex justify-between items-center text-[10px] font-bold text-white/30 uppercase">
-                <span>镜头: {activeScene.cameraMovement}</span>
+                <span>镜头: {activeSceneData.cameraMovement}</span>
               </div>
             </div>
           </section>
@@ -289,8 +514,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
               <div className="space-y-1">
                 <span className="text-[9px] text-white/30 font-bold uppercase">首帧 (Keyframe A)</span>
                 <div className="aspect-video rounded-lg overflow-hidden border border-white/10 bg-black">
-                  {activeScene.startFrameUrl ? (
-                    <img src={activeScene.startFrameUrl} className="w-full h-full object-cover" />
+                  {startFrameResolved ? (
+                    <img src={startFrameResolved} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
                   )}
@@ -299,8 +524,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
               <div className="space-y-1">
                 <span className="text-[9px] text-white/30 font-bold uppercase">尾帧 (Keyframe B)</span>
                 <div className="aspect-video rounded-lg overflow-hidden border border-white/10 bg-black">
-                  {activeScene.endFrameUrl ? (
-                    <img src={activeScene.endFrameUrl} className="w-full h-full object-cover" />
+                  {endFrameResolved ? (
+                    <img src={endFrameResolved} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
                   )}
@@ -317,10 +542,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
             <div className="bg-blue-600/5 border-l-2 border-blue-500 rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between text-[11px] text-white/60 font-semibold">
                 <span>当前镜头 #{activeSceneIndex + 1}</span>
-                <span className="text-[10px] uppercase text-white/30">{activeScene.cameraMovement}</span>
+                <span className="text-[10px] uppercase text-white/30">{activeSceneData.cameraMovement}</span>
               </div>
               <p className="text-sm text-white/80 leading-snug">
-                {activeScene.dialogue || <span className="text-white/30 italic">（无台词）</span>}
+                {activeSceneData.dialogue || <span className="text-white/30 italic">（无台词）</span>}
               </p>
             </div>
             <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
@@ -353,9 +578,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
                 <h2 className="text-lg font-bold text-white flex items-center gap-3">
                   场景 {activeSceneIndex + 1} 动画制作
                   <span className={`text-[10px] px-2 py-0.5 rounded ${
-                    activeScene.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
+                    activeSceneData.status === 'COMPLETED' ? 'bg-green-600 text-white' : 'bg-orange-600/20 text-orange-400 border border-orange-600/30'
                   }`}>
-                    {STATUS_MAP[activeScene.status]}
+                    {STATUS_MAP[activeSceneData.status]}
                   </span>
                 </h2>
                 <div className="flex gap-2">
@@ -381,19 +606,94 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">动画片段</span>
                     <span className="px-2 py-1 text-[11px] rounded bg-white/5 border border-white/10 text-white/70">
-                      当前版本：{currentVersion?.label || '未上传'}
+                      当前版本：版本 #{currentVersionLabel}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 relative">
+                    <div className="relative">
+                      <button
+                        onClick={() => setVersionMenuOpen(prev => !prev)}
+                        className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                      >
+                        <History size={12} /> 历史版本
+                      </button>
+                      {versionMenuOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setVersionMenuOpen(false)}
+                          />
+                          <div className="absolute right-0 mt-2 w-72 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+                            <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
+                              <span>共 {currentVersions.length} 个版本</span>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
+                              {currentVersions.length === 0 && (
+                                <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
+                              )}
+                              {currentVersions.map(version => {
+                                const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
+                                const isActive = selectedVersion === version.version;
+                                return (
+                                  <div
+                                    key={version.id}
+                                    className={`p-3 space-y-1 ${isActive ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
+                                  >
+                                    <div className="flex items-center justify-between text-white/80">
+                                      <div>
+                                        <p className="text-sm font-semibold">版本 #{version.version}</p>
+                                        <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
+                                      </div>
+                                      <div className="text-[10px] text-white/40">ID: {version.id}</div>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <button
+                                        onClick={() => {
+                                          handlePreviewVersion(version.version);
+                                          setVersionMenuOpen(false);
+                                        }}
+                                        className="text-[11px] px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/80"
+                                      >
+                                        预览
+                                      </button>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => handleRevertVersion(version.version)}
+                                          className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
+                                          disabled={loadingAnimation}
+                                        >
+                                          设为当前
+                                        </button>
+                                        <div className="relative group">
+                                          <Info size={14} className="text-white/30" />
+                                          <div className="absolute right-0 top-6 w-48 p-2 rounded-md bg-black/80 border border-white/10 text-[11px] text-white/70 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                                            将预览中的版本设为交付版本（默认最新）
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                     <button
-                      onClick={() => setHistoryPanelOpen(true)}
-                      className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                      onClick={() => videoInputRef.current?.click()}
+                      disabled={uploadingVideo}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all disabled:opacity-50"
                     >
-                      <History size={12} /> 查看历史版本
+                      {uploadingVideo ? '上传中...' : '上传新版本'}
                     </button>
-                    <button className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all">
-                      上传新版本
-                    </button>
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={e => handleUploadVideo(e.target.files?.[0])}
+                    />
                   </div>
                 </div>
                 <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
@@ -401,7 +701,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
                     <>
                       <video 
                         ref={videoRef}
-                        src={displayClipUrl}
+                        src={playbackUrl}
                         className="w-full h-full object-contain"
                         onPlay={() => setIsPlaying(true)}
                         onPause={() => setIsPlaying(false)}
@@ -416,7 +716,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
                       )}
                     </>
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-pointer">
+                    <div
+                      className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-pointer"
+                      onClick={() => videoInputRef.current?.click()}
+                    >
                       <div className="p-6 rounded-full bg-white/5 text-white/20 group-hover:bg-blue-600 group-hover:text-white transition-all">
                         <MonitorPlay size={48} />
                       </div>
@@ -439,72 +742,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
           </div>
         </div>
 
-        {/* 历史版本侧滑面板 */}
-        {historyPanelOpen && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-30 flex justify-end">
-            <div className="w-[360px] h-full bg-[#0f0f0f] border-l border-white/10 shadow-2xl animate-in fade-in slide-in-from-right">
-              <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <History size={16} className="text-blue-400" />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">历史版本</p>
-                    <p className="text-sm text-white/80">动画片段</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setHistoryPanelOpen(false)}
-                  className="px-3 py-1 text-[11px] font-bold rounded-lg bg-white/5 hover:bg-white/10 text-white/60"
-                >
-                  关闭
-                </button>
-              </div>
-              <div className="p-4 space-y-3 overflow-y-auto h-full">
-                {versionHistory.map(version => (
-                  <div
-                    key={version.id}
-                    className="w-full text-left bg-white/5 border border-white/10 rounded-xl overflow-hidden transition-all hover:border-white/30"
-                  >
-                    <div className="p-3 flex items-center justify-between gap-2 text-white/80">
-                      <div>
-                        <p className="text-sm font-semibold">{version.label}</p>
-                        <div className="flex items-center gap-2 text-xs text-white/40">
-                          <span>{version.uploadedAt}</span>
-                          <span>{version.size}</span>
-                          <span>审核人：{version.reviewer}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setSelectedVersionId(version.id)}
-                          className="text-[11px] px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/80"
-                        >
-                          预览
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedVersionId(version.id);
-                            setHistoryPanelOpen(false);
-                            setIsPlaying(false);
-                          }}
-                          className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
-                        >
-                          设为当前
-                        </button>
-                      </div>
-                    </div>
-                    <div className="px-3 pb-3 text-[12px] text-white/60">{version.notes}</div>
-                  </div>
-                ))}
-                {versionHistory.length === 0 && (
-                  <div className="text-center text-white/40 text-sm py-10 border border-dashed border-white/10 rounded-xl">
-                    暂无历史版本
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 右侧：审核互动区 */}
         <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
           <div className="p-4 border-b border-white/5 flex items-center justify-between">
@@ -513,7 +750,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode }) => 
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {activeScene.comments.length > 0 ? activeScene.comments.map(c => (
+            {activeSceneData.comments.length > 0 ? activeSceneData.comments.map(c => (
               <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 border-l-4 border-l-red-500/50">
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] font-bold text-red-400 uppercase">{c.author}</span>

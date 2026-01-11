@@ -30,7 +30,11 @@ export interface Scene {
   startFrameVersion?: number;
   endFrameUrl?: string;
   endFrameVersion?: number;
-  clipUrl?: string;
+  animationUrl?: string;
+  animationVersion?: number;
+  audioUrl?: string;
+  audioVersion?: number;
+  clipUrl?: string; // backward compat
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
 }
 
