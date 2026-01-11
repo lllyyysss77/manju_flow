@@ -201,6 +201,10 @@ export interface ScenePayload {
   cameraMovement: string;
   dialogue: string;
   referenceImageUrl?: string;
+  startFrameUrl?: string;
+  startFrameVersion?: number;
+  endFrameUrl?: string;
+  endFrameVersion?: number;
 }
 
 export const chapterApi = {
@@ -264,4 +268,58 @@ export const fileApi = {
     const encodedKey = encodeURIComponent(key);
     return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`);
   },
+};
+
+// 分镜（Storyboard）API
+export interface StoryboardInfo {
+  sceneId: number;
+  startFrameUrl?: string;
+  startFrameVersion?: number;
+  endFrameUrl?: string;
+  endFrameVersion?: number;
+  latestStartFrame?: StoryboardVersion;
+  latestEndFrame?: StoryboardVersion;
+}
+
+export type FrameType = 'START' | 'END';
+
+export interface StoryboardVersion {
+  id: number;
+  sceneId: number;
+  frameType: FrameType;
+  imageUrl: string;
+  version: number;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface StoryboardVersionListResponse {
+  total: number;
+  data: StoryboardVersion[];
+}
+
+export const storyboardApi = {
+  getInfo: (sceneId: number) => request<StoryboardInfo>(`/api/scenes/${sceneId}/storyboard`),
+  updateStartFrame: (sceneId: number, imageUrl: string) =>
+    request<StoryboardVersion>(`/api/scenes/${sceneId}/storyboard/start-frame`, {
+      method: 'PUT',
+      body: JSON.stringify({ imageUrl }),
+    }),
+  updateEndFrame: (sceneId: number, imageUrl: string) =>
+    request<StoryboardVersion>(`/api/scenes/${sceneId}/storyboard/end-frame`, {
+      method: 'PUT',
+      body: JSON.stringify({ imageUrl }),
+    }),
+  listStartVersions: (sceneId: number) =>
+    request<StoryboardVersionListResponse>(`/api/scenes/${sceneId}/storyboard/start-frame/versions`),
+  listEndVersions: (sceneId: number) =>
+    request<StoryboardVersionListResponse>(`/api/scenes/${sceneId}/storyboard/end-frame/versions`),
+  revertStartFrame: (sceneId: number, version: number) =>
+    request<Scene>(`/api/scenes/${sceneId}/storyboard/start-frame/revert/${version}`, {
+      method: 'PUT',
+    }),
+  revertEndFrame: (sceneId: number, version: number) =>
+    request<Scene>(`/api/scenes/${sceneId}/storyboard/end-frame/revert/${version}`, {
+      method: 'PUT',
+    }),
 };

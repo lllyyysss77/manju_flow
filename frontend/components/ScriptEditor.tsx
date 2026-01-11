@@ -396,7 +396,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
             comments: [],
             referenceImageUrl: s.referenceImageUrl,
             startFrameUrl: s.startFrameUrl,
+            startFrameVersion: s.startFrameVersion,
             endFrameUrl: s.endFrameUrl,
+            endFrameVersion: s.endFrameVersion,
             clipUrl: s.clipUrl,
           }) as Scene)
           .sort((a, b) => a.index - b.index),
@@ -967,9 +969,17 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                         ) : (
                           sortedScenes.map((scene, sceneIdx) => (
                             <React.Fragment key={scene.id}>
-                              <button
+                              <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => handleSelectScene(chapter.id, scene)}
-                                className={`w-full p-4 text-left rounded-xl transition-all ${
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    handleSelectScene(chapter.id, scene);
+                                  }
+                                }}
+                                className={`w-full p-4 text-left rounded-xl transition-all cursor-pointer ${
                                   activeScene?.id === scene.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/20' : 'hover:bg-white/5'
                                 }`}
                               >
@@ -998,7 +1008,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                                 <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
                                   {scene.description || '点击添加描述...'}
                                 </p>
-                              </button>
+                              </div>
                               <div className="relative flex justify-center my-1 group">
                                 <div className="w-full max-w-[180px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
                                 <button
@@ -1061,8 +1071,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                 <div className="grid grid-cols-2 gap-10">
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头/运镜 (Camera Movement)</label>
-                    <input 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+                    <textarea 
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
                       value={activeScene.cameraMovement}
                       onChange={(e) => updateActiveScene(scene => ({ ...scene, cameraMovement: e.target.value }))}
                       placeholder="特写 / 全景 / 俯视... "
@@ -1071,7 +1081,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
                     <textarea 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
                       value={activeScene.dialogue}
                       onChange={(e) => updateActiveScene(scene => ({ ...scene, dialogue: e.target.value }))}
                       placeholder="角色的台词或剧情叙述..."

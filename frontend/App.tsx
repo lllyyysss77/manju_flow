@@ -449,7 +449,11 @@ const App: React.FC = () => {
             />
           );
         case ProductionStage.ART:
-          return episode ? <StoryboardEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无剧本</div>;
+          return selectedProject.episodes.length > 0 ? (
+            <StoryboardEditor episodes={selectedProject.episodes} />
+          ) : (
+            <div className="p-20 text-center text-white/20">暂无剧本</div>
+          );
         case ProductionStage.ANIMATE:
           return episode ? <AnimationEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无分镜</div>;
         case ProductionStage.AUDIO:

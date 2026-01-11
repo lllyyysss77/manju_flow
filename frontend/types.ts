@@ -27,7 +27,9 @@ export interface Scene {
   status: Status;
   comments: Comment[];
   startFrameUrl?: string;
+  startFrameVersion?: number;
   endFrameUrl?: string;
+  endFrameVersion?: number;
   clipUrl?: string;
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
 }
