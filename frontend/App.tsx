@@ -455,9 +455,17 @@ const App: React.FC = () => {
             <div className="p-20 text-center text-white/20">暂无剧本</div>
           );
         case ProductionStage.ANIMATE:
-          return episode ? <AnimationEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无分镜</div>;
+          return selectedProject.episodes.length > 0 ? (
+            <AnimationEditor episodes={selectedProject.episodes} />
+          ) : (
+            <div className="p-20 text-center text-white/20">暂无分镜</div>
+          );
         case ProductionStage.AUDIO:
-          return episode ? <AudioEditor episode={episode} /> : <div className="p-20 text-center text-white/20">暂无动画</div>;
+          return selectedProject.episodes.length > 0 ? (
+            <AudioEditor episodes={selectedProject.episodes} />
+          ) : (
+            <div className="p-20 text-center text-white/20">暂无动画</div>
+          );
         case ProductionStage.REVIEW:
           return <DeliverReview videoUrl={episode?.scenes[0]?.animationUrl || episode?.scenes[0]?.clipUrl} />;
         default:

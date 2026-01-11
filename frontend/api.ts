@@ -360,3 +360,40 @@ export const animationApi = {
       method: 'PUT',
     }),
 };
+
+// 音频后期 API
+export interface AudioInfo {
+  sceneId: number;
+  audioUrl?: string;
+  audioVersion?: number;
+  latestVersion?: AudioVersion;
+}
+
+export interface AudioVersion {
+  id: number;
+  sceneId: number;
+  audioUrl: string;
+  version: number;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface AudioVersionListResponse {
+  total: number;
+  data: AudioVersion[];
+}
+
+export const audioApi = {
+  getInfo: (sceneId: number) => request<AudioInfo>(`/api/scenes/${sceneId}/audio`),
+  update: (sceneId: number, audioUrl: string) =>
+    request<AudioVersion>(`/api/scenes/${sceneId}/audio`, {
+      method: 'PUT',
+      body: JSON.stringify({ audioUrl }),
+    }),
+  listVersions: (sceneId: number) =>
+    request<AudioVersionListResponse>(`/api/scenes/${sceneId}/audio/versions`),
+  revert: (sceneId: number, version: number) =>
+    request<Scene>(`/api/scenes/${sceneId}/audio/revert/${version}`, {
+      method: 'PUT',
+    }),
+};

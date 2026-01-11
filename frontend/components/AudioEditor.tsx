@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Scene, Status } from '../types';
-import { fileApi } from '../api';
+import { fileApi, audioApi, AudioVersion as ApiAudioVersion } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -17,29 +17,16 @@ import {
   Clock3,
   Headphones,
   Film,
-  MonitorPlay
+  MonitorPlay,
+  Camera
 } from 'lucide-react';
 
 interface AudioEditorProps {
-  episode: Episode;
+  episode?: Episode;
+  episodes?: Episode[];
 }
 
-interface AudioVersion {
-  id: number;
-  sceneId: number;
-  version: number;
-  fileUrl: string;
-  createdAt: string;
-  note?: string;
-  engineer?: string;
-  name?: string;
-}
-
-const AUDIO_SAMPLES = [
-  'https://samplelib.com/lib/preview/mp3/sample-3s.mp3',
-  'https://samplelib.com/lib/preview/mp3/sample-6s.mp3',
-  'https://samplelib.com/lib/preview/mp3/sample-15s.mp3'
-];
+type AudioVersion = ApiAudioVersion;
 
 const STATUS_MAP: Record<Status, string> = {
   DRAFT: '草稿',
@@ -47,95 +34,74 @@ const STATUS_MAP: Record<Status, string> = {
   COMPLETED: '已完成'
 };
 
-export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
-  const normalizeScenes = useMemo(() => {
-    const fallback: Scene[] = episode.scenes.length
-      ? episode.scenes
-      : [
-          {
-            id: 1,
-            index: 1,
-            description: '夜幕下的街头，女主孤身前行，霓虹在雨水中被拉出拖影。',
-            cameraMovement: '跟拍 + 缓推',
-            dialogue: '“我知道，这条路只能我自己走完。”',
-            status: 'IN_PROGRESS',
-            comments: []
-          },
-          {
-            id: 2,
-            index: 2,
-            description: '街角灯箱映出她的剪影，一辆车疾驰掠过，镜头快速摇移切入车内。',
-            cameraMovement: '摇移 + 切入',
-            dialogue: '“别回头，风暴还在后面。”',
-            status: 'IN_PROGRESS',
-            comments: []
-          }
-        ];
-    return fallback.map((scene, idx) => ({
-      ...scene,
-      comments: scene.comments || [],
-      dialogue: scene.dialogue || '此处补充对白与情绪提示',
-      description: scene.description || '此镜头暂无描述，请补充。',
-      index: scene.index || idx + 1,
-      cameraMovement: scene.cameraMovement || '平移',
-      status: scene.status || 'IN_PROGRESS',
-      animationUrl: scene.animationUrl || scene.clipUrl,
-      clipUrl: scene.clipUrl || scene.animationUrl,
-      audioUrl: scene.audioUrl,
-    }));
-  }, [episode.scenes]);
+export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) => {
+  const sourceChapters = useMemo(() => {
+    if (episodes && episodes.length) return episodes;
+    if (episode) return [episode];
+    return [];
+  }, [episode, episodes]);
 
-  const mockChapters = useMemo<Episode[]>(() => {
-    const baseIndex = episode.index || 1;
-    return [
+  const normalizedChapters = useMemo<Episode[]>(() => {
+    const fallbackScenes: Scene[] = [
       {
-        ...episode,
-        title: episode.title || `第 ${baseIndex} 章 • 声音草稿`,
-        index: baseIndex,
-        scenes: normalizeScenes
-      },
-      {
-        id: 8001,
-        title: '第 2 章 • 城市追逐 · 音效加强版',
-        index: baseIndex + 1,
+        id: 1,
+        index: 1,
+        description: '夜幕下的街头，女主孤身前行，霓虹在雨水中被拉出拖影。',
+        cameraMovement: '跟拍 + 缓推',
+        dialogue: '“我知道，这条路只能我自己走完。”',
         status: 'IN_PROGRESS',
-        synopsis: '高速街区中的追逐戏，强调速度与失控感。',
-        scenes: normalizeScenes.map(scene => ({
-          ...scene,
-          id: Number(`${scene.id}1`),
-          dialogue: scene.dialogue + '（低频强化）',
-          cameraMovement: '车载跟拍 + 航拍切换'
-        }))
+        comments: []
       },
       {
-        id: 8002,
-        title: '第 3 章 • 终局对峙 · 静谧版',
-        index: baseIndex + 2,
-        status: 'DRAFT',
-        synopsis: '废弃仓库中的光影对峙，强调空间感与压迫。',
-        scenes: normalizeScenes.map(scene => ({
-          ...scene,
-          id: Number(`${scene.id}2`),
-          dialogue: scene.dialogue.replace('。', '。 （语气更克制）'),
-          cameraMovement: '推轨 + 特写摇入'
-        }))
+        id: 2,
+        index: 2,
+        description: '街角灯箱映出她的剪影，一辆车疾驰掠过，镜头快速摇移切入车内。',
+        cameraMovement: '摇移 + 切入',
+        dialogue: '“别回头，风暴还在后面。”',
+        status: 'IN_PROGRESS',
+        comments: []
       }
     ];
-  }, [episode, normalizeScenes]);
 
-  const allScenesForVersion = useMemo(
-    () => mockChapters.flatMap(ch => ch.scenes || []),
-    [mockChapters]
-  );
+    const chapters = sourceChapters.length ? sourceChapters : [{
+      id: episode?.id || 1,
+      title: episode?.title || '默认章节',
+      index: episode?.index || 1,
+      status: episode?.status || 'IN_PROGRESS',
+      synopsis: episode?.synopsis,
+      scenes: episode?.scenes?.length ? episode.scenes : fallbackScenes
+    }];
 
-  const [activeChapterId, setActiveChapterId] = useState<number>(mockChapters[0]?.id || episode.id);
+    const normalizeScenes = (scenes: Scene[]) =>
+      (scenes?.length ? scenes : fallbackScenes).map((scene, idx) => ({
+        ...scene,
+        comments: scene.comments || [],
+        dialogue: scene.dialogue || '此处补充对白与情绪提示',
+        description: scene.description || '此镜头暂无描述，请补充。',
+        index: scene.index || idx + 1,
+        cameraMovement: scene.cameraMovement || '平移',
+        status: scene.status || 'IN_PROGRESS',
+        animationUrl: scene.animationUrl || scene.clipUrl,
+        clipUrl: scene.clipUrl || scene.animationUrl,
+        audioUrl: scene.audioUrl,
+        audioVersion: scene.audioVersion,
+      }));
+
+    return chapters.map(ch => ({
+      ...ch,
+      title: ch.title || `第 ${ch.index || 1} 章`,
+      scenes: normalizeScenes(ch.scenes || []),
+    }));
+  }, [episode, sourceChapters]);
+
+  const [activeChapterId, setActiveChapterId] = useState<number>(normalizedChapters[0]?.id || episode?.id || 1);
   const activeChapter = useMemo(
-    () => mockChapters.find(c => c.id === activeChapterId) || mockChapters[0],
-    [activeChapterId, mockChapters]
+    () => normalizedChapters.find(c => c.id === activeChapterId) || normalizedChapters[0],
+    [activeChapterId, normalizedChapters]
   );
   useEffect(() => {
-    setActiveChapterId(mockChapters[0]?.id || episode.id);
-  }, [episode.id, mockChapters]);
+    setActiveChapterId(normalizedChapters[0]?.id || episode?.id || 1);
+  }, [episode?.id, normalizedChapters]);
 
   const sortedScenes = useMemo(
     () => (activeChapter ? [...activeChapter.scenes].sort((a, b) => a.index - b.index) : []),
@@ -157,12 +123,20 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
+  const [audioMap, setAudioMap] = useState<Record<number, { url?: string; version?: number }>>({});
+  const [versionMap, setVersionMap] = useState<Record<number, AudioVersion[]>>({});
+  const [loadingAudio, setLoadingAudio] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [resolvingVersion, setResolvingVersion] = useState(false);
+  const [previewPlayingVersion, setPreviewPlayingVersion] = useState<number | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -188,70 +162,62 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
     }
   }, [urlCache]);
 
-  const mockVersionMap = useMemo<Record<number, AudioVersion[]>>(() => {
-    const now = Date.now();
-    return allScenesForVersion.reduce((acc, scene, idx) => {
-      const primary = AUDIO_SAMPLES[idx % AUDIO_SAMPLES.length];
-      const alt = AUDIO_SAMPLES[(idx + 1) % AUDIO_SAMPLES.length];
-      acc[scene.id] = [
-        {
-          id: Number(`${scene.id}03`),
-          sceneId: scene.id,
-          version: 3,
-          fileUrl: primary,
-          createdAt: new Date(now - idx * 42 * 60 * 1000).toISOString(),
-          name: '混音定稿 v3',
-          note: '对白压限 + 空间感微调',
-          engineer: 'Lena'
-        },
-        {
-          id: Number(`${scene.id}02`),
-          sceneId: scene.id,
-          version: 2,
-          fileUrl: alt,
-          createdAt: new Date(now - (idx + 1) * 90 * 60 * 1000).toISOString(),
-          name: '粗混方案 v2',
-          note: '人声均衡 + 音效平衡',
-          engineer: 'Lena'
-        },
-        {
-          id: Number(`${scene.id}01`),
-          sceneId: scene.id,
-          version: 1,
-          fileUrl: primary,
-          createdAt: new Date(now - (idx + 2) * 120 * 60 * 1000).toISOString(),
-          name: '原始口播',
-          note: '未压缩的参考音',
-          engineer: 'Lena'
-        }
-      ];
-      return acc;
-    }, {} as Record<number, AudioVersion[]>);
-  }, [allScenesForVersion]);
-
-  const [versionMap, setVersionMap] = useState<Record<number, AudioVersion[]>>(() => mockVersionMap);
-  const [selectedVersionByScene, setSelectedVersionByScene] = useState<Record<number, number | null>>(() => {
-    const init: Record<number, number | null> = {};
-    Object.entries(mockVersionMap).forEach(([sceneId, versions]) => {
-      init[Number(sceneId)] = versions?.[0]?.version ?? null;
-    });
-    return init;
-  });
-
-  useEffect(() => {
-    setVersionMap(mockVersionMap);
-    setSelectedVersionByScene(prev => {
-      const next: Record<number, number | null> = {};
-      Object.entries(mockVersionMap).forEach(([sceneId, versions]) => {
-        const idNum = Number(sceneId);
-        next[idNum] = prev[idNum] ?? versions?.[0]?.version ?? null;
-      });
-      return next;
-    });
-  }, [mockVersionMap]);
+  const resolveVersions = useCallback(
+    async (sceneId: number, versions: AudioVersion[]) => {
+      setResolvingVersion(true);
+      try {
+        const resolved = await Promise.all(
+          versions.map(async v => ({
+            ...v,
+            audioUrl: await resolveFileUrl(v.audioUrl),
+          }))
+        );
+        setVersionMap(prev => ({ ...prev, [sceneId]: resolved }));
+        return resolved;
+      } finally {
+        setResolvingVersion(false);
+      }
+    },
+    [resolveFileUrl]
+  );
 
   const activeScene = sortedScenes[activeSceneIndex];
   if (!activeScene) return null;
+
+  useEffect(() => {
+    if (!activeScene?.id) return;
+    let cancelled = false;
+    const load = async () => {
+      setLoadingAudio(true);
+      setAudioError(null);
+      try {
+        const [info, versionsRes] = await Promise.all([
+          audioApi.getInfo(activeScene.id),
+          audioApi.listVersions(activeScene.id),
+        ]);
+        if (cancelled) return;
+        const resolvedUrl = await resolveFileUrl(info.audioUrl || activeScene.audioUrl);
+        if (cancelled) return;
+        setAudioMap(prev => ({
+          ...prev,
+          [activeScene.id]: { url: resolvedUrl || info.audioUrl, version: info.audioVersion },
+        }));
+        const versions = await resolveVersions(activeScene.id, versionsRes.data || []);
+        setPreviewPlayingVersion(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load audio info', err);
+        setAudioError(err instanceof Error ? err.message : '加载音频信息失败');
+        setToast({ message: '音频数据加载失败', tone: 'error' });
+      } finally {
+        if (!cancelled) setLoadingAudio(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, resolveFileUrl, resolveVersions, activeScene?.audioUrl]);
 
   useEffect(() => {
     sortedScenes.forEach(scene => {
@@ -264,12 +230,22 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
     });
   }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
 
+  const audioOverlay = audioMap[activeScene.id] || {};
+  const activeSceneData = {
+    ...activeScene,
+    audioUrl: audioOverlay.url || activeScene.audioUrl,
+    audioVersion: audioOverlay.version ?? activeScene.audioVersion,
+  };
+
   const currentVersions = versionMap[activeScene.id] || [];
-  const selectedVersion = selectedVersionByScene[activeScene.id] ?? currentVersions[0]?.version ?? null;
-  const selectedVersionData = currentVersions.find(v => v.version === selectedVersion) || currentVersions[0];
-  const displayAudioUrl = selectedVersionData?.fileUrl || activeScene.audioUrl;
-  const displayVideoUrl = activeScene.animationUrl || activeScene.clipUrl;
-  const currentVersionLabel = selectedVersion ?? selectedVersionData?.version ?? activeScene.audioVersion ?? '—';
+  const currentVersionNumber = activeSceneData.audioVersion ?? currentVersions[0]?.version ?? null;
+  const currentVersionData = currentVersions.find(v => v.version === currentVersionNumber) || currentVersions[0];
+  const displayAudioUrl = currentVersionData?.audioUrl || activeSceneData.audioUrl;
+  const displayVideoUrl = activeSceneData.animationUrl || activeSceneData.clipUrl;
+  const currentVersionLabel = currentVersionNumber ?? '—';
+  const hasAudio = Boolean(displayAudioUrl || currentVersions.length > 0 || activeSceneData.audioUrl);
+  const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
+  const playbackAudioUrl = resolvedAudioUrl || displayAudioUrl;
 
   useEffect(() => {
     if (!displayVideoUrl) {
@@ -315,61 +291,109 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
     setIsAudioPlaying(false);
   }, [resolvedAudioUrl, activeScene.id]);
 
-  const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
-  const playbackAudioUrl = resolvedAudioUrl || displayAudioUrl;
+  useEffect(() => {
+    if (!hasAudio) setVersionMenuOpen(false);
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+    }
+    setPreviewPlayingVersion(null);
+  }, [hasAudio, activeScene.id]);
 
-  const handlePreviewVersion = (version: number) => {
+  const handlePlayVersion = (version: number) => {
     if (!activeScene?.id) return;
     const versionData = currentVersions.find(v => v.version === version);
-    if (!versionData?.fileUrl) {
-      setToast({ message: '该版本缺少音频链接，无法预览', tone: 'error' });
+    if (!versionData?.audioUrl) {
+      setToast({ message: '该版本缺少音频链接，无法播放', tone: 'error' });
       return;
     }
-    setSelectedVersionByScene(prev => ({ ...prev, [activeScene.id]: version }));
-    setIsAudioPlaying(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+    try {
+      if (!previewAudioRef.current) {
+        previewAudioRef.current = new Audio();
+        previewAudioRef.current.onended = () => setPreviewPlayingVersion(null);
+      }
+      const player = previewAudioRef.current;
+      player.pause();
+      player.currentTime = 0;
+      player.src = versionData.audioUrl || '';
+      const playPromise = player.play();
+      setPreviewPlayingVersion(version);
+      if (playPromise?.catch) {
+        playPromise.catch(err => {
+          console.error('Preview play failed', err);
+          setPreviewPlayingVersion(null);
+          setToast({ message: '无法播放该音频版本', tone: 'error' });
+        });
+      }
+    } catch (err) {
+      console.error('Preview play failed', err);
+      setPreviewPlayingVersion(null);
+      setToast({ message: '无法播放该音频版本', tone: 'error' });
     }
   };
 
-  const handleSetCurrentVersion = (version: number) => {
-    if (!activeScene?.id) return;
-    handlePreviewVersion(version);
-    setVersionMap(prev => {
-      const list = prev[activeScene.id] || [];
-      const sorted = [...list].sort((a, b) => {
-        if (a.version === version) return -1;
-        if (b.version === version) return 1;
-        return b.version - a.version;
-      });
-      return { ...prev, [activeScene.id]: sorted };
-    });
-    setToast({ message: `版本 #${version} 已设为交付版本`, tone: 'success' });
-    setVersionMenuOpen(false);
+  const handleSetCurrentVersion = async (version: number) => {
+    if (!activeSceneData?.id) return;
+    setLoadingAudio(true);
+    setAudioError(null);
+    try {
+      const scene = await audioApi.revert(activeSceneData.id, version);
+      const resolvedSceneUrl = await resolveFileUrl(scene.audioUrl || activeSceneData.audioUrl);
+      setAudioMap(prev => ({
+        ...prev,
+        [activeSceneData.id]: { url: resolvedSceneUrl || scene.audioUrl, version: scene.audioVersion },
+      }));
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+      }
+      setPreviewPlayingVersion(null);
+      const versionsRes = await audioApi.listVersions(activeSceneData.id);
+      await resolveVersions(activeSceneData.id, versionsRes.data || []);
+      setToast({ message: `版本 #${version} 已设为交付版本`, tone: 'success' });
+    } catch (err) {
+      console.error('Revert audio failed', err);
+      setAudioError(err instanceof Error ? err.message : '回滚失败，请重试');
+      setToast({ message: '回滚失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingAudio(false);
+      setIsAudioPlaying(false);
+      setVersionMenuOpen(false);
+    }
   };
 
-  const handleUploadAudio = (file?: File | null) => {
-    if (!file || !activeScene?.id) return;
-    const objectUrl = URL.createObjectURL(file);
-    const versions = versionMap[activeScene.id] || [];
-    const currentMax = versions.reduce((max, v) => Math.max(max, v.version), 0);
-    const nextVersion = currentMax + 1;
-    const newVersion: AudioVersion = {
-      id: Number(`${activeScene.id}${Date.now().toString().slice(-4)}`),
-      sceneId: activeScene.id,
-      version: nextVersion,
-      fileUrl: objectUrl,
-      createdAt: new Date().toISOString(),
-      name: `${file.name} (上传)`,
-      note: '本地上传版本',
-      engineer: '你'
-    };
-    setVersionMap(prev => ({ ...prev, [activeScene.id]: [newVersion, ...versions] }));
-    setSelectedVersionByScene(prev => ({ ...prev, [activeScene.id]: nextVersion }));
-    setToast({ message: '已上传新音频版本（本地预览）', tone: 'success' });
-    setVersionMenuOpen(false);
-    if (audioInputRef.current) audioInputRef.current.value = '';
+  const handleUploadAudio = async (file?: File | null) => {
+    if (!file || !activeSceneData?.id) return;
+    setUploadingAudio(true);
+    setAudioError(null);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const rawUrl = uploaded.key || uploaded.url;
+      const resolvedUploadUrl = await resolveFileUrl(rawUrl);
+      const version = await audioApi.update(activeSceneData.id, rawUrl || '');
+      const resolvedVersionUrl = await resolveFileUrl(version.audioUrl);
+      setAudioMap(prev => ({
+        ...prev,
+        [activeSceneData.id]: { url: resolvedVersionUrl || resolvedUploadUrl, version: version.version },
+      }));
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+      }
+      setPreviewPlayingVersion(null);
+      const versionsRes = await audioApi.listVersions(activeSceneData.id);
+      await resolveVersions(activeSceneData.id, versionsRes.data || []);
+      setToast({ message: '新音频版本已上传', tone: 'success' });
+    } catch (err) {
+      console.error('Upload audio failed', err);
+      setAudioError(err instanceof Error ? err.message : '上传失败，请重试');
+      setToast({ message: '上传失败，请重试', tone: 'error' });
+    } finally {
+      setUploadingAudio(false);
+      setVersionMenuOpen(false);
+      setIsAudioPlaying(false);
+      if (audioInputRef.current) audioInputRef.current.value = '';
+    }
   };
 
   const toggleVideoPlay = () => {
@@ -422,7 +446,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
             <span>音频后期 · 章节选择</span>
           </div>
           <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/40">
-            <span>共 {mockChapters.length} 章</span>
+            <span>共 {normalizedChapters.length} 章</span>
             <span className="hidden md:flex items-center gap-1">
               <Headphones size={12} className="text-green-400" /> 实时监听
             </span>
@@ -432,7 +456,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
           </div>
         </div>
         <div className="px-4 py-3 flex gap-2 overflow-x-auto">
-          {mockChapters.map((ch, cIdx) => (
+          {normalizedChapters.map((ch, cIdx) => (
             <button
               key={ch.id}
               onClick={() => {
@@ -498,55 +522,41 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* 左侧：剧本与台词参考 */}
-        <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-5 flex flex-col gap-6">
+        {audioError && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
+            <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
+              音频数据加载失败：{audioError}
+            </div>
+          </div>
+        )}
+        {(loadingAudio || resolvingVersion) && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+            <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
+              {loadingAudio ? '正在同步音频数据...' : '正在解析历史版本...'}
+            </div>
+          </div>
+        )}
+        {/* 左侧：剧本参考区（与分镜风格统一） */}
+        <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
           <section>
-            <div className="flex items-center gap-2 mb-3 text-blue-400">
-              <Info size={14} />
-              <h3 className="text-[10px] font-bold uppercase tracking-widest">剧本需求参考</h3>
+            <div className="flex items-center gap-2 mb-4 text-orange-400">
+              <Camera size={14} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
             </div>
-            <div className="bg-white/5 rounded-lg p-3 border border-white/5 text-[13px] text-white/70 leading-relaxed italic mb-4">
-              "{activeScene.description}"
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              <div className="flex justify-between items-center text-[10px] font-bold text-white/30 uppercase">
-                <span>镜头: {activeScene.cameraMovement}</span>
-              </div>
-            </div>
+            <p className="text-sm text-white/60 font-medium px-1">
+              {activeScene.cameraMovement || '未指定镜头类型'}
+            </p>
           </section>
 
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-purple-300">
+          <section>
+            <div className="flex items-center gap-2 mb-4 text-purple-400">
               <Type size={14} />
-              <h3 className="text-[10px] font-bold uppercase tracking-widest">台词 / 情绪提示</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest">台词/旁白</h3>
             </div>
-            <div className="bg-blue-600/5 border-l-2 border-blue-500 rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-white/60 font-semibold">
-                <span>当前镜头 #{activeSceneIndex + 1}</span>
-                <span className="text-[10px] uppercase text-white/30">{activeScene.cameraMovement}</span>
-              </div>
+            <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
               <p className="text-sm text-white/80 leading-snug">
-                {activeScene.dialogue || <span className="text-white/30 italic">（无台词）</span>}
+                {activeScene.dialogue || <span className="text-white/20 italic">（无台词）</span>}
               </p>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-              {sortedScenes.map((scene, idx) => (
-                <button
-                  key={scene.id}
-                  onClick={() => setActiveSceneIndex(idx)}
-                  className={`w-full text-left p-3 border-b border-white/5 last:border-b-0 transition-colors ${
-                    idx === activeSceneIndex ? 'bg-blue-500/10 border-l-2 border-l-blue-500 text-white' : 'text-white/70 hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[11px] font-semibold">
-                    <span>镜头 #{idx + 1}</span>
-                    <span className="text-[10px] uppercase text-white/30">{scene.cameraMovement}</span>
-                  </div>
-                  <p className="text-[13px] text-white/70 leading-relaxed mt-1 line-clamp-2">
-                    {scene.dialogue || '此镜头暂无台词'}
-                  </p>
-                </button>
-              ))}
             </div>
           </section>
         </div>
@@ -634,85 +644,95 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">音频版本管理</h4>
-                      <p className="text-[11px] text-white/40">当前版本 #{currentVersionLabel} · {selectedVersionData?.name || '未命名'}</p>
+                      <p className="text-[11px] text-white/40">
+                        {hasAudio
+                          ? `当前版本 #${currentVersionLabel}`
+                          : '当前场景还没有音频文件，先上传一版再开始对齐'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 relative">
-                    <div className="relative">
-                      <button
-                        onClick={() => setVersionMenuOpen(prev => !prev)}
-                        className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                      >
-                        <History size={12} /> 历史版本
-                      </button>
-                      {versionMenuOpen && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-10"
-                            onClick={() => setVersionMenuOpen(false)}
-                          />
-                          <div className="absolute right-0 mt-2 w-80 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
-                            <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
-                              <span>共 {currentVersions.length} 个版本</span>
-                            </div>
-                            <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
-                              {currentVersions.length === 0 && (
-                                <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
-                              )}
-                              {currentVersions.map(version => {
-                                const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
-                                const isActive = selectedVersion === version.version;
-                                return (
-                                  <div
-                                    key={version.id}
-                                    className={`p-3 space-y-2 ${isActive ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
-                                  >
-                                    <div className="flex items-center justify-between text-white/80">
-                                      <div>
-                                        <p className="text-sm font-semibold">版本 #{version.version} · {version.name || '音频版本'}</p>
-                                        <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
+                    {hasAudio && (
+                      <div className="relative">
+                        <button
+                          onClick={() => setVersionMenuOpen(prev => !prev)}
+                          className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                        >
+                          <History size={12} /> 历史版本
+                        </button>
+                        {versionMenuOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setVersionMenuOpen(false)}
+                            />
+                            <div className="absolute right-0 mt-2 w-80 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+                              <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
+                                <span>共 {currentVersions.length} 个版本</span>
+                              </div>
+                              <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
+                                {currentVersions.length === 0 && (
+                                  <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
+                                )}
+                                {currentVersions.map(version => {
+                                  const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
+                                  const isActive = previewPlayingVersion === version.version;
+                                  return (
+                                    <div
+                                      key={version.id}
+                                      className={`p-3 space-y-2 ${isActive ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
+                                    >
+                                      <div className="flex items-center justify-between text-white/80">
+                                        <div>
+                                          <p className="text-sm font-semibold">版本 #{version.version}</p>
+                                          <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
+                                        </div>
+                                        <div className="text-[10px] text-white/40">ID: {version.id}</div>
                                       </div>
-                                      <div className="text-[10px] text-white/40">{version.engineer ? `工程师 ${version.engineer}` : ''}</div>
-                                    </div>
-                                    <div className="text-[12px] text-white/60">{version.note}</div>
-                                    <div className="flex items-center justify-between gap-2">
-                                      <button
-                                        onClick={() => {
-                                          handlePreviewVersion(version.version);
-                                          setVersionMenuOpen(false);
-                                        }}
-                                        className="text-[11px] px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/80"
-                                      >
-                                        预览
-                                      </button>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center justify-between gap-2">
                                         <button
-                                          onClick={() => handleSetCurrentVersion(version.version)}
-                                          className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
+                                          onClick={() => {
+                                            handlePlayVersion(version.version);
+                                          }}
+                                          className={`text-[11px] px-2 py-1 rounded-lg border flex items-center gap-1 transition-all ${
+                                            isActive
+                                              ? 'bg-blue-600/20 border-blue-500/50 text-white'
+                                              : 'bg-white/10 hover:bg-white/20 border-white/10 text-white/80'
+                                          }`}
                                         >
-                                          设为当前
+                                          <Play size={12} fill="currentColor" />
+                                          {isActive ? '播放中' : '播放'}
                                         </button>
-                                        <div className="relative group">
-                                          <Info size={14} className="text-white/30" />
-                                          <div className="absolute right-0 top-6 w-60 p-2 rounded-md bg-black/80 border border-white/10 text-[11px] text-white/70 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-                                            将预览中的版本设为交付版本（默认最新）<br/>交付版本将进入审核流程
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => handleSetCurrentVersion(version.version)}
+                                            className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
+                                          >
+                                            设为当前
+                                          </button>
+                                          <div className="relative group">
+                                            <Info size={14} className="text-white/30" />
+                                            <div className="absolute right-0 top-6 w-60 p-2 rounded-md bg-black/80 border border-white/10 text-[11px] text-white/70 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                                              将预览中的版本设为交付版本（默认最新）<br/>交付版本将进入审核流程
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                     <button
                       onClick={() => audioInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all"
+                      disabled={uploadingAudio}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all disabled:opacity-50"
                     >
-                      上传新版本
+                      {uploadingAudio ? '上传中...' : hasAudio ? '上传新版本' : '上传第一版'}
                     </button>
                     <input
                       ref={audioInputRef}
@@ -724,59 +744,73 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode }) => {
                   </div>
                 </div>
 
-                <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={toggleAudioPlay}
-                      className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
-                    >
-                      {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
-                    </button>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between text-white/70 text-sm">
-                        <span>{selectedVersionData?.name || '未命名音频'}</span>
-                        <span className="text-[11px] text-white/40">版本 #{selectedVersionData?.version || '—'}</span>
+                {hasAudio ? (
+                  <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={toggleAudioPlay}
+                        className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
+                      >
+                        {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+                      </button>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between text-white/70 text-sm">
+                          <span>当前版本 #{currentVersionLabel || '—'}</span>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
+                          <div className="h-full w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 animate-pulse [animation-duration:2.5s]" />
+                        </div>
+                        <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
                       </div>
-                      <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
-                        <div className="h-full w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 animate-pulse [animation-duration:2.5s]" />
-                      </div>
-                      <div className="mt-1 text-[11px] text-white/40">
-                        {selectedVersionData?.note || '等待录音或导入混音文件'}
+                    </div>
+                    <audio
+                      ref={audioRef}
+                      src={playbackAudioUrl}
+                      onPlay={() => setIsAudioPlaying(true)}
+                      onPause={() => setIsAudioPlaying(false)}
+                      className="hidden"
+                      controls
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-[#0b0b0b] border border-dashed border-white/10 rounded-xl p-6 flex flex-col items-center text-center gap-4">
+                    <div className="p-4 rounded-full bg-blue-600/15 text-blue-400 shadow-inner">
+                      <Headphones size={26} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-white font-semibold text-sm">还没有上传音频</p>
+                      <p className="text-white/50 text-[12px]">上传对白、配乐或氛围音，历史版本会自动留存便于比对</p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <button
+                        onClick={() => audioInputRef.current?.click()}
+                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all"
+                      >
+                        上传第一版
+                      </button>
+                      <div className="text-[11px] text-white/50 bg-white/5 border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
+                        <Volume2 size={12} className="text-amber-300" />
+                        <span>支持 mp3 / wav / aac</span>
                       </div>
                     </div>
                   </div>
-                  <audio
-                    ref={audioRef}
-                    src={playbackAudioUrl}
-                    onPlay={() => setIsAudioPlaying(true)}
-                    onPause={() => setIsAudioPlaying(false)}
-                    className="hidden"
-                    controls
-                  />
-                  <div className="grid grid-cols-3 gap-3 text-[11px] text-white/50">
-                    <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2 border border-white/5">
-                      <Headphones size={14} className="text-green-400" />
-                      <span>参考监听</span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2 border border-white/5">
-                      <Mic2 size={14} className="text-amber-300" />
-                      <span>对白清晰</span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2 border border-white/5">
-                      <Waves size={14} className="text-blue-400" />
-                      <span>动效衔接</span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
           <div className="p-4 bg-[#1a1a1a] border-t border-white/5 flex justify-end items-center px-10">
-            <div className="flex items-center gap-2 text-white/30">
-              <CheckCircle2 size={14} className="text-green-500/50" />
-              <span className="text-[10px] font-bold uppercase tracking-widest">音频已就绪 (审核组可实时监听反馈)</span>
-            </div>
+            {hasAudio ? (
+              <div className="flex items-center gap-2 text-white/30">
+                <CheckCircle2 size={14} className="text-green-500/50" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">音频已就绪 (审核组可实时监听反馈)</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-white/40">
+                <Info size={14} className="text-amber-300" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景尚无音频 · 上传后即可开始对齐</span>
+              </div>
+            )}
           </div>
         </div>
 
