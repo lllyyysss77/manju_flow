@@ -361,17 +361,21 @@ export const animationApi = {
     }),
 };
 
-// 音频后期 API
-export interface AudioInfo {
+// 音频后期 API（多音轨）
+export interface SceneAudio {
+  id: number;
   sceneId: number;
+  role: string;
+  index: number;
   audioUrl?: string;
   audioVersion?: number;
-  latestVersion?: AudioVersion;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AudioVersion {
   id: number;
-  sceneId: number;
+  sceneAudioId: number;
   audioUrl: string;
   version: number;
   createdBy: number;
@@ -383,17 +387,36 @@ export interface AudioVersionListResponse {
   data: AudioVersion[];
 }
 
+export interface SceneAudioListResponse {
+  total: number;
+  data: SceneAudio[];
+}
+
 export const audioApi = {
-  getInfo: (sceneId: number) => request<AudioInfo>(`/api/scenes/${sceneId}/audio`),
-  update: (sceneId: number, audioUrl: string) =>
-    request<AudioVersion>(`/api/scenes/${sceneId}/audio`, {
+  list: (sceneId: number) => request<SceneAudioListResponse>(`/api/scenes/${sceneId}/audios`),
+  create: (sceneId: number, payload: { role: string; index: number }) =>
+    request<SceneAudio>(`/api/scenes/${sceneId}/audios`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (sceneId: number, audioId: number, payload: { role?: string; index?: number }) =>
+    request<SceneAudio>(`/api/scenes/${sceneId}/audios/${audioId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (sceneId: number, audioId: number) =>
+    request(`/api/scenes/${sceneId}/audios/${audioId}`, {
+      method: 'DELETE',
+    }),
+  upload: (sceneId: number, audioId: number, audioUrl: string) =>
+    request<AudioVersion>(`/api/scenes/${sceneId}/audios/${audioId}/upload`, {
       method: 'PUT',
       body: JSON.stringify({ audioUrl }),
     }),
-  listVersions: (sceneId: number) =>
-    request<AudioVersionListResponse>(`/api/scenes/${sceneId}/audio/versions`),
-  revert: (sceneId: number, version: number) =>
-    request<Scene>(`/api/scenes/${sceneId}/audio/revert/${version}`, {
+  listVersions: (sceneId: number, audioId: number) =>
+    request<AudioVersionListResponse>(`/api/scenes/${sceneId}/audios/${audioId}/versions`),
+  revert: (sceneId: number, audioId: number, version: number) =>
+    request<SceneAudio>(`/api/scenes/${sceneId}/audios/${audioId}/revert/${version}`, {
       method: 'PUT',
     }),
 };

@@ -32,10 +32,20 @@ export interface Scene {
   endFrameVersion?: number;
   animationUrl?: string;
   animationVersion?: number;
-  audioUrl?: string;
-  audioVersion?: number;
   clipUrl?: string; // backward compat
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
+  audios?: SceneAudioTrack[]; // 多音轨
+}
+
+export interface SceneAudioTrack {
+  id: number;
+  sceneId: number;
+  role: string;
+  index: number;
+  audioUrl?: string;
+  audioVersion?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Episode {

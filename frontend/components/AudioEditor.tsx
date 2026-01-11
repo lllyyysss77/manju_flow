@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Scene, Status } from '../types';
-import { fileApi, audioApi, AudioVersion as ApiAudioVersion } from '../api';
+import { fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -18,7 +18,10 @@ import {
   Headphones,
   Film,
   MonitorPlay,
-  Camera
+  Camera,
+  Plus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 interface AudioEditorProps {
@@ -27,6 +30,7 @@ interface AudioEditorProps {
 }
 
 type AudioVersion = ApiAudioVersion;
+type SceneAudioTrack = ApiSceneAudio;
 
 const STATUS_MAP: Record<Status, string> = {
   DRAFT: '草稿',
@@ -83,8 +87,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         status: scene.status || 'IN_PROGRESS',
         animationUrl: scene.animationUrl || scene.clipUrl,
         clipUrl: scene.clipUrl || scene.animationUrl,
-        audioUrl: scene.audioUrl,
-        audioVersion: scene.audioVersion,
+        audios: scene.audios || [],
       }));
 
     return chapters.map(ch => ({
@@ -130,13 +133,17 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
-  const [audioMap, setAudioMap] = useState<Record<number, { url?: string; version?: number }>>({});
+  const [audioTracks, setAudioTracks] = useState<SceneAudioTrack[]>([]);
+  const [selectedAudioId, setSelectedAudioId] = useState<number | null>(null);
   const [versionMap, setVersionMap] = useState<Record<number, AudioVersion[]>>({});
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const [previewPlayingVersion, setPreviewPlayingVersion] = useState<number | null>(null);
+  const [creatingTrack, setCreatingTrack] = useState(false);
+  const [newTrackRole, setNewTrackRole] = useState('');
+  const [roleDraft, setRoleDraft] = useState('');
 
   useEffect(() => {
     if (!toast) return;
@@ -163,7 +170,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   }, [urlCache]);
 
   const resolveVersions = useCallback(
-    async (sceneId: number, versions: AudioVersion[]) => {
+    async (audioId: number, versions: AudioVersion[]) => {
       setResolvingVersion(true);
       try {
         const resolved = await Promise.all(
@@ -172,7 +179,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
             audioUrl: await resolveFileUrl(v.audioUrl),
           }))
         );
-        setVersionMap(prev => ({ ...prev, [sceneId]: resolved }));
+        setVersionMap(prev => ({ ...prev, [audioId]: resolved }));
         return resolved;
       } finally {
         setResolvingVersion(false);
@@ -187,37 +194,91 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   useEffect(() => {
     if (!activeScene?.id) return;
     let cancelled = false;
-    const load = async () => {
+    setAudioTracks([]);
+    setVersionMap({});
+    setSelectedAudioId(null);
+    setResolvedAudioUrl(undefined);
+    setVersionMenuOpen(false);
+    setPreviewPlayingVersion(null);
+    setCreatingTrack(false);
+    setNewTrackRole('');
+    setAudioError(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsAudioPlaying(false);
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+    }
+    const loadTracks = async () => {
       setLoadingAudio(true);
-      setAudioError(null);
       try {
-        const [info, versionsRes] = await Promise.all([
-          audioApi.getInfo(activeScene.id),
-          audioApi.listVersions(activeScene.id),
-        ]);
+        const res = await audioApi.list(activeScene.id);
         if (cancelled) return;
-        const resolvedUrl = await resolveFileUrl(info.audioUrl || activeScene.audioUrl);
-        if (cancelled) return;
-        setAudioMap(prev => ({
-          ...prev,
-          [activeScene.id]: { url: resolvedUrl || info.audioUrl, version: info.audioVersion },
-        }));
-        const versions = await resolveVersions(activeScene.id, versionsRes.data || []);
-        setPreviewPlayingVersion(null);
+        const tracks = (res.data || []).sort((a, b) => a.index - b.index);
+        setAudioTracks(tracks);
+        const firstId = tracks[0]?.id ?? null;
+        setSelectedAudioId(firstId);
+        setRoleDraft(tracks[0]?.role || '');
       } catch (err) {
         if (cancelled) return;
-        console.error('Failed to load audio info', err);
-        setAudioError(err instanceof Error ? err.message : '加载音频信息失败');
+        console.error('Failed to load audio tracks', err);
+        setAudioError(err instanceof Error ? err.message : '加载音轨失败');
         setToast({ message: '音频数据加载失败', tone: 'error' });
       } finally {
         if (!cancelled) setLoadingAudio(false);
       }
     };
-    load();
+    loadTracks();
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, resolveFileUrl, resolveVersions, activeScene?.audioUrl]);
+  }, [activeScene?.id]);
+
+  useEffect(() => {
+    if (!activeScene?.id || !selectedAudioId) {
+      setResolvedAudioUrl(undefined);
+      setVersionMenuOpen(false);
+      return;
+    }
+    let cancelled = false;
+    setAudioError(null);
+    setPreviewPlayingVersion(null);
+    const currentTrack = audioTracks.find(t => t.id === selectedAudioId);
+    const loadVersions = async () => {
+      setResolvingVersion(true);
+      try {
+        const versionsRes = await audioApi.listVersions(activeScene.id, selectedAudioId);
+        if (cancelled) return;
+        await resolveVersions(selectedAudioId, versionsRes.data || []);
+        const rawUrl = currentTrack?.audioUrl;
+        const resolved = rawUrl ? await resolveFileUrl(rawUrl) : '';
+        if (!cancelled) setResolvedAudioUrl(resolved || rawUrl || undefined);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load audio versions', err);
+        setAudioError(err instanceof Error ? err.message : '加载音频数据失败');
+        setToast({ message: '音频数据加载失败', tone: 'error' });
+      } finally {
+        if (!cancelled) setResolvingVersion(false);
+      }
+    };
+    loadVersions();
+    return () => {
+      cancelled = true;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setIsAudioPlaying(false);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+      }
+    };
+  }, [activeScene?.id, selectedAudioId, audioTracks, resolveFileUrl, resolveVersions]);
 
   useEffect(() => {
     sortedScenes.forEach(scene => {
@@ -230,20 +291,27 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     });
   }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
 
-  const audioOverlay = audioMap[activeScene.id] || {};
-  const activeSceneData = {
-    ...activeScene,
-    audioUrl: audioOverlay.url || activeScene.audioUrl,
-    audioVersion: audioOverlay.version ?? activeScene.audioVersion,
-  };
+  useEffect(() => {
+    const current = audioTracks.find(t => t.id === selectedAudioId);
+    setRoleDraft(current?.role || '');
+  }, [selectedAudioId, audioTracks]);
 
-  const currentVersions = versionMap[activeScene.id] || [];
-  const currentVersionNumber = activeSceneData.audioVersion ?? currentVersions[0]?.version ?? null;
-  const currentVersionData = currentVersions.find(v => v.version === currentVersionNumber) || currentVersions[0];
-  const displayAudioUrl = currentVersionData?.audioUrl || activeSceneData.audioUrl;
-  const displayVideoUrl = activeSceneData.animationUrl || activeSceneData.clipUrl;
+  const selectedTrack = useMemo(
+    () => audioTracks.find(t => t.id === selectedAudioId) || null,
+    [audioTracks, selectedAudioId]
+  );
+
+  const currentVersions = selectedTrack ? versionMap[selectedTrack.id] || [] : [];
+  const normalizedTrackVersion =
+    selectedTrack?.audioVersion && selectedTrack.audioVersion > 0 ? selectedTrack.audioVersion : undefined;
+  const currentVersionNumber = normalizedTrackVersion ?? currentVersions[0]?.version ?? null;
+  const currentVersionData =
+    (currentVersionNumber ? currentVersions.find(v => v.version === currentVersionNumber) : undefined) ||
+    currentVersions[0];
+  const displayAudioUrl = currentVersionData?.audioUrl || selectedTrack?.audioUrl;
+  const displayVideoUrl = activeScene.animationUrl || activeScene.clipUrl;
   const currentVersionLabel = currentVersionNumber ?? '—';
-  const hasAudio = Boolean(displayAudioUrl || currentVersions.length > 0 || activeSceneData.audioUrl);
+  const hasAudio = Boolean(selectedTrack && (displayAudioUrl || currentVersions.length > 0));
   const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
   const playbackAudioUrl = resolvedAudioUrl || displayAudioUrl;
 
@@ -275,7 +343,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     return () => {
       cancelled = true;
     };
-  }, [displayAudioUrl, resolveFileUrl, activeScene.id]);
+  }, [displayAudioUrl, resolveFileUrl, activeScene.id, selectedAudioId]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -289,7 +357,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     audioRef.current.pause();
     audioRef.current.load();
     setIsAudioPlaying(false);
-  }, [resolvedAudioUrl, activeScene.id]);
+  }, [resolvedAudioUrl, activeScene.id, selectedAudioId]);
 
   useEffect(() => {
     if (!hasAudio) setVersionMenuOpen(false);
@@ -298,10 +366,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       previewAudioRef.current.currentTime = 0;
     }
     setPreviewPlayingVersion(null);
-  }, [hasAudio, activeScene.id]);
+  }, [hasAudio, activeScene.id, selectedAudioId]);
 
   const handlePlayVersion = (version: number) => {
-    if (!activeScene?.id) return;
+    if (!activeScene?.id || !selectedTrack) return;
     const versionData = currentVersions.find(v => v.version === version);
     if (!versionData?.audioUrl) {
       setToast({ message: '该版本缺少音频链接，无法播放', tone: 'error' });
@@ -312,6 +380,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         previewAudioRef.current = new Audio();
         previewAudioRef.current.onended = () => setPreviewPlayingVersion(null);
       }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setIsAudioPlaying(false);
       const player = previewAudioRef.current;
       player.pause();
       player.currentTime = 0;
@@ -333,23 +406,27 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   };
 
   const handleSetCurrentVersion = async (version: number) => {
-    if (!activeSceneData?.id) return;
+    if (!activeScene?.id || !selectedTrack) return;
     setLoadingAudio(true);
     setAudioError(null);
     try {
-      const scene = await audioApi.revert(activeSceneData.id, version);
-      const resolvedSceneUrl = await resolveFileUrl(scene.audioUrl || activeSceneData.audioUrl);
-      setAudioMap(prev => ({
-        ...prev,
-        [activeSceneData.id]: { url: resolvedSceneUrl || scene.audioUrl, version: scene.audioVersion },
-      }));
+      const updated = await audioApi.revert(activeScene.id, selectedTrack.id, version);
+      const resolvedSceneUrl = await resolveFileUrl(updated.audioUrl);
+      setAudioTracks(prev =>
+        prev.map(track =>
+          track.id === selectedTrack.id
+            ? { ...track, ...updated, audioUrl: updated.audioUrl }
+            : track
+        )
+      );
+      setResolvedAudioUrl(resolvedSceneUrl || updated.audioUrl || undefined);
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
       }
       setPreviewPlayingVersion(null);
-      const versionsRes = await audioApi.listVersions(activeSceneData.id);
-      await resolveVersions(activeSceneData.id, versionsRes.data || []);
+      const versionsRes = await audioApi.listVersions(activeScene.id, selectedTrack.id);
+      await resolveVersions(selectedTrack.id, versionsRes.data || []);
       setToast({ message: `版本 #${version} 已设为交付版本`, tone: 'success' });
     } catch (err) {
       console.error('Revert audio failed', err);
@@ -357,32 +434,44 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       setToast({ message: '回滚失败，请重试', tone: 'error' });
     } finally {
       setLoadingAudio(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
       setIsAudioPlaying(false);
       setVersionMenuOpen(false);
     }
   };
 
   const handleUploadAudio = async (file?: File | null) => {
-    if (!file || !activeSceneData?.id) return;
+    if (!file || !activeScene?.id) return;
+    if (!selectedTrack) {
+      setToast({ message: '请先创建并选择一个音轨', tone: 'error' });
+      return;
+    }
     setUploadingAudio(true);
     setAudioError(null);
     try {
       const uploaded = await fileApi.upload(file, 'private');
       const rawUrl = uploaded.key || uploaded.url;
       const resolvedUploadUrl = await resolveFileUrl(rawUrl);
-      const version = await audioApi.update(activeSceneData.id, rawUrl || '');
+      const version = await audioApi.upload(activeScene.id, selectedTrack.id, rawUrl || '');
       const resolvedVersionUrl = await resolveFileUrl(version.audioUrl);
-      setAudioMap(prev => ({
-        ...prev,
-        [activeSceneData.id]: { url: resolvedVersionUrl || resolvedUploadUrl, version: version.version },
-      }));
+      setAudioTracks(prev =>
+        prev.map(track =>
+          track.id === selectedTrack.id
+            ? { ...track, audioUrl: version.audioUrl, audioVersion: version.version }
+            : track
+        )
+      );
+      setResolvedAudioUrl(resolvedVersionUrl || resolvedUploadUrl || undefined);
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
       }
       setPreviewPlayingVersion(null);
-      const versionsRes = await audioApi.listVersions(activeSceneData.id);
-      await resolveVersions(activeSceneData.id, versionsRes.data || []);
+      const versionsRes = await audioApi.listVersions(activeScene.id, selectedTrack.id);
+      await resolveVersions(selectedTrack.id, versionsRes.data || []);
       setToast({ message: '新音频版本已上传', tone: 'success' });
     } catch (err) {
       console.error('Upload audio failed', err);
@@ -392,6 +481,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       setUploadingAudio(false);
       setVersionMenuOpen(false);
       setIsAudioPlaying(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
       if (audioInputRef.current) audioInputRef.current.value = '';
     }
   };
@@ -415,10 +508,106 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
       audioRef.current.pause();
       setIsAudioPlaying(false);
     } else {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+        setPreviewPlayingVersion(null);
+      }
       audioRef.current.play().then(() => setIsAudioPlaying(true)).catch(err => {
         console.error('Audio play failed', err);
         setToast({ message: '无法播放该音频版本', tone: 'error' });
       });
+    }
+  };
+
+  const handleCreateTrack = async () => {
+    if (!activeScene?.id) return;
+    const role = (newTrackRole || '').trim() || `音轨 ${audioTracks.length + 1}`;
+    const nextIndex = audioTracks.length
+      ? Math.max(...audioTracks.map(t => t.index)) + 1
+      : 1;
+    setLoadingAudio(true);
+    setAudioError(null);
+    try {
+      const track = await audioApi.create(activeScene.id, { role, index: nextIndex });
+      const nextTracks = [...audioTracks, track].sort((a, b) => a.index - b.index);
+      setAudioTracks(nextTracks);
+      setSelectedAudioId(track.id);
+      setRoleDraft(track.role || role);
+      setCreatingTrack(false);
+      setNewTrackRole('');
+      setVersionMenuOpen(false);
+      setResolvedAudioUrl(undefined);
+      setToast({ message: '已创建新音轨，上传音频以开始制作', tone: 'success' });
+    } catch (err) {
+      console.error('Create audio track failed', err);
+      setAudioError(err instanceof Error ? err.message : '创建音轨失败');
+      setToast({ message: '创建音轨失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
+  const handleUpdateRole = async () => {
+    if (!activeScene?.id || !selectedTrack) return;
+    const role = roleDraft.trim();
+    if (!role) {
+      setToast({ message: '请输入音轨名称', tone: 'error' });
+      return;
+    }
+    if (role === selectedTrack.role) return;
+    setLoadingAudio(true);
+    setAudioError(null);
+    try {
+      const updated = await audioApi.update(activeScene.id, selectedTrack.id, { role });
+      setAudioTracks(prev =>
+        prev.map(track => (track.id === selectedTrack.id ? { ...track, ...updated } : track))
+      );
+      setToast({ message: '音轨名称已更新', tone: 'success' });
+    } catch (err) {
+      console.error('Update audio track failed', err);
+      setAudioError(err instanceof Error ? err.message : '更新音轨失败');
+      setToast({ message: '更新音轨失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
+  const handleDeleteTrack = async (audioId: number) => {
+    if (!activeScene?.id) return;
+    const target = audioTracks.find(t => t.id === audioId);
+    if (!target) return;
+    const confirmed = window.confirm('删除该音轨将清空其所有版本，确定继续吗？');
+    if (!confirmed) return;
+    setLoadingAudio(true);
+    setAudioError(null);
+    try {
+      await audioApi.delete(activeScene.id, audioId);
+      const nextTracks = audioTracks.filter(t => t.id !== audioId);
+      setAudioTracks(nextTracks);
+      setVersionMap(prev => {
+        const copy = { ...prev };
+        delete copy[audioId];
+        return copy;
+      });
+      setVersionMenuOpen(false);
+      setPreviewPlayingVersion(null);
+      const nextId = nextTracks[0]?.id ?? null;
+      setSelectedAudioId(nextId);
+      setRoleDraft(nextTracks.find(t => t.id === nextId)?.role || '');
+      setResolvedAudioUrl(undefined);
+      setToast({ message: '音轨已删除', tone: 'success' });
+    } catch (err) {
+      console.error('Delete audio track failed', err);
+      setAudioError(err instanceof Error ? err.message : '删除音轨失败');
+      setToast({ message: '删除音轨失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingAudio(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setIsAudioPlaying(false);
     }
   };
 
@@ -532,7 +721,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         {(loadingAudio || resolvingVersion) && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
-              {loadingAudio ? '正在同步音频数据...' : '正在解析历史版本...'}
+              {loadingAudio ? '正在同步音轨数据...' : '正在解析历史版本...'}
             </div>
           </div>
         )}
@@ -636,7 +825,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                 </div>
               </div>
 
-              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-4 shadow-xl">
+              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400">
@@ -645,94 +834,32 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                     <div>
                       <h4 className="text-sm font-bold text-white">音频版本管理</h4>
                       <p className="text-[11px] text-white/40">
-                        {hasAudio
-                          ? `当前版本 #${currentVersionLabel}`
-                          : '当前场景还没有音频文件，先上传一版再开始对齐'}
+                        {selectedTrack
+                          ? `音轨：${selectedTrack.role || '未命名'} · 当前版本 #${currentVersionLabel || '—'}`
+                          : '为场景添加对白、旁白、环境音等多条音轨，分别管理版本'}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 relative">
-                    {hasAudio && (
-                      <div className="relative">
-                        <button
-                          onClick={() => setVersionMenuOpen(prev => !prev)}
-                          className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                        >
-                          <History size={12} /> 历史版本
-                        </button>
-                        {versionMenuOpen && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={() => setVersionMenuOpen(false)}
-                            />
-                            <div className="absolute right-0 mt-2 w-80 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
-                              <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
-                                <span>共 {currentVersions.length} 个版本</span>
-                              </div>
-                              <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
-                                {currentVersions.length === 0 && (
-                                  <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
-                                )}
-                                {currentVersions.map(version => {
-                                  const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
-                                  const isActive = previewPlayingVersion === version.version;
-                                  return (
-                                    <div
-                                      key={version.id}
-                                      className={`p-3 space-y-2 ${isActive ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
-                                    >
-                                      <div className="flex items-center justify-between text-white/80">
-                                        <div>
-                                          <p className="text-sm font-semibold">版本 #{version.version}</p>
-                                          <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
-                                        </div>
-                                        <div className="text-[10px] text-white/40">ID: {version.id}</div>
-                                      </div>
-                                      <div className="flex items-center justify-between gap-2">
-                                        <button
-                                          onClick={() => {
-                                            handlePlayVersion(version.version);
-                                          }}
-                                          className={`text-[11px] px-2 py-1 rounded-lg border flex items-center gap-1 transition-all ${
-                                            isActive
-                                              ? 'bg-blue-600/20 border-blue-500/50 text-white'
-                                              : 'bg-white/10 hover:bg-white/20 border-white/10 text-white/80'
-                                          }`}
-                                        >
-                                          <Play size={12} fill="currentColor" />
-                                          {isActive ? '播放中' : '播放'}
-                                        </button>
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            onClick={() => handleSetCurrentVersion(version.version)}
-                                            className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
-                                          >
-                                            设为当前
-                                          </button>
-                                          <div className="relative group">
-                                            <Info size={14} className="text-white/30" />
-                                            <div className="absolute right-0 top-6 w-60 p-2 rounded-md bg-black/80 border border-white/10 text-[11px] text-white/70 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-                                              将预览中的版本设为交付版本（默认最新）<br/>交付版本将进入审核流程
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <button
+                      onClick={() => {
+                        setCreatingTrack(true);
+                        setNewTrackRole('');
+                      }}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-[11px] rounded-lg border border-white/10 flex items-center gap-1 transition-all"
+                    >
+                      <Plus size={12} /> 新建音轨
+                    </button>
                     <button
                       onClick={() => audioInputRef.current?.click()}
-                      disabled={uploadingAudio}
+                      disabled={uploadingAudio || !selectedTrack}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all disabled:opacity-50"
                     >
-                      {uploadingAudio ? '上传中...' : hasAudio ? '上传新版本' : '上传第一版'}
+                      {uploadingAudio
+                        ? '上传中...'
+                        : selectedTrack
+                          ? hasAudio ? '上传新版本' : '上传第一版'
+                          : '先新建音轨'}
                     </button>
                     <input
                       ref={audioInputRef}
@@ -744,49 +871,246 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                   </div>
                 </div>
 
-                {hasAudio ? (
-                  <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                    <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-widest text-white/30 font-bold">音轨</span>
+                  {audioTracks.map(track => {
+                    const isActive = track.id === selectedAudioId;
+                    return (
                       <button
-                        onClick={toggleAudioPlay}
-                        className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
+                        key={track.id}
+                        onClick={() => {
+                          setSelectedAudioId(track.id);
+                          setVersionMenuOpen(false);
+                          setIsAudioPlaying(false);
+                          setPreviewPlayingVersion(null);
+                        }}
+                        className={`px-3 py-1 rounded-lg border text-sm flex items-center gap-2 transition-all ${
+                          isActive
+                            ? 'bg-blue-600/20 border-blue-500/60 text-white shadow-[0_0_12px_rgba(59,130,246,0.35)]'
+                            : 'bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white'
+                        }`}
                       >
-                        {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+                        <span>{track.role || `音轨 #${track.index}`}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 border border-white/10">
+                          #{track.audioVersion ?? '—'}
+                        </span>
                       </button>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between text-white/70 text-sm">
-                          <span>当前版本 #{currentVersionLabel || '—'}</span>
+                    );
+                  })}
+                  <button
+                    onClick={() => {
+                      setCreatingTrack(true);
+                      setNewTrackRole('');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-white/5 border border-dashed border-white/20 text-white/60 text-sm flex items-center gap-1 hover:text-white hover:border-white/40"
+                  >
+                    <Plus size={12} /> 添加音轨
+                  </button>
+                </div>
+
+                {creatingTrack && (
+                  <div className="flex flex-wrap items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-3">
+                    <input
+                      value={newTrackRole}
+                      onChange={e => setNewTrackRole(e.target.value)}
+                      placeholder="角色名 / 旁白 / 环境音"
+                      className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={handleCreateTrack}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg border border-blue-500/60"
+                    >
+                      创建音轨
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCreatingTrack(false);
+                        setNewTrackRole('');
+                      }}
+                      className="px-3 py-2 bg-white/5 hover:bg-white/10 text-white/70 text-xs rounded-lg border border-white/10"
+                    >
+                      取消
+                    </button>
+                  </div>
+                )}
+
+                {selectedTrack ? (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={roleDraft}
+                          onChange={e => setRoleDraft(e.target.value)}
+                          onBlur={handleUpdateRole}
+                          className="min-w-[180px] bg-[#0c0c0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="填写音轨名称"
+                        />
+                        <button
+                          onClick={handleUpdateRole}
+                          className="px-2.5 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-1"
+                        >
+                          <Pencil size={12} /> 保存名称
+                        </button>
+                        <span className="text-[11px] text-white/30">版本 #{currentVersionLabel || '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-2 relative">
+                        <div className="relative">
+                          <button
+                            disabled={!currentVersions.length}
+                            onClick={() => setVersionMenuOpen(prev => !prev)}
+                            className={`flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg border transition-all ${
+                              currentVersions.length
+                                ? 'bg-white/5 hover:bg-white/10 text-white/70 border-white/10'
+                                : 'bg-white/5 text-white/30 border-white/10 cursor-not-allowed'
+                            }`}
+                          >
+                            <History size={12} /> 历史版本
+                          </button>
+                          {versionMenuOpen && currentVersions.length > 0 && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setVersionMenuOpen(false)}
+                              />
+                              <div className="absolute right-0 mt-2 w-80 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+                                <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
+                                  <span>共 {currentVersions.length} 个版本</span>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
+                                  {currentVersions.map(version => {
+                                    const time = version.createdAt ? new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
+                                    const isActive = previewPlayingVersion === version.version;
+                                    return (
+                                      <div
+                                        key={version.id}
+                                        className={`p-3 space-y-2 ${isActive ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
+                                      >
+                                        <div className="flex items-center justify-between text-white/80">
+                                          <div>
+                                            <p className="text-sm font-semibold">版本 #{version.version}</p>
+                                            <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
+                                          </div>
+                                          <div className="text-[10px] text-white/40">ID: {version.id}</div>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-2">
+                                          <button
+                                            onClick={() => {
+                                              handlePlayVersion(version.version);
+                                            }}
+                                            className={`text-[11px] px-2 py-1 rounded-lg border flex items-center gap-1 transition-all ${
+                                              isActive
+                                                ? 'bg-blue-600/20 border-blue-500/50 text-white'
+                                                : 'bg-white/10 hover:bg-white/20 border-white/10 text-white/80'
+                                            }`}
+                                          >
+                                            <Play size={12} fill="currentColor" />
+                                            {isActive ? '播放中' : '播放'}
+                                          </button>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={() => handleSetCurrentVersion(version.version)}
+                                              className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
+                                            >
+                                              设为当前
+                                            </button>
+                                            <div className="relative group">
+                                              <Info size={14} className="text-white/30" />
+                                              <div className="absolute right-0 top-6 w-60 p-2 rounded-md bg-black/80 border border-white/10 text-[11px] text-white/70 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                                                将预览中的版本设为交付版本（默认最新）<br/>交付版本将进入审核流程
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {!currentVersions.length && (
+                                    <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
-                          <div className="h-full w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 animate-pulse [animation-duration:2.5s]" />
-                        </div>
-                        <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
+                        <button
+                          onClick={() => handleDeleteTrack(selectedTrack.id)}
+                          className="px-2.5 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-red-300 hover:text-white hover:border-red-500/40 hover:bg-red-500/20 flex items-center gap-1"
+                        >
+                          <Trash2 size={12} /> 删除音轨
+                        </button>
                       </div>
                     </div>
-                    <audio
-                      ref={audioRef}
-                      src={playbackAudioUrl}
-                      onPlay={() => setIsAudioPlaying(true)}
-                      onPause={() => setIsAudioPlaying(false)}
-                      className="hidden"
-                      controls
-                    />
-                  </div>
+
+                    {hasAudio ? (
+                      <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={toggleAudioPlay}
+                            className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
+                          >
+                            {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+                          </button>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between text-white/70 text-sm">
+                              <span>{selectedTrack?.role || '未命名音轨'} · 当前版本 #{currentVersionLabel || '—'}</span>
+                            </div>
+                            <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
+                              <div className="h-full w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 animate-pulse [animation-duration:2.5s]" />
+                            </div>
+                            <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
+                          </div>
+                        </div>
+                        <audio
+                          ref={audioRef}
+                          src={playbackAudioUrl}
+                          onPlay={() => setIsAudioPlaying(true)}
+                          onPause={() => setIsAudioPlaying(false)}
+                          className="hidden"
+                          controls
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-[#0b0b0b] border border-dashed border-white/10 rounded-xl p-6 flex flex-col items-center text-center gap-4">
+                        <div className="p-4 rounded-full bg-blue-600/15 text-blue-400 shadow-inner">
+                          <Headphones size={26} />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-white font-semibold text-sm">当前音轨还没有音频</p>
+                          <p className="text-white/50 text-[12px]">上传对白、配乐或氛围音，历史版本会自动留存便于比对</p>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                          <button
+                            onClick={() => audioInputRef.current?.click()}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all disabled:opacity-50"
+                          >
+                            上传第一版
+                          </button>
+                          <div className="text-[11px] text-white/50 bg-white/5 border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
+                            <Volume2 size={12} className="text-amber-300" />
+                            <span>支持 mp3 / wav / aac</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="bg-[#0b0b0b] border border-dashed border-white/10 rounded-xl p-6 flex flex-col items-center text-center gap-4">
                     <div className="p-4 rounded-full bg-blue-600/15 text-blue-400 shadow-inner">
-                      <Headphones size={26} />
+                      <Mic2 size={26} />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-white font-semibold text-sm">还没有上传音频</p>
-                      <p className="text-white/50 text-[12px]">上传对白、配乐或氛围音，历史版本会自动留存便于比对</p>
+                      <p className="text-white font-semibold text-sm">当前场景还没有音轨</p>
+                      <p className="text-white/50 text-[12px]">为不同角色/旁白创建独立音轨，方便分段管理</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-3">
                       <button
-                        onClick={() => audioInputRef.current?.click()}
+                        onClick={() => {
+                          setCreatingTrack(true);
+                          setNewTrackRole('');
+                        }}
                         className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all"
                       >
-                        上传第一版
+                        新建音轨
                       </button>
                       <div className="text-[11px] text-white/50 bg-white/5 border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
                         <Volume2 size={12} className="text-amber-300" />
@@ -800,15 +1124,24 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
           </div>
 
           <div className="p-4 bg-[#1a1a1a] border-t border-white/5 flex justify-end items-center px-10">
-            {hasAudio ? (
+            {audioTracks.length === 0 ? (
+              <div className="flex items-center gap-2 text-white/40">
+                <Info size={14} className="text-amber-300" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景还没有音轨 · 先创建音轨再上传音频</span>
+              </div>
+            ) : hasAudio ? (
               <div className="flex items-center gap-2 text-white/30">
                 <CheckCircle2 size={14} className="text-green-500/50" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">音频已就绪 (审核组可实时监听反馈)</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">
+                  {selectedTrack?.role || '音轨'} 已就绪 (审核组可实时监听反馈)
+                </span>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-white/40">
                 <Info size={14} className="text-amber-300" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景尚无音频 · 上传后即可开始对齐</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">
+                  {selectedTrack?.role || '音轨'} 暂无音频 · 上传后即可开始对齐
+                </span>
               </div>
             )}
           </div>
