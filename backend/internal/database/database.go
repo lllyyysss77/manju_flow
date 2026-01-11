@@ -50,6 +50,7 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.Scene{},
 		&models.File{},
 		&models.StoryboardVersion{},
+		&models.AnimationVersion{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

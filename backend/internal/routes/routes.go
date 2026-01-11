@@ -97,6 +97,16 @@ func Setup(r *gin.Engine) {
 				storyboard.PUT("/start-frame/revert/:version", storyboardHandler.RevertStartFrame) // 回滚起始帧
 				storyboard.PUT("/end-frame/revert/:version", storyboardHandler.RevertEndFrame)     // 回滚结束帧
 			}
+
+			// 动画路由
+			animationHandler := handlers.NewAnimationHandler()
+			animation := authorized.Group("/scenes/:sceneId/animation")
+			{
+				animation.GET("", animationHandler.GetInfo)                     // 获取动画信息
+				animation.PUT("", animationHandler.Update)                      // 更新动画
+				animation.GET("/versions", animationHandler.ListVersions)       // 动画版本历史
+				animation.PUT("/revert/:version", animationHandler.Revert)      // 回滚动画
+			}
 		}
 	}
 }
