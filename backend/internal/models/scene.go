@@ -33,6 +33,9 @@ type Scene struct {
 	// 动画制作 - 当前动画
 	AnimationUrl      string         `gorm:"type:text" json:"animationUrl"`            // 动画视频URL
 	AnimationVersion  int            `gorm:"default:0" json:"animationVersion"`        // 动画版本号
+	// 音频后期 - 当前音频
+	AudioUrl          string         `gorm:"type:text" json:"audioUrl"`                // 音频URL
+	AudioVersion      int            `gorm:"default:0" json:"audioVersion"`            // 音频版本号
 	CreatedAt         time.Time      `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`

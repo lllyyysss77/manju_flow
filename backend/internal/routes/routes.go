@@ -107,6 +107,16 @@ func Setup(r *gin.Engine) {
 				animation.GET("/versions", animationHandler.ListVersions)       // 动画版本历史
 				animation.PUT("/revert/:version", animationHandler.Revert)      // 回滚动画
 			}
+
+			// 音频路由
+			audioHandler := handlers.NewAudioHandler()
+			audio := authorized.Group("/scenes/:sceneId/audio")
+			{
+				audio.GET("", audioHandler.GetInfo)                     // 获取音频信息
+				audio.PUT("", audioHandler.Update)                      // 更新音频
+				audio.GET("/versions", audioHandler.ListVersions)       // 音频版本历史
+				audio.PUT("/revert/:version", audioHandler.Revert)      // 回滚音频
+			}
 		}
 	}
 }
