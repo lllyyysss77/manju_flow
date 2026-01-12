@@ -51,8 +51,10 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.File{},
 		&models.StoryboardVersion{},
 		&models.AnimationVersion{},
-		&models.SceneAudio{},        // 场景音频轨道（支持多音频）
-		&models.SceneAudioVersion{}, // 音频版本历史
+		&models.SceneAudio{},          // 场景音频轨道（支持多音频）
+		&models.SceneAudioVersion{},   // 音频版本历史
+		&models.ChapterVideo{},        // 章节交付视频
+		&models.ChapterVideoVersion{}, // 视频版本历史
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
