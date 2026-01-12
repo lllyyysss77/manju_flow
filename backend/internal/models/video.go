@@ -37,8 +37,8 @@ type ChapterVideo struct {
 	UpdatedAt      time.Time      `json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// 关联
-	Chapter Chapter `gorm:"foreignKey:ChapterID" json:"-"`
+	// 关联（无外键约束，通过业务逻辑保证数据完整性）
+	Chapter Chapter `gorm:"foreignKey:ChapterID;constraint:false" json:"-"`
 }
 
 // TableName 指定表名
@@ -63,9 +63,9 @@ type ChapterVideoVersion struct {
 	CreatedAt      time.Time      `json:"createdAt"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// 关联
-	ChapterVideo ChapterVideo `gorm:"foreignKey:ChapterVideoID" json:"-"`
-	Creator      User         `gorm:"foreignKey:CreatedBy" json:"-"`
+	// 关联（无外键约束，通过业务逻辑保证数据完整性）
+	ChapterVideo ChapterVideo `gorm:"foreignKey:ChapterVideoID;constraint:false" json:"-"`
+	Creator      User         `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
 }
 
 // TableName 指定表名

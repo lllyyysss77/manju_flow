@@ -38,8 +38,8 @@ type Scene struct {
 	UpdatedAt         time.Time      `json:"updatedAt"`
 	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// 关联
-	Chapter Chapter `gorm:"foreignKey:ChapterID" json:"-"`
+	// 关联（无外键约束，通过业务逻辑保证数据完整性）
+	Chapter Chapter `gorm:"foreignKey:ChapterID;constraint:false" json:"-"`
 }
 
 // TableName 指定表名

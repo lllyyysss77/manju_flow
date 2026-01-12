@@ -21,8 +21,8 @@ type File struct {
 	OriginalName string         `gorm:"size:255;not null" json:"originalName"`             // 原始文件名
 	Size         int64          `gorm:"not null" json:"size"`                              // 文件大小（字节）
 	MimeType     string         `gorm:"size:100" json:"mimeType"`                          // MIME 类型
-	UploaderID   uint           `gorm:"not null;index" json:"uploaderId"`                  // 上传者 ID
-	Uploader     User           `gorm:"foreignKey:UploaderID" json:"uploader,omitempty"`   // 上传者
+	UploaderID   uint           `gorm:"not null;index" json:"uploaderId"`                             // 上传者 ID
+	Uploader     User           `gorm:"foreignKey:UploaderID;constraint:false" json:"uploader,omitempty"` // 上传者（无外键约束）
 	Visibility   FileVisibility `gorm:"size:20;not null;default:private" json:"visibility"` // 可见性
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`

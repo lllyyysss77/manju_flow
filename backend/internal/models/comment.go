@@ -43,9 +43,9 @@ type Comment struct {
 	// 模块上下文 - 同一个目标在不同模块的评论互相隔离
 	Module CommentModule `gorm:"size:20;not null;index" json:"module"`
 
-	// 作者
+	// 作者（无外键约束，通过业务逻辑保证数据完整性）
 	UserID uint `gorm:"not null;index" json:"userId"`
-	User   User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User   User `gorm:"foreignKey:UserID;constraint:false" json:"user,omitempty"`
 
 	// 元数据 - JSON 格式，存储特殊信息
 	// 审核交付模块的时间点: {"timecode": "3:56", "seconds": 236}
