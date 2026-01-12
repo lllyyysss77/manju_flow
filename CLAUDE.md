@@ -101,6 +101,37 @@ manju_flow/
 | UploaderID | uint | 上传者 ID |
 | Visibility | FileVisibility | public / private |
 
+### ChapterVideo (章节交付视频)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| ChapterID | uint | 关联章节 (一对一) |
+| VideoUrl | string | 原始视频 URL |
+| PreviewUrl | string | 压缩预览版 URL (可选) |
+| VideoVersion | int | 当前版本号 |
+| Status | VideoStatus | PENDING / PROCESSING / READY / FAILED |
+| Duration | int | 时长（秒） |
+| FileSize | int64 | 文件大小（字节） |
+| PreviewSize | int64 | 预览版大小（字节） |
+| Width | int | 视频宽度 |
+| Height | int | 视频高度 |
+| Format | string | 视频格式 (mp4, webm) |
+| Codec | string | 编码格式 (h264, h265) |
+| Bitrate | int | 码率 (kbps) |
+
+### ChapterVideoVersion (视频版本历史)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| ChapterVideoID | uint | 关联章节视频 |
+| VideoUrl | string | 视频 URL |
+| PreviewUrl | string | 预览版 URL |
+| Version | int | 版本号 |
+| Duration | int | 时长（秒） |
+| FileSize | int64 | 文件大小 |
+| Remark | string | 版本备注 |
+| CreatedBy | uint | 创建者 ID |
+
 ## API 路由
 
 ```
@@ -131,6 +162,15 @@ DELETE /api/books/:bookId/chapters/:chapterId/scenes/:id  # 删除
 POST   /api/files                  # 上传文件 (multipart/form-data, field: file, visibility: public/private)
 GET    /api/files/*key             # 获取文件 (?redirect=true 跳转到签名URL，否则返回JSON)
 DELETE /api/files/*key             # 删除文件 (仅上传者可删)
+
+# 章节视频交付
+GET    /api/chapters/:chapterId/video                   # 获取章节视频信息
+PUT    /api/chapters/:chapterId/video                   # 上传/更新视频
+DELETE /api/chapters/:chapterId/video                   # 删除视频及所有版本
+PUT    /api/chapters/:chapterId/video/preview           # 上传压缩预览版
+PUT    /api/chapters/:chapterId/video/status            # 更新处理状态
+GET    /api/chapters/:chapterId/video/versions          # 获取版本历史
+PUT    /api/chapters/:chapterId/video/revert/:version   # 回滚到指定版本
 ```
 
 ## 开发命令
@@ -189,3 +229,4 @@ OSS_BUCKET_NAME=your_bucket_name
 4. CORS: 后端允许所有来源 (`*`)
 5. 文件上传: 需要配置阿里云 OSS，否则文件相关 API 返回 503
 6. 文件权限: public 文件任何人可访问，private 文件仅上传者可访问
+7. 视频优化: 大视频建议上传时同时提供压缩预览版 (PreviewUrl)，阿里云 OSS 支持 HTTP Range 请求实现边下边播
