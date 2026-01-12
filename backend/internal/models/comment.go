@@ -43,11 +43,6 @@ type Comment struct {
 	// 模块上下文 - 同一个目标在不同模块的评论互相隔离
 	Module CommentModule `gorm:"size:20;not null;index" json:"module"`
 
-	// 父评论（支持回复嵌套）
-	ParentID *uint     `gorm:"index" json:"parentId,omitempty"`
-	Parent   *Comment  `gorm:"foreignKey:ParentID" json:"-"`
-	Replies  []Comment `gorm:"foreignKey:ParentID" json:"replies,omitempty"`
-
 	// 作者
 	UserID uint `gorm:"not null;index" json:"userId"`
 	User   User `gorm:"foreignKey:UserID" json:"user,omitempty"`
@@ -70,9 +65,8 @@ type CommentListResponse struct {
 
 // CreateCommentRequest 创建评论请求
 type CreateCommentRequest struct {
-	Content  string `json:"content" binding:"required"`
-	ParentID *uint  `json:"parentId,omitempty"`
-	Meta     string `json:"meta,omitempty"` // JSON 格式的元数据
+	Content string `json:"content" binding:"required"`
+	Meta    string `json:"meta,omitempty"` // JSON 格式的元数据
 }
 
 // UpdateCommentRequest 更新评论请求

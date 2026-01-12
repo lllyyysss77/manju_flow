@@ -8,7 +8,6 @@ import (
 	"manju-flow/internal/models"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // CommentHandler 评论处理器
@@ -52,14 +51,11 @@ func (h *CommentHandler) ListSceneComments(c *gin.Context) {
 		return
 	}
 
-	// 获取顶级评论（ParentID 为空）并预加载回复和用户
+	// 获取评论并预加载用户
 	var comments []models.Comment
-	if err := db.Where("target_type = ? AND target_id = ? AND module = ? AND parent_id IS NULL",
+	if err := db.Where("target_type = ? AND target_id = ? AND module = ?",
 		models.CommentTargetScene, sceneId, module).
 		Preload("User").
-		Preload("Replies", func(db *gorm.DB) *gorm.DB {
-			return db.Preload("User").Order("created_at ASC")
-		}).
 		Order("created_at DESC").
 		Find(&comments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -127,31 +123,11 @@ func (h *CommentHandler) CreateSceneComment(c *gin.Context) {
 	// 获取当前用户
 	userID := c.GetUint("userID")
 
-	// 如果有父评论，验证父评论存在且属于同一场景和模块
-	if req.ParentID != nil {
-		var parent models.Comment
-		if err := db.First(&parent, *req.ParentID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Parent comment not found",
-			})
-			return
-		}
-		if parent.TargetType != models.CommentTargetScene ||
-			parent.TargetID != uint(sceneIdUint) ||
-			parent.Module != models.CommentModule(module) {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Parent comment does not belong to this scene/module",
-			})
-			return
-		}
-	}
-
 	comment := models.Comment{
 		Content:    req.Content,
 		TargetType: models.CommentTargetScene,
 		TargetID:   uint(sceneIdUint),
 		Module:     models.CommentModule(module),
-		ParentID:   req.ParentID,
 		UserID:     userID,
 		Meta:       req.Meta,
 	}
@@ -192,14 +168,11 @@ func (h *CommentHandler) ListChapterComments(c *gin.Context) {
 		return
 	}
 
-	// 获取顶级评论并预加载回复和用户
+	// 获取评论并预加载用户
 	var comments []models.Comment
-	if err := db.Where("target_type = ? AND target_id = ? AND module = ? AND parent_id IS NULL",
+	if err := db.Where("target_type = ? AND target_id = ? AND module = ?",
 		models.CommentTargetChapter, chapterId, models.CommentModuleReview).
 		Preload("User").
-		Preload("Replies", func(db *gorm.DB) *gorm.DB {
-			return db.Preload("User").Order("created_at ASC")
-		}).
 		Order("created_at DESC").
 		Find(&comments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -257,31 +230,11 @@ func (h *CommentHandler) CreateChapterComment(c *gin.Context) {
 	// 获取当前用户
 	userID := c.GetUint("userID")
 
-	// 如果有父评论，验证父评论存在且属于同一章节
-	if req.ParentID != nil {
-		var parent models.Comment
-		if err := db.First(&parent, *req.ParentID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Parent comment not found",
-			})
-			return
-		}
-		if parent.TargetType != models.CommentTargetChapter ||
-			parent.TargetID != uint(chapterIdUint) ||
-			parent.Module != models.CommentModuleReview {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Parent comment does not belong to this chapter",
-			})
-			return
-		}
-	}
-
 	comment := models.Comment{
 		Content:    req.Content,
 		TargetType: models.CommentTargetChapter,
 		TargetID:   uint(chapterIdUint),
 		Module:     models.CommentModuleReview,
-		ParentID:   req.ParentID,
 		UserID:     userID,
 		Meta:       req.Meta, // 可包含 timecode 信息: {"timecode": "3:56", "seconds": 236}
 	}
@@ -362,7 +315,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 
 // Delete 删除评论
 // @Summary 删除评论
-// @Description 删除评论（仅评论作者可操作，会级联删除回复）
+// @Description 删除评论（仅评论作者可操作）
 // @Tags comments
 // @Accept json
 // @Produce json
@@ -391,15 +344,7 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// 级联删除所有回复
-	if err := db.Where("parent_id = ?", comment.ID).Delete(&models.Comment{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to delete comment replies",
-		})
-		return
-	}
-
-	// 删除评论本身
+	// 删除评论
 	if err := db.Delete(&comment).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to delete comment",
@@ -427,11 +372,7 @@ func (h *CommentHandler) GetByID(c *gin.Context) {
 	db := database.GetDB()
 
 	var comment models.Comment
-	if err := db.Preload("User").
-		Preload("Replies", func(db *gorm.DB) *gorm.DB {
-			return db.Preload("User").Order("created_at ASC")
-		}).
-		First(&comment, id).Error; err != nil {
+	if err := db.Preload("User").First(&comment, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Comment not found",
 		})
