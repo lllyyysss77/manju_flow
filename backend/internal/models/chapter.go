@@ -27,9 +27,9 @@ type Chapter struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// 关联
-	Book   Book    `gorm:"foreignKey:BookID" json:"-"`
-	Scenes []Scene `gorm:"foreignKey:ChapterID" json:"scenes,omitempty"`
+	// 关联（无外键约束，通过业务逻辑保证数据完整性）
+	Book   Book    `gorm:"foreignKey:BookID;constraint:false" json:"-"`
+	Scenes []Scene `gorm:"foreignKey:ChapterID;constraint:false" json:"scenes,omitempty"`
 }
 
 // TableName 指定表名

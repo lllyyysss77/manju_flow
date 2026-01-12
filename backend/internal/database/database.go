@@ -37,6 +37,7 @@ func Init(cfg *config.DatabaseConfig) error {
 
 	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
+		DisableForeignKeyConstraintWhenMigrating: true, // 禁用外键约束，通过业务逻辑保证数据完整性
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)

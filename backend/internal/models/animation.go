@@ -16,9 +16,9 @@ type AnimationVersion struct {
 	CreatedAt time.Time      `json:"createdAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// 关联
-	Scene   Scene `gorm:"foreignKey:SceneID" json:"-"`
-	Creator User  `gorm:"foreignKey:CreatedBy" json:"-"`
+	// 关联（无外键约束，通过业务逻辑保证数据完整性）
+	Scene   Scene `gorm:"foreignKey:SceneID;constraint:false" json:"-"`
+	Creator User  `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
 }
 
 // TableName 指定表名
