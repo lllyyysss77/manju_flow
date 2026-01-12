@@ -15,7 +15,6 @@ import {
   Layout,
   Type,
   History,
-  Clock3
 } from 'lucide-react';
 
 interface AnimationEditorProps {
@@ -98,6 +97,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const [previewSource, setPreviewSource] = useState<{ url?: string; version?: number } | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(280);
+  const [rightPanelWidth, setRightPanelWidth] = useState(300);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const MIN_LEFT = 220;
+  const MAX_LEFT = 420;
+  const MIN_RIGHT = 260;
+  const MAX_RIGHT = 520;
   
   const activeScene = sortedScenes[activeSceneIndex];
   const hasScene = sortedScenes.length > 0;
@@ -107,6 +114,36 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!isResizingLeft) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_LEFT, Math.max(MIN_LEFT, e.clientX));
+      setLeftPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingLeft(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingLeft, MAX_LEFT, MIN_LEFT]);
+
+  useEffect(() => {
+    if (!isResizingRight) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_RIGHT, Math.max(MIN_RIGHT, window.innerWidth - e.clientX));
+      setRightPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingRight(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingRight, MAX_RIGHT, MIN_RIGHT]);
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
@@ -421,22 +458,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
       )}
       {/* 顶部：章节选择 + 场景切换（与分镜风格保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <div className="flex items-center gap-2 text-white/60 text-sm font-semibold">
-            <Film size={14} className="text-blue-400" />
-            <span>动画制作 · 章节选择</span>
-          </div>
-          <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/40">
-            <span>共 {normalizedChapters.length} 章</span>
-            <span className="hidden md:flex items-center gap-1">
-              <CheckCircle2 size={12} className="text-green-400" /> 实时审核
-            </span>
-            <span className="hidden md:flex items-center gap-1">
-              <Clock3 size={12} className="text-white/30" /> 自动保存 04:58
-            </span>
-          </div>
-        </div>
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto">
+        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
           {normalizedChapters.map((ch, cIdx) => (
             <button
               key={ch.id}
@@ -527,7 +549,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
         ) : (
           <>
         {/* 左侧：剧本参考区（与分镜风格统一） */}
-        <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
+        <div
+          style={{ width: leftPanelWidth }}
+          className="border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8 min-w-[220px] max-w-[420px]"
+        >
           <section>
             <div className="flex items-center gap-2 mb-4 text-blue-400">
               <Info size={14} />
@@ -591,6 +616,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
             </div>
           </section>
         </div>
+
+        <div
+          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingLeft ? 'bg-white/20' : ''}`}
+          onMouseDown={e => {
+            e.preventDefault();
+            setIsResizingLeft(true);
+          }}
+        />
 
         {/* 中间：动画制作/预览区 */}
         <div className="flex-1 flex flex-col bg-[#0a0a0a]">
@@ -769,8 +802,19 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
           </div>
         </div>
 
+        <div
+          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
+          onMouseDown={e => {
+            e.preventDefault();
+            setIsResizingRight(true);
+          }}
+        />
+
         {/* 右侧：审核互动区 */}
-        <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
+        <div
+          style={{ width: rightPanelWidth }}
+          className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
+        >
           <div className="p-4 border-b border-white/5 flex items-center justify-between">
             <span className="text-xs font-bold text-white/40 uppercase tracking-widest">修改历史与讨论</span>
             <MessageSquare size={16} className="text-white/20" />

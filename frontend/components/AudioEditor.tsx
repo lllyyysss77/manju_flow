@@ -14,7 +14,6 @@ import {
   Volume2,
   Type,
   History,
-  Clock3,
   Headphones,
   Film,
   MonitorPlay,
@@ -117,12 +116,50 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [newTrackRole, setNewTrackRole] = useState('');
   const [roleDraft, setRoleDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SceneAudioTrack | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(280);
+  const [rightPanelWidth, setRightPanelWidth] = useState(300);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const MIN_LEFT = 220;
+  const MAX_LEFT = 420;
+  const MIN_RIGHT = 260;
+  const MAX_RIGHT = 520;
 
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!isResizingLeft) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_LEFT, Math.max(MIN_LEFT, e.clientX));
+      setLeftPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingLeft(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingLeft, MAX_LEFT, MIN_LEFT]);
+
+  useEffect(() => {
+    if (!isResizingRight) return;
+    const handleMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_RIGHT, Math.max(MIN_RIGHT, window.innerWidth - e.clientX));
+      setRightPanelWidth(newWidth);
+    };
+    const handleUp = () => setIsResizingRight(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingRight, MAX_RIGHT, MIN_RIGHT]);
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
@@ -632,22 +669,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
 
       {/* 顶部：章节选择 + 场景切换（与动画保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <div className="flex items-center gap-2 text-white/60 text-sm font-semibold">
-            <Waves size={14} className="text-amber-300" />
-            <span>音频后期 · 章节选择</span>
-          </div>
-          <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/40">
-            <span>共 {normalizedChapters.length} 章</span>
-            <span className="hidden md:flex items-center gap-1">
-              <Headphones size={12} className="text-green-400" /> 实时监听
-            </span>
-            <span className="hidden md:flex items-center gap-1">
-              <Clock3 size={12} className="text-white/30" /> 自动保存 04:58
-            </span>
-          </div>
-        </div>
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto">
+        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
           {normalizedChapters.map((ch, cIdx) => (
             <button
               key={ch.id}
@@ -768,29 +790,91 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         ) : (
           <>
           {/* 左侧：剧本参考区（与分镜风格统一） */}
-          <div className="w-80 border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8">
-            <section>
-              <div className="flex items-center gap-2 mb-4 text-orange-400">
-                <Camera size={14} />
-                <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
-              </div>
-              <p className="text-sm text-white/60 font-medium px-1">
-                {activeScene?.cameraMovement || '未指定镜头类型'}
+          <div
+          style={{ width: leftPanelWidth }}
+          className="border-r border-white/5 bg-[#121212] overflow-y-auto p-6 flex flex-col gap-8 min-w-[220px] max-w-[420px]"
+        >
+          <section>
+            <div className="flex items-center gap-2 mb-4 text-blue-400">
+              <Info size={14} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">画面需求</h3>
+            </div>
+            <div className="bg-white/5 rounded-lg p-4 border border-white/5">
+              <p className="text-sm text-white/90 leading-relaxed italic">
+                "{activeScene?.description || '此镜头暂无描述，请补充。'}"
               </p>
-            </section>
+            </div>
+          </section>
 
-            <section>
-              <div className="flex items-center gap-2 mb-4 text-purple-400">
-                <Type size={14} />
-                <h3 className="text-xs font-bold uppercase tracking-widest">台词/旁白</h3>
-              </div>
-              <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
-                <p className="text-sm text-white/80 leading-snug">
-                  {activeScene?.dialogue || <span className="text-white/20 italic">（无台词）</span>}
-                </p>
+          <section>
+            <div className="flex items-center gap-2 mb-4 text-orange-400">
+              <Camera size={14} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">镜头/运镜</h3>
+            </div>
+            <p className="text-sm text-white/60 font-medium px-1">
+              {activeScene?.cameraMovement || '未指定镜头类型'}
+            </p>
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2 mb-4 text-purple-400">
+              <Type size={14} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">台词/旁白</h3>
+            </div>
+            <div className="bg-blue-600/5 border-l-2 border-blue-500 p-3">
+              <p className="text-sm text-white/80 leading-snug">
+                {activeScene?.dialogue || <span className="text-white/20 italic">（无台词）</span>}
+              </p>
+            </div>
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2 mb-4 text-blue-400">
+              <Film size={14} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">动画参考</h3>
+            </div>
+            <div className="aspect-video w-full rounded-xl border border-white/10 bg-black overflow-hidden relative group">
+                {playbackVideoUrl ? (
+                  <>
+                    <video
+                      ref={videoRef}
+                      src={playbackVideoUrl}
+                      className="w-full h-full object-contain"
+                      onPlay={() => setIsVideoPlaying(true)}
+                      onPause={() => setIsVideoPlaying(false)}
+                      onClick={toggleVideoPlay}
+                    />
+                    {!isVideoPlaying && (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer"
+                        onClick={toggleVideoPlay}
+                      >
+                        <div className="p-4 rounded-full bg-blue-600 text-white shadow-lg group-hover:scale-105 transition-transform">
+                          <Play fill="currentColor" size={24} />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-white/30">
+                    <div className="p-4 rounded-full bg-white/5 text-white/20">
+                      <MonitorPlay size={28} />
+                    </div>
+                    <p className="text-xs text-white/50">暂无动画片段</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30">完成动画后可对齐口型节奏</p>
+                  </div>
+                )}
               </div>
             </section>
           </div>
+
+          <div
+            className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingLeft ? 'bg-white/20' : ''}`}
+            onMouseDown={e => {
+              e.preventDefault();
+              setIsResizingLeft(true);
+            }}
+          />
 
           {/* 中间：动画参考 + 音频版本管理 */}
           <div className="flex-1 flex flex-col bg-[#0a0a0a]">
@@ -820,52 +904,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                     >
                       <ChevronRight size={20} />
                     </button>
-                  </div>
                 </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">动画参考</span>
-                      <span className="px-2 py-1 text-[11px] rounded bg-white/5 border border-white/10 text-white/70 flex items-center gap-2">
-                        <Film size={12} /> 对口型 / 氛围对齐
-                      </span>
-                    </div>
-                  </div>
-                  <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
-                    {playbackVideoUrl ? (
-                      <>
-                        <video 
-                          ref={videoRef}
-                          src={playbackVideoUrl}
-                          className="w-full h-full object-contain"
-                          onPlay={() => setIsVideoPlaying(true)}
-                          onPause={() => setIsVideoPlaying(false)}
-                          onClick={toggleVideoPlay}
-                        />
-                        {!isVideoPlaying && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={toggleVideoPlay}>
-                            <div className="p-5 rounded-full bg-blue-600 text-white shadow-xl scale-100 group-hover:scale-110 transition-transform">
-                              <Play fill="currentColor" size={32} />
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div
-                        className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-default"
-                      >
-                        <div className="p-6 rounded-full bg-white/5 text-white/20 transition-all">
-                          <MonitorPlay size={48} />
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm font-bold text-white/40 mb-1">暂无动画片段，请先完成动画制作</p>
-                          <p className="text-[10px] text-white/20 uppercase tracking-widest">上传动画后可对齐口型节奏</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              </div>
 
               <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1189,8 +1229,19 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
           </div>
         </div>
 
+          <div
+            className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
+            onMouseDown={e => {
+              e.preventDefault();
+              setIsResizingRight(true);
+            }}
+          />
+
           {/* 右侧：修改意见 */}
-          <div className="w-80 border-l border-white/5 bg-[#121212] flex flex-col">
+          <div
+            style={{ width: rightPanelWidth }}
+            className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
+          >
             <div className="p-4 border-b border-white/5 flex items-center justify-between">
               <span className="text-xs font-bold text-white/40 uppercase tracking-widest">音频修正意见</span>
               <MessageSquare size={16} className="text-white/20" />
