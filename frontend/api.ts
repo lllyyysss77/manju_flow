@@ -262,6 +262,58 @@ export const fileApi = {
       body: formData,
     });
   },
+
+  // 带进度回调的上传（适合大文件）
+  uploadWithProgress: (
+    file: File,
+    visibility: 'public' | 'private' = 'private',
+    onProgress?: (percent: number) => void
+  ): Promise<FileUploadResponse> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('visibility', visibility);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new ApiError(xhr.status, 'Invalid JSON response'));
+          }
+        } else {
+          let message = `Upload failed with status ${xhr.status}`;
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            message = errorData.error || message;
+          } catch {
+            // ignore parse error
+          }
+          reject(new ApiError(xhr.status, message));
+        }
+      };
+
+      xhr.onerror = () => reject(new ApiError(0, 'Network error'));
+
+      xhr.open('POST', `${API_BASE_URL}/api/files`);
+
+      const token = authStorage.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.send(formData);
+    });
+  },
+
   getSignedUrl: (keyOrUrl: string) => {
     const idx = keyOrUrl.lastIndexOf('/api/files/');
     const key = idx >= 0 ? keyOrUrl.slice(idx + '/api/files/'.length) : keyOrUrl;
