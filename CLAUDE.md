@@ -132,6 +132,25 @@ manju_flow/
 | Remark | string | 版本备注 |
 | CreatedBy | uint | 创建者 ID |
 
+### Comment (评论)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ID | uint | 主键 |
+| Content | string | 评论内容 |
+| TargetType | CommentTargetType | scene / chapter |
+| TargetID | uint | 目标对象 ID |
+| Module | CommentModule | script / storyboard / animation / audio / review |
+| ParentID | *uint | 父评论 ID (支持回复嵌套) |
+| UserID | uint | 评论作者 ID |
+| Meta | string | JSON 元数据 (审核交付: {"timecode": "3:56", "seconds": 236}) |
+
+**评论模块说明:**
+- `script`: 剧本创作模块 - 针对场景评论
+- `storyboard`: 分镜绘制模块 - 针对场景评论
+- `animation`: 动画制作模块 - 针对场景评论
+- `audio`: 音频后期模块 - 针对场景评论
+- `review`: 审核交付模块 - 针对章节评论，支持视频时间点
+
 ## API 路由
 
 ```
@@ -171,6 +190,18 @@ PUT    /api/chapters/:chapterId/video/preview           # 上传压缩预览版
 PUT    /api/chapters/:chapterId/video/status            # 更新处理状态
 GET    /api/chapters/:chapterId/video/versions          # 获取版本历史
 PUT    /api/chapters/:chapterId/video/revert/:version   # 回滚到指定版本
+
+# 评论
+# 场景评论 (剧本创作、分镜绘制、动画制作、音频后期)
+GET    /api/scenes/:sceneId/comments                    # 获取场景评论 (?module=script|storyboard|animation|audio)
+POST   /api/scenes/:sceneId/comments                    # 创建场景评论 (?module=script|storyboard|animation|audio)
+# 章节评论 (审核交付)
+GET    /api/chapters/:chapterId/comments                # 获取章节评论 (module=review)
+POST   /api/chapters/:chapterId/comments                # 创建章节评论 (支持 meta 字段存储时间点)
+# 评论通用操作
+GET    /api/comments/:id                                # 获取评论详情
+PUT    /api/comments/:id                                # 更新评论 (仅作者可操作)
+DELETE /api/comments/:id                                # 删除评论 (仅作者可操作，级联删除回复)
 ```
 
 ## 开发命令
