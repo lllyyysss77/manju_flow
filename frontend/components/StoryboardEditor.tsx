@@ -2,19 +2,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Status } from '../types';
 import { fileApi, storyboardApi, StoryboardVersion } from '../api';
-import { 
-  MessageSquare, 
-  Upload, 
-  CheckCircle2, 
-  AlertCircle, 
-  ChevronLeft, 
+import {
+  MessageSquare,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  ChevronLeft,
   ChevronRight,
   Info,
   Type,
   Camera,
   Music,
   History,
-  Clock
+  Clock,
+  Send,
 } from 'lucide-react';
 
 interface StoryboardEditorProps {
@@ -677,11 +678,15 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
           </div>
 
           <div className="p-4 bg-[#161616] border-t border-white/5">
-            <textarea 
-              className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3"
-              placeholder="添加修改意见或反馈..."
-            />
-            <button className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all">发布评论</button>
+            <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
+              <input
+                className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                placeholder="添加修改意见或反馈..."
+              />
+              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
         </>

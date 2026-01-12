@@ -15,7 +15,8 @@ import {
   Check,
   Image as ImageIcon,
   ChevronDown,
-  Trash2
+  Trash2,
+  Send
 } from 'lucide-react';
 import { chapterApi, sceneApi, fileApi } from '../api';
 
@@ -1232,13 +1233,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
           </div>
 
           <div className="p-4 bg-[#161616] border-t border-white/5">
-            <textarea 
-              className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/10 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-24 mb-3 transition-all"
-              placeholder="输入您的修改意见或审核回复..."
-            />
-            <button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl border border-white/10 transition-all active:scale-95">
-              发布评论
-            </button>
+            <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
+              <input
+                className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                placeholder="输入您的修改意见或审核回复..."
+              />
+              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

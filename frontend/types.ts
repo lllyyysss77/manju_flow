@@ -48,6 +48,44 @@ export interface SceneAudioTrack {
   updatedAt?: string;
 }
 
+export type VideoStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+
+export interface ChapterVideo {
+  id: number;
+  chapterId: number;
+  videoUrl?: string;
+  previewUrl?: string;
+  videoVersion?: number;
+  status: VideoStatus;
+  duration?: number;
+  fileSize?: number;
+  previewSize?: number;
+  width?: number;
+  height?: number;
+  format?: string;
+  codec?: string;
+  bitrate?: number;
+  previewBitrate?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ChapterVideoVersion {
+  id: number;
+  chapterVideoId: number;
+  videoUrl: string;
+  previewUrl?: string;
+  version: number;
+  duration?: number;
+  fileSize?: number;
+  previewSize?: number;
+  width?: number;
+  height?: number;
+  remark?: string;
+  createdBy: number;
+  createdAt: string;
+}
+
 export interface Episode {
   id: number;
   title: string;

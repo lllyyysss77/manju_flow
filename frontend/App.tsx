@@ -467,7 +467,13 @@ const App: React.FC = () => {
             <div className="p-20 text-center text-white/20">暂无动画</div>
           );
         case ProductionStage.REVIEW:
-          return <DeliverReview videoUrl={episode?.scenes[0]?.animationUrl || episode?.scenes[0]?.clipUrl} />;
+          return (
+            <DeliverReview
+              episodes={selectedProject.episodes}
+              videoUrl={episode?.scenes[0]?.animationUrl || episode?.scenes[0]?.clipUrl}
+              bookId={selectedProject.id}
+            />
+          );
         default:
           return null;
       }

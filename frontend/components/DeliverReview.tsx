@@ -1,196 +1,723 @@
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Play,
+  Pause,
+  FastForward,
+  Rewind,
+  MessageSquare,
+  Send,
+  AlertCircle,
+  Upload,
+  History,
+  Loader2,
+} from 'lucide-react';
+import { Comment, Episode, ChapterVideo, ChapterVideoVersion, VideoStatus } from '../types';
+import { chapterApi, fileApi, videoApi } from '../api';
 
-import React, { useState, useRef } from 'react';
-import { Play, Pause, FastForward, Rewind, MessageSquare, Send, AlertCircle } from 'lucide-react';
-import { Comment } from '../types';
+type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
 interface DeliverReviewProps {
   videoUrl?: string;
+  episode?: Episode;
+  episodes?: Episode[];
+  bookId?: number;
 }
 
-export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl }) => {
+export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode, episodes, bookId }) => {
+  const chapterList = useMemo(() => {
+    if (episodes && episodes.length) return episodes;
+    if (episode) return [episode];
+    return [];
+  }, [episode, episodes]);
+  const hasChapters = chapterList.length > 0;
+  const [activeChapterIndex, setActiveChapterIndex] = useState(0);
+  useEffect(() => {
+    if (activeChapterIndex >= chapterList.length) {
+      setActiveChapterIndex(Math.max(0, chapterList.length - 1));
+    }
+  }, [activeChapterIndex, chapterList.length]);
+  const activeChapter = chapterList[activeChapterIndex];
+
+  const [videoDetail, setVideoDetail] = useState<ChapterVideoDetail | null>(null);
+  const [versions, setVersions] = useState<ChapterVideoVersion[]>([]);
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
+  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string | undefined>();
+  const [loadingVideo, setLoadingVideo] = useState(false);
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const [uploadingOriginal, setUploadingOriginal] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [loadError, setLoadError] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  
-  const defaultVideo = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
-  const source = videoUrl || defaultVideo;
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [originalProgress, setOriginalProgress] = useState<number | null>(null);
 
-  const [comments, setComments] = useState<Comment[]>([
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const originalInputRef = useRef<HTMLInputElement>(null);
+  const urlCache = useRef<Record<string, string>>({});
+
+  const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl || resolvedVideoUrl || resolvedPreviewUrl);
+  const [preferPreview, setPreferPreview] = useState(true);
+  const previewSource = resolvedPreviewUrl || videoDetail?.previewUrl || '';
+  const originalSource = resolvedVideoUrl || videoDetail?.videoUrl || videoUrl || '';
+  const playbackSource = hasUploadedVideo
+    ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
+    : '';
+
+  const [comments] = useState<Comment[]>([
     { id: 'v1', author: '导演', text: '0:05处的过渡太突兀了。', timestamp: '2024-05-21', timecode: 5 },
-    { id: 'v2', author: '音频负责人', text: '背景音效在这里有爆音。', timestamp: '2024-05-22', timecode: 12 }
+    { id: 'v2', author: '音频负责人', text: '背景音效在这里有爆音。', timestamp: '2024-05-22', timecode: 12 },
   ]);
 
-  const handleSeek = (time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      setCurrentTime(time);
+  const resolveFileUrl = useCallback(
+    async (raw?: string | null) => {
+      if (!raw) return '';
+      if (raw.startsWith('http') && !raw.includes('/api/files/')) return raw;
+      const cached = urlCache.current[raw];
+      if (cached) return cached;
+      try {
+        const res = await fileApi.getSignedUrl(raw);
+        const resolved = res.url || raw;
+        urlCache.current[raw] = resolved;
+        return resolved;
+      } catch (err) {
+        console.error('Resolve video url failed', err);
+        return raw;
+      }
+    },
+    []
+  );
+
+  const fetchVideoData = useCallback(
+    async (chapterId: number) => {
+      setLoadingVideo(true);
+      setVersionMenuOpen(false);
+      try {
+        const info = await videoApi.getInfo(chapterId);
+        setVideoDetail(info);
+        const versionRes = await videoApi.listVersions(chapterId);
+        setVersions(versionRes.data || []);
+
+        const [resolvedVideo, resolvedPreview] = await Promise.all([
+          resolveFileUrl(info.videoUrl),
+          resolveFileUrl(info.previewUrl),
+        ]);
+        setResolvedVideoUrl(resolvedVideo || undefined);
+        setResolvedPreviewUrl(resolvedPreview || undefined);
+      } catch (err) {
+        console.error('Failed to load chapter video', err);
+        setToast({ message: '章节交付视频加载失败', tone: 'error' });
+      } finally {
+        setLoadingVideo(false);
+        setLoadError(false);
+        setIsPlaying(false);
+        setCurrentTime(0);
+        if (videoRef.current) {
+          videoRef.current.pause();
+          videoRef.current.currentTime = 0;
+          videoRef.current.load();
+        }
+      }
+    },
+    [resolveFileUrl]
+  );
+
+  useEffect(() => {
+    if (!activeChapter?.id) {
+      setVideoDetail(null);
+      setVersions([]);
+      setResolvedPreviewUrl(undefined);
+      setResolvedVideoUrl(undefined);
+      return;
     }
+    fetchVideoData(activeChapter.id);
+  }, [activeChapter?.id, fetchVideoData]);
+
+  useEffect(() => {
+    setLoadError(false);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+      videoRef.current.load();
+    }
+  }, [playbackSource]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const handleSeek = (time: number) => {
+    const duration = videoRef.current?.duration;
+    if (!videoRef.current || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(time)) return;
+    const clamped = Math.min(Math.max(time, 0), duration);
+    videoRef.current.currentTime = clamped;
+    setCurrentTime(clamped);
   };
 
   const formatTime = (seconds: number) => {
+    if (!Number.isFinite(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  return (
-    <div className="flex h-full bg-[#0a0a0a]">
-      {/* 视频播放器区域 */}
-      <div className="flex-1 flex flex-col h-full">
-        <div className="flex-1 relative group flex items-center justify-center bg-black overflow-hidden">
-          {loadError ? (
-            <div className="flex flex-col items-center gap-4 text-white/40">
-              <AlertCircle size={48} className="text-red-500/50" />
-              <div className="text-center">
-                <p className="text-sm font-medium">无法加载视频源</p>
-                <p className="text-[10px] text-white/20 mt-1">资源不可用或被拦截</p>
-              </div>
-              <button 
-                onClick={() => { setLoadError(false); if(videoRef.current) videoRef.current.load(); }}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs transition-colors"
-              >
-                重试加载
-              </button>
-            </div>
-          ) : (
-            <video 
-              ref={videoRef}
-              className="max-h-full max-w-full"
-              src={source}
-              playsInline
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onError={() => setLoadError(true)}
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onClick={() => {
-                if (videoRef.current) {
-                  isPlaying ? videoRef.current.pause() : videoRef.current.play();
-                }
-              }}
-            />
-          )}
-          
-          {!loadError && !isPlaying && (
-            <div 
-              className="absolute inset-0 flex items-center justify-center bg-black/20 cursor-pointer"
-              onClick={() => videoRef.current?.play()}
-            >
-              <div className="p-6 rounded-full bg-blue-600 text-white shadow-2xl shadow-blue-900/40">
-                <Play size={40} fill="currentColor" />
-              </div>
-            </div>
-          )}
-        </div>
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '—';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let idx = 0;
+    while (size >= 1024 && idx < units.length - 1) {
+      size /= 1024;
+      idx++;
+    }
+    return `${size.toFixed(size >= 10 ? 0 : 1)}${units[idx]}`;
+  };
 
-        {/* 自定义播放控制 */}
-        <div className="p-4 bg-[#1a1a1a] border-t border-white/5">
-           <div 
-             className="relative w-full h-1.5 bg-white/10 rounded-full mb-4 cursor-pointer"
-             onClick={(e) => {
-               const rect = e.currentTarget.getBoundingClientRect();
-               const x = e.clientX - rect.left;
-               const clickedPos = x / rect.width;
-               if (videoRef.current) {
-                 handleSeek(clickedPos * (videoRef.current.duration || 0));
-               }
-             }}
-           >
-              <div 
-                className="absolute h-full bg-blue-500 rounded-full" 
-                style={{ width: `${videoRef.current?.duration ? (currentTime / videoRef.current.duration) * 100 : 0}%` }}
-              />
-              {/* 评论标记 */}
-              {comments.map(c => c.timecode !== undefined && (
-                <div 
-                  key={c.id}
-                  className="absolute w-2 h-2 bg-yellow-400 rounded-full top-1/2 -translate-y-1/2 cursor-pointer border border-black shadow-sm z-10"
-                  style={{ left: `${videoRef.current?.duration ? (c.timecode / videoRef.current.duration) * 100 : 0}%` }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSeek(c.timecode!);
-                  }}
-                  title={`在 ${formatTime(c.timecode)} 的评论`}
-                />
-              ))}
-           </div>
-           
-           <div className="flex items-center justify-between">
-             <div className="flex items-center gap-6">
-                <button 
-                  onClick={() => handleSeek(Math.max(0, currentTime - 5))}
-                  className="text-white/60 hover:text-white transition-colors"
-                >
-                  <Rewind size={20} />
-                </button>
-                <button 
-                  onClick={() => {
-                    if (videoRef.current) {
-                      isPlaying ? videoRef.current.pause() : videoRef.current.play();
-                    }
-                  }}
-                  className="p-2 rounded-full bg-white text-black hover:scale-105 transition-transform"
-                >
-                  {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-                </button>
-                <button 
-                  onClick={() => handleSeek(Math.min(videoRef.current?.duration || 0, currentTime + 5))}
-                  className="text-white/60 hover:text-white transition-colors"
-                >
-                  <FastForward size={20} />
-                </button>
-                <span className="text-sm font-mono text-white/60">
-                  {formatTime(currentTime)} / {formatTime(videoRef.current?.duration || 0)}
-                </span>
-             </div>
-             
-             <div className="flex items-center gap-4">
-                <button className="px-4 py-1.5 border border-white/10 rounded text-xs font-bold hover:bg-white/5">下载源文件</button>
-                <button className="px-4 py-1.5 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500">批准定稿</button>
-             </div>
-           </div>
+  const probeVideoMeta = (file: File) =>
+    new Promise<{ duration: number; width: number; height: number }>((resolve) => {
+      const url = URL.createObjectURL(file);
+      const videoEl = document.createElement('video');
+      videoEl.preload = 'metadata';
+      videoEl.onloadedmetadata = () => {
+        resolve({
+          duration: Math.round(videoEl.duration) || 0,
+          width: videoEl.videoWidth || 0,
+          height: videoEl.videoHeight || 0,
+        });
+        URL.revokeObjectURL(url);
+      };
+      videoEl.onerror = () => {
+        resolve({ duration: 0, width: 0, height: 0 });
+        URL.revokeObjectURL(url);
+      };
+      videoEl.src = url;
+    });
+
+  const handleUploadOriginal = async (file?: File | null) => {
+    if (!file || !activeChapter?.id) return;
+    setUploadingOriginal(true);
+    setOriginalProgress(0);
+    try {
+      const meta = await probeVideoMeta(file);
+      const uploaded = await fileApi.uploadWithProgress(file, 'private', (p) => setOriginalProgress(p));
+      const key = uploaded.key || uploaded.url;
+      const duration = meta.duration;
+      const bitrate = duration ? Math.round((file.size * 8) / duration / 1000) : 0;
+      const payload = {
+        videoUrl: key,
+        previewUrl: videoDetail?.previewUrl || '',
+        duration,
+        fileSize: file.size,
+        width: meta.width,
+        height: meta.height,
+        format: file.type?.split('/')[1] || 'mp4',
+        bitrate,
+      };
+      const version = await videoApi.upload(activeChapter.id, payload);
+      const resolved = await resolveFileUrl(key);
+      // 先立刻展示播放器（使用原始视频），预览版后台生成
+      setVideoDetail((prev) => ({
+        ...(prev || { id: version.chapterVideoId, chapterId: activeChapter.id, status: 'READY' as VideoStatus }),
+        videoUrl: key,
+        videoVersion: version.version,
+        duration,
+        fileSize: file.size,
+        width: meta.width,
+        height: meta.height,
+        bitrate,
+      }));
+      setResolvedVideoUrl(resolved || key);
+      setToast({ message: `原始视频已上传 · 新版本 #${version.version}`, tone: 'success' });
+      fetchVideoData(activeChapter.id);
+    } catch (err) {
+      console.error('Upload original video failed', err);
+      setToast({ message: '上传原始视频失败，请重试', tone: 'error' });
+    } finally {
+      setUploadingOriginal(false);
+      setOriginalProgress(null);
+      if (originalInputRef.current) originalInputRef.current.value = '';
+    }
+  };
+
+  const handleRevert = async (version: number) => {
+    if (!activeChapter?.id) return;
+    setLoadingVideo(true);
+    try {
+      await videoApi.revert(activeChapter.id, version);
+      setToast({ message: `已切换到版本 #${version}`, tone: 'success' });
+      await fetchVideoData(activeChapter.id);
+    } catch (err) {
+      console.error('Revert video failed', err);
+      setToast({ message: '回滚失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingVideo(false);
+      setVersionMenuOpen(false);
+    }
+  };
+
+  const handleDownloadOriginal = async () => {
+    const raw = videoDetail?.videoUrl || resolvedVideoUrl || videoUrl;
+    if (!raw) {
+      setToast({ message: '暂无可下载的原始视频', tone: 'error' });
+      return;
+    }
+    setDownloading(true);
+    try {
+      const resolved = await resolveFileUrl(raw);
+      const link = document.createElement('a');
+      link.href = resolved || raw;
+      link.download = '';
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Download original failed', err);
+      setToast({ message: '下载失败，请稍后重试', tone: 'error' });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!bookId || !activeChapter?.id) {
+      setToast({ message: '缺少书籍或章节信息，无法批准定稿', tone: 'error' });
+      return;
+    }
+    if (activeChapter.status === 'COMPLETED') {
+      setToast({ message: '该章节已定稿，无需重复操作', tone: 'success' });
+      return;
+    }
+    setApproving(true);
+    try {
+      await videoApi.updateStatus(activeChapter.id, { status: 'READY' });
+      await chapterApi.update(bookId, activeChapter.id, { status: 'COMPLETED' });
+      setToast({ message: '章节已批准定稿', tone: 'success' });
+      await fetchVideoData(activeChapter.id);
+    } catch (err) {
+      console.error('Approve final failed', err);
+      setToast({ message: '批准失败，请重试', tone: 'error' });
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  if (!hasChapters) {
+    return (
+      <div className="flex items-center justify-center h-full text-white/40 text-sm bg-[#0a0a0a]">
+        暂无章节数据，请先在前序模块创建章节与场景
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#0a0a0a]">
+      <input
+        ref={originalInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => handleUploadOriginal(e.target.files?.[0])}
+      />
+      {toast && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
+          <div
+            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
+              toast.tone === 'success'
+                ? 'bg-green-500/20 border-green-500/40 text-green-100'
+                : 'bg-red-500/20 border-red-500/40 text-red-100'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
+      {/* 顶部章节切换，与其他模块保持一致 */}
+      <div className="border-b border-white/5 bg-[#141414]">
+        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
+          {chapterList.map((ch, cIdx) => (
+            <button
+              key={ch.id}
+              onClick={() => {
+                setActiveChapterIndex(cIdx);
+                setIsPlaying(false);
+                setCurrentTime(0);
+              }}
+              className={`flex-shrink-0 px-4 py-2 rounded-xl border transition-all text-left min-w-[180px] ${
+                activeChapterIndex === cIdx
+                  ? 'bg-blue-600/20 border-blue-500/40 text-white shadow-[0_0_20px_rgba(59,130,246,0.35)]'
+                  : 'bg-[#0f0f0f] border-white/10 text-white/60 hover:border-white/30 hover:text-white'
+              }`}
+            >
+              <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">章节 {cIdx + 1}</div>
+              <div className="text-sm font-semibold line-clamp-1">{ch.title || '未命名章节'}</div>
+              <div className="text-[11px] text-white/40 mt-1">场景 {ch.scenes?.length || 0} 个</div>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 评论侧边栏 */}
-      <div className="w-80 border-l border-white/5 flex flex-col bg-[#111111]">
-        <div className="p-4 border-b border-white/5 flex items-center justify-between">
-          <span className="text-xs font-bold text-white/40 uppercase tracking-widest">时间轴反馈</span>
-          <MessageSquare size={16} className="text-white/20" />
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {comments.map(c => (
-            <div 
-              key={c.id} 
-              className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
-              onClick={() => c.timecode !== undefined && handleSeek(c.timecode)}
-            >
-              <div className="flex justify-between mb-1">
-                <span className="text-[10px] px-1.5 bg-blue-600/30 text-blue-400 font-mono rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">{formatTime(c.timecode || 0)}</span>
-                <span className="text-[10px] font-bold text-white/40 uppercase">{c.author}</span>
-              </div>
-              <p className="text-sm text-white/80 leading-snug">{c.text}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-4 bg-[#161616] border-t border-white/5">
-           <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-white/30 uppercase font-bold">新评论 @ {formatTime(currentTime)}</span>
-              </div>
-              <div className="relative">
-                <textarea 
-                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-lg p-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-20"
-                  placeholder="描述问题内容..."
-                />
-                <button className="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition-colors">
-                  <Send size={14} />
+      <div className="flex-1 flex overflow-hidden">
+        {!hasUploadedVideo ? (
+          <div className="flex-1 flex items-center justify-center p-10 bg-gradient-to-br from-[#0f172a] via-[#0a0a0a] to-black">
+            <div className="w-full max-w-3xl bg-[#0c0c0f] border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.45)] overflow-hidden">
+              <div className="px-8 py-6 border-b border-white/5 flex flex-col md:flex-row md:items-center gap-4">
+                <div className="p-3 rounded-xl bg-blue-600/20 text-blue-200 w-fit">
+                  <Upload size={22} />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="text-sm text-white/60 uppercase tracking-[0.3em]">章节交付</div>
+                  <div className="text-xl font-semibold text-white">尚未上传交付视频</div>
+                  <div className="text-sm text-white/50">
+                    上传原始 MP4 后将自动生成预览版，支持断点续传与版本管理。
+                  </div>
+                </div>
+                <button
+                  onClick={() => originalInputRef.current?.click()}
+                  disabled={uploadingOriginal}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm border border-blue-500/60 transition-all disabled:opacity-60"
+                >
+                  {uploadingOriginal
+                    ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
+                    : '选择原始视频'}
                 </button>
               </div>
-           </div>
-        </div>
+              <div className="px-8 py-6 grid md:grid-cols-3 gap-4 text-sm text-white/70">
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="text-white font-semibold mb-1">自动预览</div>
+                  <div className="text-white/60 text-[13px] leading-relaxed">上传后后台自动生成 PreviewUrl，下一次进入即可直接预览压缩版。</div>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="text-white font-semibold mb-1">边下边播</div>
+                  <div className="text-white/60 text-[13px] leading-relaxed">支持 Range 播放，预览不卡顿；原始文件可随时下载交付。</div>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="text-white font-semibold mb-1">版本追踪</div>
+                  <div className="text-white/60 text-[13px] leading-relaxed">每次上传会生成新版本，可回滚、批准定稿，流程清晰。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* 视频播放器区域 */}
+            <div className="flex-1 flex flex-col h-full relative">
+              {loadingVideo && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-white/80 text-sm">
+                    <Loader2 className="animate-spin" size={16} />
+                    正在同步章节交付视频...
+                  </div>
+                </div>
+              )}
+
+              <div className="px-6 py-3 border-b border-white/5 bg-[#0f0f0f] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-white/80 font-semibold">章节交付视频</span>
+                      <div className="flex items-center gap-1 text-[11px] bg-white/5 border border-white/10 rounded-lg px-1">
+                        <button
+                          className={`px-2 py-1 rounded-md transition-all ${
+                            preferPreview
+                              ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                              : 'text-white/60 hover:text-white'
+                          } ${!previewSource ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => previewSource && setPreferPreview(true)}
+                          title={previewSource ? '使用预览版播放' : '预览版缺失，正在使用原始视频播放'}
+                        >
+                          预览版
+                        </button>
+                        <button
+                          className={`px-2 py-1 rounded-md transition-all ${
+                            !preferPreview
+                              ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                              : 'text-white/60 hover:text-white'
+                          }`}
+                          onClick={() => setPreferPreview(false)}
+                          title="使用原始视频播放"
+                        >
+                          原始版
+                        </button>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 text-[11px] rounded bg-white/5 border border-white/10 text-white/70">
+                      版本 #{videoDetail?.videoVersion ?? '—'}
+                    </span>
+                    {uploadingOriginal && (
+                      <span className="px-2 py-1 text-[11px] rounded border border-blue-500/50 bg-blue-500/10 text-blue-100">
+                        上传中 {originalProgress ?? 0}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-white/50">
+                    <span>原始：{formatBytes(videoDetail?.fileSize)}</span>
+                    <span>预览：{formatBytes(videoDetail?.previewSize)}</span>
+                    <span>时长：{videoDetail?.duration ? `${videoDetail.duration}s` : '—'}</span>
+                    <span>版本数：{videoDetail?.versionCount ?? versions.length ?? 0}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                onClick={() => originalInputRef.current?.click()}
+                disabled={uploadingOriginal}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] rounded-lg border border-blue-500/60 transition-all disabled:opacity-60 flex items-center gap-1"
+              >
+                <Upload size={14} />
+                    {uploadingOriginal
+                      ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
+                      : videoDetail?.videoUrl
+                        ? '更新原始视频'
+                        : '上传原始视频'}
+                </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setVersionMenuOpen((prev) => !prev)}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-[11px] rounded-lg border border-white/10 transition-all flex items-center gap-1"
+                    >
+                      <History size={14} /> 历史版本
+                    </button>
+                    {versionMenuOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setVersionMenuOpen(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-80 bg-[#0f0f0f] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+                          <div className="px-3 py-2 border-b border-white/10 text-white/60 text-[11px]">
+                            <span>共 {versions.length} 个版本</span>
+                          </div>
+                          <div className="max-h-80 overflow-y-auto divide-y divide-white/10">
+                            {versions.length === 0 && (
+                              <div className="p-3 text-center text-white/40 text-[12px]">暂无历史版本</div>
+                            )}
+                            {versions.map((v) => {
+                              const time = v.createdAt ? new Date(v.createdAt).toLocaleString('zh-CN', { hour12: false }) : '';
+                              const hasPreview = !!v.previewUrl;
+                              const isCurrent = videoDetail?.videoVersion === v.version;
+                              return (
+                                <div
+                                  key={v.id}
+                                  className={`p-3 space-y-1 ${isCurrent ? 'bg-blue-600/10' : 'bg-transparent hover:bg-white/5'}`}
+                                >
+                                  <div className="flex items-center justify-between text-white/80">
+                                    <div>
+                                      <p className="text-sm font-semibold flex items-center gap-2">
+                                        版本 #{v.version}
+                                        {hasPreview && (
+                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-200 border border-green-500/30">
+                                            含预览
+                                          </span>
+                                        )}
+                                      </p>
+                                      <div className="text-[11px] text-white/40">{time || '时间未知'}</div>
+                                    </div>
+                                    <div className="text-[10px] text-white/40">ID: {v.id}</div>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-[11px] text-white/50 space-x-2">
+                                      <span>原始 {formatBytes(v.fileSize)}</span>
+                                      <span>预览 {formatBytes(v.previewSize)}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleRevert(v.version)}
+                                      className="text-[11px] px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white border border-blue-500/50"
+                                    >
+                                      设为当前
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 relative group flex items-center justify-center bg-black overflow-hidden">
+                {loadError ? (
+                  <div className="flex flex-col items-center gap-4 text-white/40">
+                    <AlertCircle size={48} className="text-red-500/50" />
+                    <div className="text-center">
+                      <p className="text-sm font-medium">无法加载视频源</p>
+                      <p className="text-[10px] text-white/20 mt-1">资源不可用或被拦截</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setLoadError(false);
+                        if (videoRef.current) videoRef.current.load();
+                      }}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs transition-colors"
+                    >
+                      重试加载
+                    </button>
+                  </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    className="max-h-full max-w-full"
+                    src={playbackSource}
+                    playsInline
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onError={() => setLoadError(true)}
+                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onClick={() => {
+                      if (videoRef.current) {
+                        isPlaying ? videoRef.current.pause() : videoRef.current.play();
+                      }
+                    }}
+                  />
+                )}
+
+                {!loadError && !isPlaying && (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center bg-black/20 cursor-pointer"
+                    onClick={() => videoRef.current?.play()}
+                  >
+                    <div className="p-6 rounded-full bg-blue-600 text-white shadow-2xl shadow-blue-900/40">
+                      <Play size={40} fill="currentColor" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 自定义播放控制 */}
+              <div className="p-4 bg-[#1a1a1a] border-t border-white/5">
+                <div
+                  className="relative w-full h-1.5 bg-white/10 rounded-full mb-4 cursor-pointer"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const clickedPos = rect.width ? x / rect.width : 0;
+                    const duration = videoRef.current?.duration;
+                    if (videoRef.current && Number.isFinite(duration) && duration > 0) {
+                      handleSeek(clickedPos * duration);
+                    }
+                  }}
+                >
+                  <div
+                    className="absolute h-full bg-blue-500 rounded-full"
+                    style={{ width: `${videoRef.current?.duration ? (currentTime / videoRef.current.duration) * 100 : 0}%` }}
+                  />
+                  {/* 评论标记 */}
+                  {comments.map(
+                    (c) =>
+                      c.timecode !== undefined && (
+                        <div
+                          key={c.id}
+                          className="absolute w-2 h-2 bg-yellow-400 rounded-full top-1/2 -translate-y-1/2 cursor-pointer border border-black shadow-sm z-10"
+                          style={{ left: `${videoRef.current?.duration ? (c.timecode / videoRef.current.duration) * 100 : 0}%` }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSeek(c.timecode!);
+                          }}
+                          title={`在 ${formatTime(c.timecode)} 的评论`}
+                        />
+                      )
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <button
+                      onClick={() => handleSeek(Math.max(0, currentTime - 5))}
+                      className="text-white/60 hover:text-white transition-colors"
+                    >
+                      <Rewind size={20} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (videoRef.current) {
+                          isPlaying ? videoRef.current.pause() : videoRef.current.play();
+                        }
+                      }}
+                      className="p-2 rounded-full bg-white text-black hover:scale-105 transition-transform"
+                    >
+                      {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                    </button>
+                    <button
+                      onClick={() => handleSeek(Math.min(videoRef.current?.duration || 0, currentTime + 5))}
+                      className="text-white/60 hover:text-white transition-colors"
+                    >
+                      <FastForward size={20} />
+                    </button>
+                    <span className="text-sm font-mono text-white/60">
+                      {formatTime(currentTime)} / {formatTime(videoRef.current?.duration || 0)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={handleDownloadOriginal}
+                      disabled={downloading}
+                      className="px-4 py-1.5 border border-white/10 rounded text-xs font-bold hover:bg-white/5 disabled:opacity-60"
+                    >
+                      {downloading ? '准备下载...' : '下载源文件'}
+                    </button>
+                    <button
+                      onClick={handleApprove}
+                      disabled={approving || activeChapter?.status === 'COMPLETED'}
+                      className="px-4 py-1.5 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 disabled:opacity-60"
+                    >
+                      {activeChapter?.status === 'COMPLETED'
+                        ? '已定稿'
+                        : approving
+                          ? '提交中...'
+                          : '批准定稿'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 评论侧边栏 */}
+            <div className="w-80 border-l border-white/5 flex flex-col bg-[#111111]">
+              <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">时间轴反馈</span>
+                <MessageSquare size={16} className="text-white/20" />
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {comments.map((c) => (
+                  <div
+                    key={c.id}
+                    className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
+                    onClick={() => c.timecode !== undefined && handleSeek(c.timecode)}
+                  >
+                    <div className="flex justify-between mb-1">
+                      <span className="text-[10px] px-1.5 bg-blue-600/30 text-blue-400 font-mono rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        {formatTime(c.timecode || 0)}
+                      </span>
+                      <span className="text-[10px] font-bold text-white/40 uppercase">{c.author}</span>
+                    </div>
+                    <p className="text-sm text-white/80 leading-snug">{c.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 bg-[#161616] border-t border-white/5">
+                <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
+                  <input
+                    className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                    placeholder={`新评论 @ ${formatTime(currentTime)}`}
+                  />
+                  <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                    <Send size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -159,7 +159,7 @@ export const bookApi = {
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式
-import { Project, Status, Episode, Scene } from './types';
+import { Project, Status, Episode, Scene, ChapterVideo, ChapterVideoVersion, VideoStatus } from './types';
 
 export function bookToProject(book: Book): Project {
   // 将后端的 adaptationStatus 映射到前端的 productionStatus
@@ -470,5 +470,69 @@ export const audioApi = {
   revert: (sceneId: number, audioId: number, version: number) =>
     request<SceneAudio>(`/api/scenes/${sceneId}/audios/${audioId}/revert/${version}`, {
       method: 'PUT',
+    }),
+};
+
+// 章节交付视频 API
+export interface ChapterVideoResponse extends ChapterVideo {
+  versionCount: number;
+}
+
+export interface ChapterVideoVersionListResponse {
+  total: number;
+  data: ChapterVideoVersion[];
+}
+
+export interface UploadChapterVideoPayload {
+  videoUrl: string;
+  previewUrl?: string;
+  duration?: number;
+  fileSize?: number;
+  previewSize?: number;
+  width?: number;
+  height?: number;
+  format?: string;
+  codec?: string;
+  bitrate?: number;
+  previewBitrate?: number;
+  remark?: string;
+}
+
+export interface UploadPreviewPayload {
+  previewUrl: string;
+  previewSize?: number;
+  previewBitrate?: number;
+}
+
+export interface UpdateVideoStatusPayload {
+  status: VideoStatus;
+}
+
+export const videoApi = {
+  getInfo: (chapterId: number) => request<ChapterVideoResponse>(`/api/chapters/${chapterId}/video`),
+  upload: (chapterId: number, payload: UploadChapterVideoPayload) =>
+    request<ChapterVideoVersion>(`/api/chapters/${chapterId}/video`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  uploadPreview: (chapterId: number, payload: UploadPreviewPayload) =>
+    request<ChapterVideo>(`/api/chapters/${chapterId}/video/preview`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  updateStatus: (chapterId: number, payload: UpdateVideoStatusPayload) =>
+    request<ChapterVideo>(`/api/chapters/${chapterId}/video/status`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  listVersions: (chapterId: number) =>
+    request<ChapterVideoVersionListResponse>(`/api/chapters/${chapterId}/video/versions`),
+  revert: (chapterId: number, version: number) =>
+    request<ChapterVideo>(`/api/chapters/${chapterId}/video/revert/${version}`, {
+      method: 'PUT',
+    }),
+  delete: (chapterId: number) =>
+    request(`/api/chapters/${chapterId}/video`, {
+      method: 'DELETE',
     }),
 };
