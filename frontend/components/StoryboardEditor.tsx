@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Episode, Status } from '../types';
+import { Comment, Episode, Status } from '../types';
 import { fileApi, storyboardApi, StoryboardVersion } from '../api';
 import {
   MessageSquare,
@@ -17,6 +17,7 @@ import {
   Clock,
   Send,
 } from 'lucide-react';
+import { useSceneComments } from './useSceneComments';
 
 interface StoryboardEditorProps {
   episodes?: Episode[];
@@ -52,8 +53,21 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
       setActiveSceneIndex(Math.max(0, sortedScenes.length - 1));
     }
   }, [activeSceneIndex, sortedScenes.length]);
+
   const activeScene = sortedScenes[activeSceneIndex];
   const hasScene = sortedScenes.length > 0;
+  const {
+    comments: sceneCommentList,
+    loading: loadingComments,
+    posting: postingComment,
+    error: commentError,
+    addComment,
+  } = useSceneComments(activeScene?.id, 'storyboard');
+  const activeSceneComments = activeScene?.id ? sceneCommentList : [];
+
+  useEffect(() => {
+    setCommentDraft('');
+  }, [activeScene?.id]);
 
   const [sceneFrames, setSceneFrames] = useState<Record<number, { startUrl?: string; endUrl?: string; startVersion?: number; endVersion?: number }>>({});
   const [versionsMap, setVersionsMap] = useState<Record<number, { start: StoryboardVersion[]; end: StoryboardVersion[] }>>({});
@@ -73,6 +87,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -252,11 +267,29 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     }
   };
 
+  const handleSubmitComment = async () => {
+    const content = commentDraft.trim();
+    if (!activeScene?.id) return;
+    if (!content) {
+      setToast({ message: '请输入评论内容', tone: 'info' });
+      return;
+    }
+    try {
+      await addComment(content);
+      setCommentDraft('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '发表评论失败';
+      setToast({ message: msg, tone: 'error' });
+    }
+  };
+
   const frameData = activeScene ? sceneFrames[activeScene.id] : undefined;
   const currentVersions = activeScene ? versionsMap[activeScene.id] || { start: [], end: [] } : { start: [], end: [] };
   const startDisplayUrl = historySelection.start || frameData?.startUrl || activeScene?.startFrameUrl || '';
   const endDisplayUrl = historySelection.end || frameData?.endUrl || activeScene?.endFrameUrl || '';
-  const sceneComments = activeScene?.comments || [];
+  const formatCommentTime = (value?: string) =>
+    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   useEffect(() => {
     sortedScenes.forEach(scene => {
@@ -566,16 +599,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
             </div>
           </div>
 
-              {/* 审核反馈摘要（快捷查看） */}
-              {activeScene.comments.length > 0 && (
-                <div className="bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex gap-4 items-start">
-                  <AlertCircle size={20} className="text-red-500 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="text-sm font-bold text-red-500 mb-1">主编修改意见</h4>
-                    <p className="text-sm text-white/70">"{activeScene.comments[activeScene.comments.length - 1].text}"</p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -666,15 +689,37 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {sceneComments.map(c => (
-              <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5">
-                <div className="flex justify-between mb-2">
-                  <span className="text-[10px] font-bold text-blue-400 uppercase">{c.author}</span>
-                  <span className="text-[9px] text-white/20">{c.timestamp}</span>
-                </div>
-                <p className="text-sm text-white/70 leading-relaxed">{c.text}</p>
+            {commentError ? (
+              <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                加载评论失败：{commentError}
               </div>
-            ))}
+            ) : loadingComments ? (
+              <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                评论加载中...
+              </div>
+            ) : activeScene ? (
+              activeSceneComments.length ? (
+                activeSceneComments.map(c => (
+                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-[10px] font-bold text-blue-400 uppercase">{getCommentAuthor(c)}</span>
+                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center gap-3 opacity-30 italic">
+                  <AlertCircle size={32} />
+                  <p className="text-xs">暂无审核反馈</p>
+                </div>
+              )
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center gap-3 opacity-30 italic">
+                <AlertCircle size={32} />
+                <p className="text-xs">请选择场景查看反馈</p>
+              </div>
+            )}
           </div>
 
           <div className="p-4 bg-[#161616] border-t border-white/5">
@@ -682,9 +727,21 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
               <input
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                 placeholder="添加修改意见或反馈..."
+                value={commentDraft}
+                onChange={e => setCommentDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
               />
-              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
-                <Send size={16} />
+              <button
+                onClick={handleSubmitComment}
+                disabled={postingComment || !commentDraft.trim() || !activeScene}
+                className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
+              >
+                {postingComment ? '发送中...' : <Send size={16} />}
               </button>
             </div>
           </div>

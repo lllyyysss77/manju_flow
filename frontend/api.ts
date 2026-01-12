@@ -159,7 +159,7 @@ export const bookApi = {
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式
-import { Project, Status, Episode, Scene, ChapterVideo, ChapterVideoVersion, VideoStatus } from './types';
+import { Comment, CommentListResponse, CommentModule, Project, Status, Episode, Scene, ChapterVideo, ChapterVideoVersion, VideoStatus } from './types';
 
 export function bookToProject(book: Book): Project {
   // 将后端的 adaptationStatus 映射到前端的 productionStatus
@@ -533,6 +533,44 @@ export const videoApi = {
     }),
   delete: (chapterId: number) =>
     request(`/api/chapters/${chapterId}/video`, {
+      method: 'DELETE',
+    }),
+};
+
+// 评论 API
+export type SceneCommentModule = Extract<CommentModule, 'script' | 'storyboard' | 'animation' | 'audio'>;
+
+export interface CreateCommentPayload {
+  content: string;
+  meta?: string;
+}
+
+export interface UpdateCommentPayload {
+  content?: string;
+  meta?: string;
+}
+
+export const commentApi = {
+  listScene: (sceneId: number, module: SceneCommentModule) =>
+    request<CommentListResponse>(`/api/scenes/${sceneId}/comments?module=${module}`),
+  createScene: (sceneId: number, module: SceneCommentModule, payload: CreateCommentPayload) =>
+    request<Comment>(`/api/scenes/${sceneId}/comments?module=${module}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  listChapter: (chapterId: number) => request<CommentListResponse>(`/api/chapters/${chapterId}/comments`),
+  createChapter: (chapterId: number, payload: CreateCommentPayload) =>
+    request<Comment>(`/api/chapters/${chapterId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (id: number, payload: UpdateCommentPayload) =>
+    request<Comment>(`/api/comments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (id: number) =>
+    request(`/api/comments/${id}`, {
       method: 'DELETE',
     }),
 };

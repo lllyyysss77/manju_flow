@@ -9,13 +9,36 @@ export enum ProductionStage {
 
 export type Status = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
 
+export type CommentModule = 'script' | 'storyboard' | 'animation' | 'audio' | 'review';
+export type CommentTargetType = 'scene' | 'chapter';
+
+export interface CommentUser {
+  id: number;
+  username: string;
+  nickname?: string;
+}
+
 export interface Comment {
-  id: string;
-  author: string;
-  text: string;
-  timestamp: string;
-  timecode?: number; 
-  replies?: Comment[];
+  id: number;
+  content: string;
+  targetType: CommentTargetType;
+  targetId: number;
+  module: CommentModule;
+  userId: number;
+  user?: CommentUser;
+  meta?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommentListResponse {
+  total: number;
+  data: Comment[];
+}
+
+export interface ReviewCommentMeta {
+  timecode?: string;
+  seconds?: number;
 }
 
 export interface Scene {
@@ -25,7 +48,7 @@ export interface Scene {
   cameraMovement: string;
   dialogue: string;
   status: Status;
-  comments: Comment[];
+  comments?: Comment[];
   startFrameUrl?: string;
   startFrameVersion?: number;
   endFrameUrl?: string;

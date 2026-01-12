@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Episode, Scene, Status } from '../types';
-import { 
+import { Comment, Episode, Scene, Status } from '../types';
+import {
   Plus, 
   MessageSquare, 
   Save, 
@@ -19,6 +19,7 @@ import {
   Send
 } from 'lucide-react';
 import { chapterApi, sceneApi, fileApi } from '../api';
+import { useSceneComments } from './useSceneComments';
 
 interface ScriptEditorProps {
   bookId: number;
@@ -313,6 +314,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const [chapters, setChapters] = useState<Episode[]>(episodes || []);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(episodes?.[0]?.id ?? null);
   const [activeScene, setActiveScene] = useState<Scene | null>(episodes?.[0]?.scenes[0] || null);
+  const [commentDraft, setCommentDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -336,7 +338,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const savedSignaturesRef = useRef<Record<number, string>>({});
   const savedChapterSynopsisRef = useRef<Record<number, string>>({});
   const referenceUrlCache = useRef<Record<string, string>>({});
+  const {
+    comments: sceneComments,
+    loading: loadingComments,
+    posting: postingComment,
+    addComment,
+    error: commentError,
+  } = useSceneComments(activeScene?.id, 'script');
   const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
+  const activeSceneComments = activeScene?.id ? sceneComments : [];
 
   useEffect(() => {
     onEpisodesChangeRef.current = onEpisodesChange;
@@ -374,6 +384,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     });
 
   const getSynopsisSignature = (synopsis?: string) => synopsis || '';
+
+  const formatCommentTime = (value?: string) =>
+    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+
+  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   const loadChapters = useCallback(async () => {
     setIsLoading(true);
@@ -481,6 +496,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       setIsSynopsisDirty(false);
     }
   }, [activeChapter?.id, activeChapter?.synopsis]);
+
+  useEffect(() => {
+    setCommentDraft('');
+  }, [activeScene?.id]);
 
   const commitChapters = (next: Episode[]) => {
     setChapters(next);
@@ -681,6 +700,22 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
   const handleRemoveReference = () => {
     updateActiveScene(scene => ({ ...scene, referenceImageUrl: undefined }));
     setResolvedReferenceUrl(undefined);
+  };
+
+  const handleSubmitComment = async () => {
+    const content = commentDraft.trim();
+    if (!activeScene?.id) return;
+    if (!content) {
+      setToast({ message: '请输入评论内容', tone: 'info' });
+      return;
+    }
+    try {
+      await addComment(content);
+      setCommentDraft('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '发表评论失败';
+      setToast({ message: msg, tone: 'error' });
+    }
   };
 
   const executeDelete = async () => {
@@ -1216,18 +1251,37 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {activeScene?.comments.length ? activeScene.comments.map(c => (
-              <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all">
-                <div className="flex justify-between mb-2">
-                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">{c.author}</span>
-                  <span className="text-[9px] text-white/20">{c.timestamp}</span>
-                </div>
-                <p className="text-sm text-white/70 leading-relaxed font-medium">{c.text}</p>
+            {commentError ? (
+              <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                加载评论失败：{commentError}
               </div>
-            )) : (
+            ) : loadingComments ? (
+              <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                评论加载中...
+              </div>
+            ) : activeScene ? (
+              activeSceneComments.length ? (
+                activeSceneComments.map(c => (
+                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">
+                        {getCommentAuthor(c)}
+                      </span>
+                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-white/70 leading-relaxed font-medium whitespace-pre-line">{c.content}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center gap-4 opacity-10">
+                  <MessageSquare size={48} strokeWidth={1} />
+                  <p className="text-[10px] font-bold uppercase tracking-widest">暂无修改意见</p>
+                </div>
+              )
+            ) : (
               <div className="h-full flex flex-col items-center justify-center gap-4 opacity-10">
                 <MessageSquare size={48} strokeWidth={1} />
-                <p className="text-[10px] font-bold uppercase tracking-widest">暂无修改意见</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest">请选择场景查看评论</p>
               </div>
             )}
           </div>
@@ -1237,9 +1291,21 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
               <input
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                 placeholder="输入您的修改意见或审核回复..."
+                value={commentDraft}
+                onChange={e => setCommentDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
               />
-              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
-                <Send size={16} />
+              <button
+                onClick={handleSubmitComment}
+                disabled={postingComment || !commentDraft.trim() || !activeScene}
+                className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
+              >
+                {postingComment ? '发送中...' : <Send size={16} />}
               </button>
             </div>
           </div>

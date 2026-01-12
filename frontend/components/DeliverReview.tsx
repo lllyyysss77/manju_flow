@@ -11,8 +11,8 @@ import {
   History,
   Loader2,
 } from 'lucide-react';
-import { Comment, Episode, ChapterVideo, ChapterVideoVersion, VideoStatus } from '../types';
-import { chapterApi, fileApi, videoApi } from '../api';
+import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
+import { chapterApi, commentApi, fileApi, videoApi } from '../api';
 
 type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
@@ -65,10 +65,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
     : '';
 
-  const [comments] = useState<Comment[]>([
-    { id: 'v1', author: '导演', text: '0:05处的过渡太突兀了。', timestamp: '2024-05-21', timecode: 5 },
-    { id: 'v2', author: '音频负责人', text: '背景音效在这里有爆音。', timestamp: '2024-05-22', timecode: 12 },
-  ]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [postingComment, setPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
 
   const resolveFileUrl = useCallback(
     async (raw?: string | null) => {
@@ -129,10 +130,40 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       setVersions([]);
       setResolvedPreviewUrl(undefined);
       setResolvedVideoUrl(undefined);
+      setComments([]);
+      setCommentError(null);
+      setCommentDraft('');
       return;
     }
     fetchVideoData(activeChapter.id);
   }, [activeChapter?.id, fetchVideoData]);
+
+  useEffect(() => {
+    if (!activeChapter?.id) return;
+    let cancelled = false;
+    setLoadingComments(true);
+    setCommentError(null);
+    setCommentDraft('');
+    (async () => {
+      try {
+        const res = await commentApi.listChapter(activeChapter.id);
+        if (!cancelled) {
+          setComments(res.data || []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : '评论加载失败';
+          setCommentError(msg);
+          setComments([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingComments(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChapter?.id]);
 
   useEffect(() => {
     setLoadError(false);
@@ -161,8 +192,13 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const formatTime = (seconds: number) => {
     if (!Number.isFinite(seconds)) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
+    const total = Math.max(0, Math.floor(seconds));
+    const hrs = Math.floor(total / 3600);
+    const mins = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -176,6 +212,87 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       idx++;
     }
     return `${size.toFixed(size >= 10 ? 0 : 1)}${units[idx]}`;
+  };
+
+  const parseReviewMeta = (meta?: string): ReviewCommentMeta | null => {
+    if (!meta) return null;
+    try {
+      const parsed = JSON.parse(meta) as ReviewCommentMeta;
+      if (parsed && (typeof parsed.seconds === 'number' || typeof parsed.timecode === 'string')) {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('Invalid review meta', err);
+    }
+    return null;
+  };
+
+  const parseTimecodeInput = (value: string) => {
+    const parts = value.split(':').map(p => Number(p));
+    if (parts.some(p => Number.isNaN(p))) return null;
+    if (parts.length === 2) {
+      const [m, s] = parts;
+      if (m < 0 || s < 0 || s >= 60) return null;
+      const seconds = m * 60 + s;
+      return { seconds, timecode: formatTime(seconds) };
+    }
+    if (parts.length === 3) {
+      const [h, m, s] = parts;
+      if (h < 0 || m < 0 || s < 0 || m >= 60 || s >= 60) return null;
+      const seconds = h * 3600 + m * 60 + s;
+      return { seconds, timecode: formatTime(seconds) };
+    }
+    return null;
+  };
+
+  const extractCommentPayload = (raw: string) => {
+    const trimmed = raw.trim();
+    const match = trimmed.match(/@(\d{1,2}:\d{2}(?::\d{2})?)/);
+    if (match) {
+      const parsed = parseTimecodeInput(match[1]);
+      if (parsed) {
+        const cleaned = trimmed.replace(match[0], '').trim();
+        return {
+          content: cleaned,
+          meta: JSON.stringify({ timecode: parsed.timecode, seconds: parsed.seconds }),
+        };
+      }
+    }
+    return { content: trimmed, meta: undefined as string | undefined };
+  };
+
+  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
+
+  type ReviewCommentView = Comment & { timeSeconds?: number; timeLabel?: string };
+  const reviewComments = useMemo<ReviewCommentView[]>(
+    () =>
+      comments.map(c => {
+        const meta = parseReviewMeta(c.meta);
+        const seconds = typeof meta?.seconds === 'number' ? meta.seconds : undefined;
+        const timeLabel = meta?.timecode || (typeof seconds === 'number' ? formatTime(seconds) : undefined);
+        return { ...c, timeSeconds: seconds, timeLabel };
+      }),
+    [comments]
+  );
+
+  const handleSubmitComment = async () => {
+    if (!activeChapter?.id) return;
+    const { content, meta } = extractCommentPayload(commentDraft);
+    if (!content) {
+      setToast({ message: '请输入评论内容', tone: 'error' });
+      return;
+    }
+    setPostingComment(true);
+    try {
+      const created = await commentApi.createChapter(activeChapter.id, { content, meta });
+      setComments(prev => [created, ...prev]);
+      setCommentDraft('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '发表评论失败';
+      setToast({ message: msg, tone: 'error' });
+    } finally {
+      setPostingComment(false);
+    }
   };
 
   const probeVideoMeta = (file: File) =>
@@ -609,18 +726,20 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                     style={{ width: `${videoRef.current?.duration ? (currentTime / videoRef.current.duration) * 100 : 0}%` }}
                   />
                   {/* 评论标记 */}
-                  {comments.map(
+                  {reviewComments.map(
                     (c) =>
-                      c.timecode !== undefined && (
+                      typeof c.timeSeconds === 'number' && (
                         <div
                           key={c.id}
                           className="absolute w-2 h-2 bg-yellow-400 rounded-full top-1/2 -translate-y-1/2 cursor-pointer border border-black shadow-sm z-10"
-                          style={{ left: `${videoRef.current?.duration ? (c.timecode / videoRef.current.duration) * 100 : 0}%` }}
+                          style={{
+                            left: `${videoRef.current?.duration ? (c.timeSeconds / videoRef.current.duration) * 100 : 0}%`,
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSeek(c.timecode!);
+                            handleSeek(c.timeSeconds);
                           }}
-                          title={`在 ${formatTime(c.timecode)} 的评论`}
+                          title={`在 ${formatTime(c.timeSeconds)} 的评论`}
                         />
                       )
                   )}
@@ -687,21 +806,36 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {comments.map((c) => (
-                  <div
-                    key={c.id}
-                    className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
-                    onClick={() => c.timecode !== undefined && handleSeek(c.timecode)}
-                  >
-                    <div className="flex justify-between mb-1">
-                      <span className="text-[10px] px-1.5 bg-blue-600/30 text-blue-400 font-mono rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        {formatTime(c.timecode || 0)}
-                      </span>
-                      <span className="text-[10px] font-bold text-white/40 uppercase">{c.author}</span>
-                    </div>
-                    <p className="text-sm text-white/80 leading-snug">{c.text}</p>
+                {commentError ? (
+                  <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                    评论加载失败：{commentError}
                   </div>
-                ))}
+                ) : loadingComments ? (
+                  <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                    评论加载中...
+                  </div>
+                ) : reviewComments.length ? (
+                  reviewComments.map((c) => (
+                    <div
+                      key={c.id}
+                      className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
+                      onClick={() => typeof c.timeSeconds === 'number' && handleSeek(c.timeSeconds)}
+                    >
+                      <div className="flex justify-between mb-1">
+                        <span className="text-[10px] px-1.5 bg-blue-600/30 text-blue-400 font-mono rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                          {c.timeLabel || '—'}
+                        </span>
+                        <span className="text-[10px] font-bold text-white/40 uppercase">{getCommentAuthor(c)}</span>
+                      </div>
+                      <p className="text-sm text-white/80 leading-snug whitespace-pre-line">{c.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 opacity-40 italic">
+                    <MessageSquare size={32} />
+                    <p className="text-xs">暂无时间轴反馈</p>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 bg-[#161616] border-t border-white/5">
@@ -709,9 +843,21 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   <input
                     className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                     placeholder={`新评论 @ ${formatTime(currentTime)}`}
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmitComment();
+                      }
+                    }}
                   />
-                  <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
-                    <Send size={16} />
+                  <button
+                    onClick={handleSubmitComment}
+                    disabled={postingComment || !commentDraft.trim() || !activeChapter}
+                    className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
+                  >
+                    {postingComment ? '发送中...' : <Send size={16} />}
                   </button>
                 </div>
               </div>

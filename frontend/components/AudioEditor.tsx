@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Episode, Scene, Status } from '../types';
+import { Comment, Episode, Scene, Status } from '../types';
 import { fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio } from '../api';
 import { 
   MessageSquare, 
@@ -23,6 +23,7 @@ import {
   Pencil,
   Trash2
 } from 'lucide-react';
+import { useSceneComments } from './useSceneComments';
 
 interface AudioEditorProps {
   episode?: Episode;
@@ -121,6 +122,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -199,7 +201,19 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     [resolveFileUrl]
   );
 
+  const formatCommentTime = (value?: string) =>
+    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
+
   const activeScene = sortedScenes[activeSceneIndex];
+  const {
+    comments: sceneCommentList,
+    loading: loadingComments,
+    posting: postingComment,
+    error: commentError,
+    addComment,
+  } = useSceneComments(activeScene?.id, 'audio');
+  const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
 
   useEffect(() => {
@@ -269,6 +283,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     return () => {
       cancelled = true;
     };
+  }, [activeScene?.id]);
+
+  useEffect(() => {
+    setCommentDraft('');
   }, [activeScene?.id]);
 
   useEffect(() => {
@@ -641,6 +659,22 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         audioRef.current.currentTime = 0;
       }
       setIsAudioPlaying(false);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    const content = commentDraft.trim();
+    if (!activeScene?.id) return;
+    if (!content) {
+      setToast({ message: '请输入评论内容', tone: 'error' });
+      return;
+    }
+    try {
+      await addComment(content);
+      setCommentDraft('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '发表评论失败';
+      setToast({ message: msg, tone: 'error' });
     }
   };
 
@@ -1249,10 +1283,37 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-                <Volume2 size={32} />
-                <p className="text-xs">暂无音频反馈</p>
-              </div>
+              {commentError ? (
+                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                  加载评论失败：{commentError}
+                </div>
+              ) : loadingComments ? (
+                <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                  评论加载中...
+                </div>
+              ) : activeScene ? (
+                activeSceneComments.length ? (
+                  activeSceneComments.map(c => (
+                    <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-[10px] font-bold text-blue-400 uppercase">{getCommentAuthor(c)}</span>
+                        <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                    <Volume2 size={32} />
+                    <p className="text-xs">暂无音频反馈</p>
+                  </div>
+                )
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                  <Volume2 size={32} />
+                  <p className="text-xs">请选择场景查看评论</p>
+                </div>
+              )}
             </div>
 
           <div className="p-4 bg-[#161616] border-t border-white/5">
@@ -1260,9 +1321,21 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
               <input
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                 placeholder="添加修改意见或反馈..."
+                value={commentDraft}
+                onChange={e => setCommentDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
               />
-              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
-                <Send size={16} />
+              <button
+                onClick={handleSubmitComment}
+                disabled={postingComment || !commentDraft.trim() || !activeScene}
+                className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
+              >
+                {postingComment ? '发送中...' : <Send size={16} />}
               </button>
             </div>
           </div>

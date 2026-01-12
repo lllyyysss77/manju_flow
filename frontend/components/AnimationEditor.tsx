@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Episode, Scene, Status } from '../types';
+import { Comment, Episode, Scene, Status } from '../types';
 import { fileApi, animationApi, AnimationVersion } from '../api';
 import { 
   MessageSquare, 
@@ -17,6 +17,7 @@ import {
   History,
   Send
 } from 'lucide-react';
+import { useSceneComments } from './useSceneComments';
 
 interface AnimationEditorProps {
   episode?: Episode;
@@ -102,12 +103,21 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
   const MAX_RIGHT = 520;
   
   const activeScene = sortedScenes[activeSceneIndex];
+  const {
+    comments: sceneCommentList,
+    loading: loadingComments,
+    posting: postingComment,
+    error: commentError,
+    addComment,
+  } = useSceneComments(activeScene?.id, 'animation');
+  const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
 
   useEffect(() => {
@@ -317,6 +327,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     setIsPlaying(false);
   }, [playbackUrl]);
 
+  const formatCommentTime = (value?: string) =>
+    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
+
+  useEffect(() => {
+    setCommentDraft('');
+  }, [activeScene?.id]);
+
   const handleUploadVideo = async (file?: File | null) => {
     if (!file || !activeSceneData?.id) return;
     setUploadingVideo(true);
@@ -378,6 +396,22 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
     } finally {
       setLoadingAnimation(false);
       setIsPlaying(false);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    const content = commentDraft.trim();
+    if (!activeScene?.id) return;
+    if (!content) {
+      setToast({ message: '请输入评论内容', tone: 'info' });
+      return;
+    }
+    try {
+      await addComment(content);
+      setCommentDraft('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '发表评论失败';
+      setToast({ message: msg, tone: 'error' });
     }
   };
 
@@ -822,18 +856,35 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {activeSceneData?.comments?.length ? activeSceneData.comments.map(c => (
-              <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 border-l-4 border-l-red-500/50">
-                <div className="flex justify-between mb-2">
-                  <span className="text-[10px] font-bold text-red-400 uppercase">{c.author}</span>
-                  <span className="text-[9px] text-white/20">{c.timestamp}</span>
-                </div>
-                <p className="text-sm text-white/70 leading-relaxed">{c.text}</p>
+            {commentError ? (
+              <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                加载评论失败：{commentError}
               </div>
-            )) : (
+            ) : loadingComments ? (
+              <div className="h-full flex flex-col items-center justify-center gap-3 text-white/40 text-sm">
+                评论加载中...
+              </div>
+            ) : activeScene ? (
+              activeSceneComments.length ? (
+                activeSceneComments.map(c => (
+                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 border-l-4 border-l-red-500/50">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-[10px] font-bold text-red-400 uppercase">{getCommentAuthor(c)}</span>
+                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                  <AlertCircle size={32} />
+                  <p className="text-xs">暂无审核反馈</p>
+                </div>
+              )
+            ) : (
               <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
                 <AlertCircle size={32} />
-                <p className="text-xs">暂无审核反馈</p>
+                <p className="text-xs">请选择场景查看反馈</p>
               </div>
             )}
           </div>
@@ -843,9 +894,21 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
               <input
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                 placeholder="添加修改意见或反馈..."
+                value={commentDraft}
+                onChange={e => setCommentDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
               />
-              <button className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
-                <Send size={16} />
+              <button
+                onClick={handleSubmitComment}
+                disabled={postingComment || !commentDraft.trim() || !activeScene}
+                className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
+              >
+                {postingComment ? '发送中...' : <Send size={16} />}
               </button>
             </div>
           </div>
