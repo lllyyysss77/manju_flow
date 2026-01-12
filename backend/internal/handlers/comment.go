@@ -121,7 +121,7 @@ func (h *CommentHandler) CreateSceneComment(c *gin.Context) {
 	}
 
 	// 获取当前用户
-	userID := c.GetUint("userID")
+	userID := c.GetUint("userId")
 
 	comment := models.Comment{
 		Content:    req.Content,
@@ -228,7 +228,7 @@ func (h *CommentHandler) CreateChapterComment(c *gin.Context) {
 	}
 
 	// 获取当前用户
-	userID := c.GetUint("userID")
+	userID := c.GetUint("userId")
 
 	comment := models.Comment{
 		Content:    req.Content,
@@ -264,7 +264,7 @@ func (h *CommentHandler) CreateChapterComment(c *gin.Context) {
 // @Router /api/comments/{id} [put]
 func (h *CommentHandler) Update(c *gin.Context) {
 	id := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint("userId")
 
 	db := database.GetDB()
 
@@ -324,7 +324,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 // @Router /api/comments/{id} [delete]
 func (h *CommentHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint("userId")
 
 	db := database.GetDB()
 
