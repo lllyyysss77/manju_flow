@@ -134,6 +134,28 @@ func Setup(r *gin.Engine) {
 				video.GET("/versions", videoHandler.ListVersions)  // 版本历史
 				video.PUT("/revert/:version", videoHandler.Revert) // 回滚版本
 			}
+
+			// 评论路由
+			commentHandler := handlers.NewCommentHandler()
+			// 场景评论（剧本创作、分镜绘制、动画制作、音频后期）
+			sceneComments := authorized.Group("/scenes/:sceneId/comments")
+			{
+				sceneComments.GET("", commentHandler.ListSceneComments)   // 获取场景评论 ?module=script|storyboard|animation|audio
+				sceneComments.POST("", commentHandler.CreateSceneComment) // 创建场景评论
+			}
+			// 章节评论（审核交付）
+			chapterComments := authorized.Group("/chapters/:chapterId/comments")
+			{
+				chapterComments.GET("", commentHandler.ListChapterComments)   // 获取章节评论
+				chapterComments.POST("", commentHandler.CreateChapterComment) // 创建章节评论
+			}
+			// 评论通用操作
+			comments := authorized.Group("/comments")
+			{
+				comments.GET("/:id", commentHandler.GetByID) // 获取评论详情
+				comments.PUT("/:id", commentHandler.Update)  // 更新评论
+				comments.DELETE("/:id", commentHandler.Delete) // 删除评论
+			}
 		}
 	}
 }
