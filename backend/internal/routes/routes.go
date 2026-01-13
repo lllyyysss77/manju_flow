@@ -85,27 +85,35 @@ func Setup(r *gin.Engine) {
 				scenes.DELETE("/:sceneId", sceneHandler.Delete) // 删除场景
 			}
 
-			// 分镜路由
+			// 帧集路由（分镜绘制，支持多套首尾帧）
 			storyboardHandler := handlers.NewStoryboardHandler()
-			storyboard := authorized.Group("/scenes/:sceneId/storyboard")
+			frameSets := authorized.Group("/scenes/:sceneId/frame-sets")
 			{
-				storyboard.GET("", storyboardHandler.GetInfo)                                      // 获取分镜信息
-				storyboard.PUT("/start-frame", storyboardHandler.UpdateStartFrame)                 // 更新起始帧
-				storyboard.PUT("/end-frame", storyboardHandler.UpdateEndFrame)                     // 更新结束帧
-				storyboard.GET("/start-frame/versions", storyboardHandler.ListStartFrameVersions)  // 起始帧版本历史
-				storyboard.GET("/end-frame/versions", storyboardHandler.ListEndFrameVersions)      // 结束帧版本历史
-				storyboard.PUT("/start-frame/revert/:version", storyboardHandler.RevertStartFrame) // 回滚起始帧
-				storyboard.PUT("/end-frame/revert/:version", storyboardHandler.RevertEndFrame)     // 回滚结束帧
+				frameSets.GET("", storyboardHandler.List)                                                     // 获取帧集列表
+				frameSets.POST("", storyboardHandler.Create)                                                  // 创建帧集
+				frameSets.GET("/:frameSetId", storyboardHandler.GetByID)                                      // 获取帧集详情
+				frameSets.PUT("/:frameSetId", storyboardHandler.Update)                                       // 更新帧集信息
+				frameSets.DELETE("/:frameSetId", storyboardHandler.Delete)                                    // 删除帧集
+				frameSets.PUT("/:frameSetId/start-frame", storyboardHandler.UpdateStartFrame)                 // 更新起始帧
+				frameSets.PUT("/:frameSetId/end-frame", storyboardHandler.UpdateEndFrame)                     // 更新结束帧
+				frameSets.GET("/:frameSetId/start-frame/versions", storyboardHandler.ListStartFrameVersions)  // 起始帧版本历史
+				frameSets.GET("/:frameSetId/end-frame/versions", storyboardHandler.ListEndFrameVersions)      // 结束帧版本历史
+				frameSets.PUT("/:frameSetId/start-frame/revert/:version", storyboardHandler.RevertStartFrame) // 回滚起始帧
+				frameSets.PUT("/:frameSetId/end-frame/revert/:version", storyboardHandler.RevertEndFrame)     // 回滚结束帧
 			}
 
-			// 动画路由
+			// 动画路由（支持多套动画）
 			animationHandler := handlers.NewAnimationHandler()
-			animation := authorized.Group("/scenes/:sceneId/animation")
+			animations := authorized.Group("/scenes/:sceneId/animations")
 			{
-				animation.GET("", animationHandler.GetInfo)                // 获取动画信息
-				animation.PUT("", animationHandler.Update)                 // 更新动画
-				animation.GET("/versions", animationHandler.ListVersions)  // 动画版本历史
-				animation.PUT("/revert/:version", animationHandler.Revert) // 回滚动画
+				animations.GET("", animationHandler.List)                                // 获取动画列表
+				animations.POST("", animationHandler.Create)                             // 创建动画
+				animations.GET("/:animationId", animationHandler.GetByID)                // 获取动画详情
+				animations.PUT("/:animationId", animationHandler.Update)                 // 更新动画信息
+				animations.DELETE("/:animationId", animationHandler.Delete)              // 删除动画
+				animations.PUT("/:animationId/upload", animationHandler.Upload)          // 上传新版本动画
+				animations.GET("/:animationId/versions", animationHandler.ListVersions)  // 动画版本历史
+				animations.PUT("/:animationId/revert/:version", animationHandler.Revert) // 回滚动画
 			}
 
 			// 音频轨道路由（支持多音频）
@@ -152,8 +160,8 @@ func Setup(r *gin.Engine) {
 			// 评论通用操作
 			comments := authorized.Group("/comments")
 			{
-				comments.GET("/:id", commentHandler.GetByID) // 获取评论详情
-				comments.PUT("/:id", commentHandler.Update)  // 更新评论
+				comments.GET("/:id", commentHandler.GetByID)   // 获取评论详情
+				comments.PUT("/:id", commentHandler.Update)    // 更新评论
 				comments.DELETE("/:id", commentHandler.Delete) // 删除评论
 			}
 		}

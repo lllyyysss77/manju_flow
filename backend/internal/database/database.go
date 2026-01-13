@@ -36,7 +36,7 @@ func Init(cfg *config.DatabaseConfig) error {
 	}
 
 	db, err := gorm.Open(dialector, &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger:                                   logger.Default.LogMode(logger.Info),
 		DisableForeignKeyConstraintWhenMigrating: true, // 禁用外键约束，通过业务逻辑保证数据完整性
 	})
 	if err != nil {
@@ -50,13 +50,15 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.Chapter{},
 		&models.Scene{},
 		&models.File{},
-		&models.StoryboardVersion{},
-		&models.AnimationVersion{},
-		&models.SceneAudio{},          // 场景音频轨道（支持多音频）
-		&models.SceneAudioVersion{},   // 音频版本历史
-		&models.ChapterVideo{},        // 章节交付视频
-		&models.ChapterVideoVersion{}, // 视频版本历史
-		&models.Comment{},             // 评论
+		&models.SceneFrameSet{},         // 场景帧集（支持多套首尾帧）
+		&models.SceneFrameSetVersion{},  // 帧集版本历史
+		&models.SceneAnimation{},        // 场景动画（支持多套动画）
+		&models.SceneAnimationVersion{}, // 动画版本历史
+		&models.SceneAudio{},            // 场景音频轨道（支持多音频）
+		&models.SceneAudioVersion{},     // 音频版本历史
+		&models.ChapterVideo{},          // 章节交付视频
+		&models.ChapterVideoVersion{},   // 视频版本历史
+		&models.Comment{},               // 评论
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
