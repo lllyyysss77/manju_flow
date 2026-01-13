@@ -8,7 +8,6 @@ import (
 	"manju-flow/internal/models"
 
 	"gorm.io/driver/mysql"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -19,21 +18,18 @@ var DB *gorm.DB
 func Init(cfg *config.DatabaseConfig) error {
 	var dialector gorm.Dialector
 
-	switch cfg.Driver {
-	case "mysql":
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-			cfg.User,
-			cfg.Password,
-			cfg.Host,
-			cfg.Port,
-			cfg.DBName,
-		)
-		dialector = mysql.Open(dsn)
-	case "sqlite":
-		dialector = sqlite.Open(cfg.DBName + ".db")
-	default:
-		return fmt.Errorf("unsupported database driver: %s", cfg.Driver)
+	if cfg.Driver != "mysql" {
+		return fmt.Errorf("unsupported database driver: %s (only mysql is supported)", cfg.Driver)
 	}
+
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.DBName,
+	)
+	dialector = mysql.Open(dsn)
 
 	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger:                                   logger.Default.LogMode(logger.Info),
