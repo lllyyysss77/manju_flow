@@ -13,7 +13,7 @@ env:
   REGION: cn-beijing  # 阿里云区域，根据需要修改
   REGISTRY: registry.cn-beijing.aliyuncs.com  # ACR 地址
   NAMESPACE: ${{ secrets.ACR_NAMESPACE }}  # ACR 命名空间
-  IMAGE_NAME: manju-flow-backend
+  IMAGE_NAME: manju_backend # 镜像仓库名称
   SAE_APP_ID: ${{ secrets.SAE_APP_ID }}  # SAE 应用 ID
 
 jobs:
