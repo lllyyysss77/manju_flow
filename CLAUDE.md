@@ -249,6 +249,9 @@ OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
 OSS_ACCESS_KEY_ID=your_access_key_id
 OSS_ACCESS_KEY_SECRET=your_access_key_secret
 OSS_BUCKET_NAME=your_bucket_name
+
+# CORS 跨域配置 (生产环境需配置前端域名)
+CORS_ORIGINS=*            # 或 https://your-app.vercel.app (多个用逗号分隔)
 ```
 
 ## 注意事项
@@ -256,7 +259,7 @@ OSS_BUCKET_NAME=your_bucket_name
 1. 浮点数 Index: 在两元素间插入时计算 `(prev + next) / 2`
 2. 软删除: 所有 DELETE 操作是软删除，数据仍在数据库
 3. 级联删除: 删除章节会同时删除其下所有场景
-4. CORS: 后端允许所有来源 (`*`)
+4. CORS: 通过 `CORS_ORIGINS` 环境变量配置允许的域名，生产环境应配置具体的前端域名
 5. 文件上传: 需要配置阿里云 OSS，否则文件相关 API 返回 503
 6. 文件权限: public 文件任何人可访问，private 文件仅上传者可访问
 7. 视频优化: 大视频建议上传时同时提供压缩预览版 (PreviewUrl)，阿里云 OSS 支持 HTTP Range 请求实现边下边播
