@@ -10,8 +10,8 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 env:
-  REGION: cn-hangzhou  # 阿里云区域，根据需要修改
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com  # ACR 地址
+  REGION: cn-beijing  # 阿里云区域，根据需要修改
+  REGISTRY: registry.cn-beijing.aliyuncs.com  # ACR 地址
   NAMESPACE: ${{ secrets.ACR_NAMESPACE }}  # ACR 命名空间
   IMAGE_NAME: manju-flow-backend
   SAE_APP_ID: ${{ secrets.SAE_APP_ID }}  # SAE 应用 ID
