@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- Go 1.25
+- Go 1.24
 - Gin (Web 框架)
 - GORM (ORM)
 - SQLite / MySQL (数据库)
@@ -42,6 +42,11 @@ docker-compose up -d
 | DB_USER | MySQL 用户名 | root |
 | DB_PASSWORD | MySQL 密码 | - |
 | DB_NAME | 数据库名 | manju_flow |
+| CORS_ORIGINS | 允许的跨域来源 | * |
+| OSS_ENDPOINT | 阿里云 OSS 端点 | - |
+| OSS_ACCESS_KEY_ID | OSS AccessKey ID | - |
+| OSS_ACCESS_KEY_SECRET | OSS AccessKey Secret | - |
+| OSS_BUCKET_NAME | OSS Bucket 名称 | - |
 
 ## API 接口
 
