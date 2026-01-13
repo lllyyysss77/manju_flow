@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"manju-flow/internal/config"
 	"manju-flow/internal/handlers"
 	"manju-flow/internal/middleware"
 
@@ -11,12 +12,15 @@ import (
 // Setup 配置所有路由
 func Setup(r *gin.Engine) {
 	// 配置 CORS
+	// 注意：AllowCredentials 为 true 时，AllowOrigins 不能是 "*"
+	// 如果使用 "*"，则关闭 AllowCredentials
+	allowAllOrigins := len(config.Cfg.CORS.AllowOrigins) == 1 && config.Cfg.CORS.AllowOrigins[0] == "*"
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     config.Cfg.CORS.AllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
+		AllowCredentials: !allowAllOrigins, // "*" 时禁用，指定域名时启用
 	}))
 
 	// 健康检查

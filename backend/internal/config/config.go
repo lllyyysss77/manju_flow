@@ -2,6 +2,7 @@ package config
 
 import (
 	"manju-flow/utils"
+	"strings"
 )
 
 var Cfg *Config
@@ -12,6 +13,12 @@ type Config struct {
 	Database DatabaseConfig
 	OSS      OSSConfig
 	App      AppConfig
+	CORS     CORSConfig
+}
+
+// CORSConfig 跨域配置
+type CORSConfig struct {
+	AllowOrigins []string
 }
 
 // AppConfig 应用程序配置
@@ -71,8 +78,32 @@ func Load() *Config {
 			AccessKeySecret: utils.GetEnv("OSS_ACCESS_KEY_SECRET", ""),
 			BucketName:      utils.GetEnv("OSS_BUCKET_NAME", ""),
 		},
+		CORS: CORSConfig{
+			AllowOrigins: parseOrigins(utils.GetEnv("CORS_ORIGINS", "*")),
+		},
 	}
 	return Cfg
+}
+
+// parseOrigins 解析允许的域名列表
+// 支持逗号分隔: "https://example.com,https://app.example.com"
+// 默认 "*" 表示允许所有
+func parseOrigins(origins string) []string {
+	if origins == "" || origins == "*" {
+		return []string{"*"}
+	}
+	parts := strings.Split(origins, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return []string{"*"}
+	}
+	return result
 }
 
 
