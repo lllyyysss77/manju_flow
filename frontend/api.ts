@@ -159,7 +159,22 @@ export const bookApi = {
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式
-import { Comment, CommentListResponse, CommentModule, Project, Status, Episode, Scene, ChapterVideo, ChapterVideoVersion, VideoStatus } from './types';
+import {
+  Comment,
+  CommentListResponse,
+  CommentModule,
+  Project,
+  Status,
+  Episode,
+  Scene,
+  ChapterVideo,
+  ChapterVideoVersion,
+  VideoStatus,
+  SceneFrameSet,
+  SceneFrameSetVersion,
+  SceneAnimation,
+  SceneAnimationVersion,
+} from './types';
 
 export function bookToProject(book: Book): Project {
   // 将后端的 adaptationStatus 映射到前端的 productionStatus
@@ -201,10 +216,6 @@ export interface ScenePayload {
   cameraMovement: string;
   dialogue: string;
   referenceImageUrl?: string;
-  startFrameUrl?: string;
-  startFrameVersion?: number;
-  endFrameUrl?: string;
-  endFrameVersion?: number;
 }
 
 export const chapterApi = {
@@ -322,93 +333,117 @@ export const fileApi = {
   },
 };
 
-// 分镜（Storyboard）API
-export interface StoryboardInfo {
-  sceneId: number;
-  startFrameUrl?: string;
-  startFrameVersion?: number;
-  endFrameUrl?: string;
-  endFrameVersion?: number;
-  latestStartFrame?: StoryboardVersion;
-  latestEndFrame?: StoryboardVersion;
-}
-
-export type FrameType = 'START' | 'END';
-
-export interface StoryboardVersion {
-  id: number;
-  sceneId: number;
-  frameType: FrameType;
-  imageUrl: string;
-  version: number;
-  createdBy: number;
-  createdAt: string;
-}
-
-export interface StoryboardVersionListResponse {
+// 分镜（帧集）API
+export interface SceneFrameSetListResponse {
   total: number;
-  data: StoryboardVersion[];
+  data: SceneFrameSet[];
+}
+
+export interface SceneFrameSetVersionListResponse {
+  total: number;
+  data: SceneFrameSetVersion[];
+}
+
+export interface CreateFrameSetPayload {
+  name: string;
+  index: number;
+}
+
+export interface UpdateFrameSetPayload {
+  name?: string;
+  index?: number;
 }
 
 export const storyboardApi = {
-  getInfo: (sceneId: number) => request<StoryboardInfo>(`/api/scenes/${sceneId}/storyboard`),
-  updateStartFrame: (sceneId: number, imageUrl: string) =>
-    request<StoryboardVersion>(`/api/scenes/${sceneId}/storyboard/start-frame`, {
+  list: (sceneId: number) => request<SceneFrameSetListResponse>(`/api/scenes/${sceneId}/frame-sets`),
+  create: (sceneId: number, payload: CreateFrameSetPayload) =>
+    request<SceneFrameSet>(`/api/scenes/${sceneId}/frame-sets`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (sceneId: number, frameSetId: number, payload: UpdateFrameSetPayload) =>
+    request<SceneFrameSet>(`/api/scenes/${sceneId}/frame-sets/${frameSetId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (sceneId: number, frameSetId: number) =>
+    request(`/api/scenes/${sceneId}/frame-sets/${frameSetId}`, {
+      method: 'DELETE',
+    }),
+  updateStartFrame: (sceneId: number, frameSetId: number, imageUrl: string) =>
+    request<SceneFrameSetVersion>(`/api/scenes/${sceneId}/frame-sets/${frameSetId}/start-frame`, {
       method: 'PUT',
       body: JSON.stringify({ imageUrl }),
     }),
-  updateEndFrame: (sceneId: number, imageUrl: string) =>
-    request<StoryboardVersion>(`/api/scenes/${sceneId}/storyboard/end-frame`, {
+  updateEndFrame: (sceneId: number, frameSetId: number, imageUrl: string) =>
+    request<SceneFrameSetVersion>(`/api/scenes/${sceneId}/frame-sets/${frameSetId}/end-frame`, {
       method: 'PUT',
       body: JSON.stringify({ imageUrl }),
     }),
-  listStartVersions: (sceneId: number) =>
-    request<StoryboardVersionListResponse>(`/api/scenes/${sceneId}/storyboard/start-frame/versions`),
-  listEndVersions: (sceneId: number) =>
-    request<StoryboardVersionListResponse>(`/api/scenes/${sceneId}/storyboard/end-frame/versions`),
-  revertStartFrame: (sceneId: number, version: number) =>
-    request<Scene>(`/api/scenes/${sceneId}/storyboard/start-frame/revert/${version}`, {
+  listStartVersions: (sceneId: number, frameSetId: number) =>
+    request<SceneFrameSetVersionListResponse>(
+      `/api/scenes/${sceneId}/frame-sets/${frameSetId}/start-frame/versions`
+    ),
+  listEndVersions: (sceneId: number, frameSetId: number) =>
+    request<SceneFrameSetVersionListResponse>(
+      `/api/scenes/${sceneId}/frame-sets/${frameSetId}/end-frame/versions`
+    ),
+  revertStartFrame: (sceneId: number, frameSetId: number, version: number) =>
+    request<SceneFrameSet>(`/api/scenes/${sceneId}/frame-sets/${frameSetId}/start-frame/revert/${version}`, {
       method: 'PUT',
     }),
-  revertEndFrame: (sceneId: number, version: number) =>
-    request<Scene>(`/api/scenes/${sceneId}/storyboard/end-frame/revert/${version}`, {
+  revertEndFrame: (sceneId: number, frameSetId: number, version: number) =>
+    request<SceneFrameSet>(`/api/scenes/${sceneId}/frame-sets/${frameSetId}/end-frame/revert/${version}`, {
       method: 'PUT',
     }),
 };
 
-// 动画制作 API
-export interface AnimationInfo {
-  sceneId: number;
-  animationUrl?: string;
-  animationVersion?: number;
-  latestVersion?: AnimationVersion;
-}
-
-export interface AnimationVersion {
-  id: number;
-  sceneId: number;
-  videoUrl: string;
-  version: number;
-  createdBy: number;
-  createdAt: string;
-}
-
-export interface AnimationVersionListResponse {
+// 动画制作 API（多动画）
+export interface SceneAnimationListResponse {
   total: number;
-  data: AnimationVersion[];
+  data: SceneAnimation[];
+}
+
+export interface SceneAnimationVersionListResponse {
+  total: number;
+  data: SceneAnimationVersion[];
+}
+
+export interface CreateAnimationPayload {
+  name: string;
+  index: number;
+}
+
+export interface UpdateAnimationPayload {
+  name?: string;
+  index?: number;
 }
 
 export const animationApi = {
-  getInfo: (sceneId: number) => request<AnimationInfo>(`/api/scenes/${sceneId}/animation`),
-  update: (sceneId: number, videoUrl: string) =>
-    request<AnimationVersion>(`/api/scenes/${sceneId}/animation`, {
+  list: (sceneId: number) => request<SceneAnimationListResponse>(`/api/scenes/${sceneId}/animations`),
+  create: (sceneId: number, payload: CreateAnimationPayload) =>
+    request<SceneAnimation>(`/api/scenes/${sceneId}/animations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (sceneId: number, animationId: number, payload: UpdateAnimationPayload) =>
+    request<SceneAnimation>(`/api/scenes/${sceneId}/animations/${animationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (sceneId: number, animationId: number) =>
+    request(`/api/scenes/${sceneId}/animations/${animationId}`, {
+      method: 'DELETE',
+    }),
+  upload: (sceneId: number, animationId: number, videoUrl: string) =>
+    request<SceneAnimationVersion>(`/api/scenes/${sceneId}/animations/${animationId}/upload`, {
       method: 'PUT',
       body: JSON.stringify({ videoUrl }),
     }),
-  listVersions: (sceneId: number) =>
-    request<AnimationVersionListResponse>(`/api/scenes/${sceneId}/animation/versions`),
-  revert: (sceneId: number, version: number) =>
-    request<Scene>(`/api/scenes/${sceneId}/animation/revert/${version}`, {
+  listVersions: (sceneId: number, animationId: number) =>
+    request<SceneAnimationVersionListResponse>(`/api/scenes/${sceneId}/animations/${animationId}/versions`),
+  revert: (sceneId: number, animationId: number, version: number) =>
+    request<SceneAnimation>(`/api/scenes/${sceneId}/animations/${animationId}/revert/${version}`, {
       method: 'PUT',
     }),
 };

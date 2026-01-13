@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, Scene, Status } from '../types';
-import { fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio } from '../api';
+import { fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -56,8 +56,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
         index: scene.index || idx + 1,
         cameraMovement: scene.cameraMovement || '平移',
         status: scene.status || 'IN_PROGRESS',
-        animationUrl: scene.animationUrl || scene.clipUrl,
-        clipUrl: scene.clipUrl || scene.animationUrl,
         audios: scene.audios || [],
       }));
 
@@ -106,6 +104,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
+  const [animationPreviewMap, setAnimationPreviewMap] = useState<Record<number, { url?: string; version?: number }>>({});
   const [audioTracks, setAudioTracks] = useState<SceneAudioTrack[]>([]);
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(null);
   const [versionMap, setVersionMap] = useState<Record<number, AudioVersion[]>>({});
@@ -290,6 +289,37 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   }, [activeScene?.id]);
 
   useEffect(() => {
+    if (!activeScene?.id) return;
+    let cancelled = false;
+    const loadPreview = async () => {
+      try {
+        const res = await animationApi.list(activeScene.id);
+        if (cancelled) return;
+        const first = (res.data || []).sort((a, b) => a.index - b.index)[0];
+        if (!first?.animationUrl) {
+          setAnimationPreviewMap(prev => ({ ...prev, [activeScene.id]: { url: undefined, version: undefined } }));
+          return;
+        }
+        const resolved = await resolveFileUrl(first.animationUrl);
+        if (!cancelled) {
+          setAnimationPreviewMap(prev => ({
+            ...prev,
+            [activeScene.id]: { url: resolved || first.animationUrl, version: first.animationVersion },
+          }));
+          setSceneThumbCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: resolved || first.animationUrl }));
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load animation preview', err);
+      }
+    };
+    loadPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, resolveFileUrl]);
+
+  useEffect(() => {
     if (!activeScene?.id || !selectedAudioId) {
       setResolvedAudioUrl(undefined);
       setVersionMenuOpen(false);
@@ -334,9 +364,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
 
   useEffect(() => {
     sortedScenes.forEach(scene => {
-      const raw = scene.startFrameUrl;
-      if (!raw) return;
       if (sceneThumbCache[scene.id]) return;
+      const raw = scene.referenceImageUrl;
+      if (!raw) return;
       resolveFileUrl(raw).then(url => {
         setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
       });
@@ -361,7 +391,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     (currentVersionNumber ? currentVersions.find(v => v.version === currentVersionNumber) : undefined) ||
     currentVersions[0];
   const displayAudioUrl = currentVersionData?.audioUrl || selectedTrack?.audioUrl;
-  const displayVideoUrl = activeScene?.animationUrl || activeScene?.clipUrl;
+  const displayVideoUrl = activeScene?.id ? animationPreviewMap[activeScene.id]?.url : undefined;
   const currentVersionLabel = currentVersionNumber ?? '—';
   const hasAudio = Boolean(selectedTrack && (displayAudioUrl || currentVersions.length > 0));
   const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
@@ -732,7 +762,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
           ) : (
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
-              const thumb = sceneThumbCache[scene.id] || scene.startFrameUrl;
+              const thumb = sceneThumbCache[scene.id] || animationPreviewMap[scene.id]?.url || scene.referenceImageUrl;
               return (
               <button
                 key={scene.id}

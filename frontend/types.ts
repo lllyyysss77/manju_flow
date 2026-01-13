@@ -49,15 +49,10 @@ export interface Scene {
   dialogue: string;
   status: Status;
   comments?: Comment[];
-  startFrameUrl?: string;
-  startFrameVersion?: number;
-  endFrameUrl?: string;
-  endFrameVersion?: number;
-  animationUrl?: string;
-  animationVersion?: number;
-  clipUrl?: string; // backward compat
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
   audios?: SceneAudioTrack[]; // 多音轨
+  frameSets?: SceneFrameSet[];
+  animations?: SceneAnimation[];
 }
 
 export interface SceneAudioTrack {
@@ -69,6 +64,51 @@ export interface SceneAudioTrack {
   audioVersion?: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface SceneFrameSet {
+  id: number;
+  sceneId: number;
+  name: string;
+  index: number;
+  startFrameUrl?: string;
+  startFrameVersion?: number;
+  endFrameUrl?: string;
+  endFrameVersion?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type FrameType = 'START' | 'END';
+
+export interface SceneFrameSetVersion {
+  id: number;
+  sceneFrameSetId: number;
+  frameType: FrameType;
+  imageUrl: string;
+  version: number;
+  createdBy?: number;
+  createdAt?: string;
+}
+
+export interface SceneAnimation {
+  id: number;
+  sceneId: number;
+  name: string;
+  index: number;
+  animationUrl?: string;
+  animationVersion?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SceneAnimationVersion {
+  id: number;
+  sceneAnimationId: number;
+  videoUrl: string;
+  version: number;
+  createdBy?: number;
+  createdAt?: string;
 }
 
 export type VideoStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';

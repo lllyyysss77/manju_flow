@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Comment, Episode, Status } from '../types';
-import { fileApi, storyboardApi, StoryboardVersion } from '../api';
+import { Comment, Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
+import { fileApi, storyboardApi } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -16,6 +16,8 @@ import {
   History,
   Clock,
   Send,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 
@@ -69,18 +71,25 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     setCommentDraft('');
   }, [activeScene?.id]);
 
-  const [sceneFrames, setSceneFrames] = useState<Record<number, { startUrl?: string; endUrl?: string; startVersion?: number; endVersion?: number }>>({});
-  const [versionsMap, setVersionsMap] = useState<Record<number, { start: StoryboardVersion[]; end: StoryboardVersion[] }>>({});
+  const [frameSets, setFrameSets] = useState<SceneFrameSet[]>([]);
+  const [selectedFrameSetId, setSelectedFrameSetId] = useState<number | null>(null);
+  const [versionsMap, setVersionsMap] = useState<Record<number, { start: SceneFrameSetVersion[]; end: SceneFrameSetVersion[] }>>({});
+  const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [previewCache, setPreviewCache] = useState<Record<number, string>>({});
   const [scenePreviewCache, setScenePreviewCache] = useState<Record<number, string>>({});
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const [loadingStoryboard, setLoadingStoryboard] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [historyPanel, setHistoryPanel] = useState<{ type: 'start' | 'end'; open: boolean }>({ type: 'start', open: false });
   const [historySelection, setHistorySelection] = useState<{ start?: string; end?: string }>({});
   const [resolvedReference, setResolvedReference] = useState<string | undefined>();
+  const [creatingSet, setCreatingSet] = useState(false);
+  const [newSetName, setNewSetName] = useState('');
+  const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<SceneFrameSet | null>(null);
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
@@ -160,7 +169,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     };
   }, [activeScene?.referenceImageUrl, resolveFileUrl]);
 
-  const primeVersionCache = useCallback(async (items: StoryboardVersion[]) => {
+  const primeVersionCache = useCallback(async (items: SceneFrameSetVersion[]) => {
     const entries = await Promise.all(
       items.map(async item => {
         const resolved = await resolveFileUrl(item.imageUrl);
@@ -171,72 +180,166 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     setPreviewCache(prev => ({ ...prev, ...mapped }));
   }, [resolveFileUrl]);
 
-  const refreshStoryboard = useCallback(async (sceneId: number) => {
-    const info = await storyboardApi.getInfo(sceneId);
-    const [startVersionsRes, endVersionsRes] = await Promise.all([
-      storyboardApi.listStartVersions(sceneId),
-      storyboardApi.listEndVersions(sceneId),
-    ]);
-    const [resolvedStart, resolvedEnd] = await Promise.all([
-      info.startFrameUrl ? resolveFileUrl(info.startFrameUrl) : Promise.resolve(''),
-      info.endFrameUrl ? resolveFileUrl(info.endFrameUrl) : Promise.resolve(''),
-    ]);
-    setSceneFrames(prev => ({
-      ...prev,
-      [sceneId]: {
-        startUrl: resolvedStart || undefined,
-        endUrl: resolvedEnd || undefined,
-        startVersion: info.startFrameVersion,
-        endVersion: info.endFrameVersion,
-      },
-    }));
-    const startVersions = startVersionsRes.data || [];
-    const endVersions = endVersionsRes.data || [];
-    setVersionsMap(prev => ({
-      ...prev,
-      [sceneId]: {
-        start: startVersions,
-        end: endVersions,
-      },
-    }));
-    await primeVersionCache([...startVersions, ...endVersions]);
-  }, [primeVersionCache, resolveFileUrl]);
+  const resolveFrameSetPreview = useCallback(
+    async (frameSet: SceneFrameSet, sceneId?: number) => {
+      const [start, end] = await Promise.all([
+        frameSet.startFrameUrl ? resolveFileUrl(frameSet.startFrameUrl) : Promise.resolve(''),
+        frameSet.endFrameUrl ? resolveFileUrl(frameSet.endFrameUrl) : Promise.resolve(''),
+      ]);
+      setFramePreviewCache(prev => ({
+        ...prev,
+        [frameSet.id]: {
+          start: start || undefined,
+          end: end || undefined,
+        },
+      }));
+      if (sceneId && start) {
+        setScenePreviewCache(prev => ({ ...prev, [sceneId]: start }));
+      }
+    },
+    [resolveFileUrl]
+  );
 
-  useEffect(() => {
-    if (!activeScene?.id) return;
-    let cancelled = false;
-    const load = async () => {
+  const loadFrameSets = useCallback(
+    async (sceneId: number) => {
       setLoadingStoryboard(true);
       setStoryboardError(null);
       try {
-        await refreshStoryboard(activeScene.id);
-        if (!cancelled) setHistorySelection({});
+        const res = await storyboardApi.list(sceneId);
+        const list = (res.data || []).sort((a, b) => a.index - b.index);
+        setFrameSets(list);
+        setSelectedFrameSetId(prev => {
+          if (prev && list.some(fs => fs.id === prev)) return prev;
+          return list[0]?.id ?? null;
+        });
+        await Promise.all(list.map(fs => resolveFrameSetPreview(fs, sceneId)));
+        setHistorySelection({});
       } catch (err) {
-        if (!cancelled) setStoryboardError(err instanceof Error ? err.message : '加载分镜失败');
+        console.error('Failed to load frame sets', err);
+        setStoryboardError(err instanceof Error ? err.message : '加载分镜失败');
+        setFrameSets([]);
+        setSelectedFrameSetId(null);
       } finally {
-        if (!cancelled) setLoadingStoryboard(false);
+        setLoadingStoryboard(false);
+      }
+    },
+    [resolveFrameSetPreview]
+  );
+
+  const loadVersionsForFrameSet = useCallback(
+    async (sceneId: number, frameSetId: number) => {
+      setLoadingVersions(true);
+      setStoryboardError(null);
+      try {
+        const [startVersionsRes, endVersionsRes] = await Promise.all([
+          storyboardApi.listStartVersions(sceneId, frameSetId),
+          storyboardApi.listEndVersions(sceneId, frameSetId),
+        ]);
+        const startVersions = startVersionsRes.data || [];
+        const endVersions = endVersionsRes.data || [];
+        setVersionsMap(prev => ({
+          ...prev,
+          [frameSetId]: {
+            start: startVersions,
+            end: endVersions,
+          },
+        }));
+        await primeVersionCache([...startVersions, ...endVersions]);
+      } catch (err) {
+        console.error('Failed to load frame versions', err);
+        setStoryboardError(err instanceof Error ? err.message : '加载帧版本失败');
+      } finally {
+        setLoadingVersions(false);
+      }
+    },
+    [primeVersionCache]
+  );
+
+  useEffect(() => {
+    if (!activeScene?.id) {
+      setFrameSets([]);
+      setSelectedFrameSetId(null);
+      setVersionsMap({});
+      setHistorySelection({});
+      setLoadingVersions(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      await loadFrameSets(activeScene.id);
+      if (!cancelled) {
+        setHistorySelection({});
       }
     };
     load();
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, refreshStoryboard]);
+  }, [activeScene?.id, loadFrameSets]);
+
+  useEffect(() => {
+    if (!activeScene?.id || !selectedFrameSetId) return;
+    let cancelled = false;
+    const load = async () => {
+      await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
+      if (!cancelled) setHistorySelection({});
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, selectedFrameSetId, loadVersionsForFrameSet]);
+
+  useEffect(() => {
+    const current = frameSets.find(fs => fs.id === selectedFrameSetId);
+    setRenameDraft(current?.name || '');
+  }, [selectedFrameSetId, frameSets]);
+
+  useEffect(() => {
+    if (!selectedFrameSetId && historyPanel.open) {
+      setHistoryPanel(prev => ({ ...prev, open: false }));
+    }
+  }, [selectedFrameSetId, historyPanel.open]);
 
   const handleUploadFrame = async (type: 'start' | 'end', file?: File | null) => {
-    if (!file || !activeScene?.id) return;
+    if (!file || !activeScene?.id || !selectedFrameSetId) return;
     setUploading(prev => ({ ...prev, [type]: true }));
     try {
       const uploaded = await fileApi.upload(file, 'private');
       const key = uploaded.key || uploaded.url;
+      const resolved = await resolveFileUrl(key);
       if (type === 'start') {
-        await storyboardApi.updateStartFrame(activeScene.id, key);
+        const version = await storyboardApi.updateStartFrame(activeScene.id, selectedFrameSetId, key);
+        setFrameSets(prev =>
+          prev.map(fs =>
+            fs.id === selectedFrameSetId
+              ? { ...fs, startFrameUrl: key, startFrameVersion: version.version }
+              : fs
+          )
+        );
       } else {
-        await storyboardApi.updateEndFrame(activeScene.id, key);
+        const version = await storyboardApi.updateEndFrame(activeScene.id, selectedFrameSetId, key);
+        setFrameSets(prev =>
+          prev.map(fs =>
+            fs.id === selectedFrameSetId
+              ? { ...fs, endFrameUrl: key, endFrameVersion: version.version }
+              : fs
+          )
+        );
       }
-      await refreshStoryboard(activeScene.id);
-      setToast({ message: `${type === 'start' ? '起始帧' : '结束帧'}已保存`, tone: 'success' });
+      setFramePreviewCache(prev => ({
+        ...prev,
+        [selectedFrameSetId]: {
+          ...(prev[selectedFrameSetId] || {}),
+          [type === 'start' ? 'start' : 'end']: resolved || key,
+        },
+      }));
+      await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
       setHistorySelection({});
+      if (type === 'start' && resolved) {
+        setScenePreviewCache(prev => ({ ...prev, [activeScene.id]: resolved }));
+      }
+      setToast({ message: `${type === 'start' ? '起始帧' : '结束帧'}已保存`, tone: 'success' });
     } catch (err) {
       console.error('Upload frame failed', err);
       setToast({ message: '保存失败，请重试', tone: 'error' });
@@ -248,17 +351,20 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   };
 
   const applyVersion = async (type: 'start' | 'end', version: number) => {
-    if (!activeScene?.id) return;
+    if (!activeScene?.id || !selectedFrameSetId) return;
     setUploading(prev => ({ ...prev, [type]: true }));
     try {
+      let updated: SceneFrameSet;
       if (type === 'start') {
-        await storyboardApi.revertStartFrame(activeScene.id, version);
+        updated = await storyboardApi.revertStartFrame(activeScene.id, selectedFrameSetId, version);
       } else {
-        await storyboardApi.revertEndFrame(activeScene.id, version);
+        updated = await storyboardApi.revertEndFrame(activeScene.id, selectedFrameSetId, version);
       }
-      setToast({ message: '已切换到该版本', tone: 'success' });
+      setFrameSets(prev => prev.map(fs => (fs.id === selectedFrameSetId ? { ...fs, ...updated } : fs)));
+      await resolveFrameSetPreview(updated, activeScene.id);
+      await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
       setHistorySelection({});
-      await refreshStoryboard(activeScene.id);
+      setToast({ message: '已切换到该版本', tone: 'success' });
     } catch (err) {
       console.error('Failed to apply version', err);
       setToast({ message: '切换失败，请重试', tone: 'error' });
@@ -283,24 +389,104 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     }
   };
 
-  const frameData = activeScene ? sceneFrames[activeScene.id] : undefined;
-  const currentVersions = activeScene ? versionsMap[activeScene.id] || { start: [], end: [] } : { start: [], end: [] };
-  const startDisplayUrl = historySelection.start || frameData?.startUrl || activeScene?.startFrameUrl || '';
-  const endDisplayUrl = historySelection.end || frameData?.endUrl || activeScene?.endFrameUrl || '';
+  const handleCreateFrameSet = async () => {
+    if (!activeScene?.id) return;
+    const name = (newSetName || '').trim() || `帧集 ${frameSets.length + 1}`;
+    const nextIndex = frameSets.length ? Math.max(...frameSets.map(fs => fs.index)) + 1 : 1;
+    setLoadingStoryboard(true);
+    setStoryboardError(null);
+    try {
+      const created = await storyboardApi.create(activeScene.id, { name, index: nextIndex });
+      const nextList = [...frameSets, created].sort((a, b) => a.index - b.index);
+      setFrameSets(nextList);
+      setSelectedFrameSetId(created.id);
+      setRenameDraft(created.name);
+      setNewSetName('');
+      setCreatingSet(false);
+      await resolveFrameSetPreview(created, activeScene.id);
+      setToast({ message: '新帧集已创建', tone: 'success' });
+    } catch (err) {
+      console.error('Create frame set failed', err);
+      setToast({ message: '创建帧集失败，请重试', tone: 'error' });
+      setStoryboardError(err instanceof Error ? err.message : '创建帧集失败');
+    } finally {
+      setLoadingStoryboard(false);
+    }
+  };
+
+  const handleRenameFrameSet = async () => {
+    if (!activeScene?.id || !selectedFrameSetId) return;
+    const name = renameDraft.trim();
+    if (!name) {
+      setToast({ message: '请输入帧集名称', tone: 'error' });
+      return;
+    }
+    try {
+      const updated = await storyboardApi.update(activeScene.id, selectedFrameSetId, { name });
+      setFrameSets(prev => prev.map(fs => (fs.id === selectedFrameSetId ? { ...fs, ...updated } : fs)));
+      setToast({ message: '名称已更新', tone: 'success' });
+    } catch (err) {
+      console.error('Rename frame set failed', err);
+      setToast({ message: '更新失败，请重试', tone: 'error' });
+    }
+  };
+
+  const handleDeleteFrameSet = async (frameSetId: number) => {
+    if (!activeScene?.id) return;
+    setLoadingStoryboard(true);
+    setStoryboardError(null);
+    try {
+      await storyboardApi.delete(activeScene.id, frameSetId);
+      const nextList = frameSets.filter(fs => fs.id !== frameSetId);
+      setFrameSets(nextList);
+      setVersionsMap(prev => {
+        const copy = { ...prev };
+        delete copy[frameSetId];
+        return copy;
+      });
+      setFramePreviewCache(prev => {
+        const copy = { ...prev };
+        delete copy[frameSetId];
+        return copy;
+      });
+      const nextActive = selectedFrameSetId === frameSetId ? nextList[0]?.id ?? null : selectedFrameSetId;
+      setSelectedFrameSetId(nextActive ?? null);
+      setHistorySelection({});
+      setDeleteTarget(null);
+      if (nextActive) {
+        const nextSet = nextList.find(fs => fs.id === nextActive);
+        setRenameDraft(nextSet?.name || '');
+      }
+      setToast({ message: '帧集已删除', tone: 'success' });
+    } catch (err) {
+      console.error('Delete frame set failed', err);
+      setToast({ message: '删除失败，请重试', tone: 'error' });
+    } finally {
+      setLoadingStoryboard(false);
+    }
+  };
+
+  const selectedFrameSet = frameSets.find(fs => fs.id === selectedFrameSetId) || null;
+  const currentFramePreview = selectedFrameSet ? framePreviewCache[selectedFrameSet.id] : undefined;
+  const currentVersions = selectedFrameSet ? versionsMap[selectedFrameSet.id] || { start: [], end: [] } : { start: [], end: [] };
+  const startDisplayUrl = historySelection.start || currentFramePreview?.start || '';
+  const endDisplayUrl = historySelection.end || currentFramePreview?.end || '';
   const formatCommentTime = (value?: string) =>
     value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
   const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   useEffect(() => {
-    sortedScenes.forEach(scene => {
-      const raw = sceneFrames[scene.id]?.startUrl || scene.startFrameUrl;
-      if (!raw) return;
-      if (scenePreviewCache[scene.id]) return;
-      resolveFileUrl(raw).then(url => {
-        setScenePreviewCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
+    if (!activeScene?.id) return;
+    if (scenePreviewCache[activeScene.id]) return;
+    const firstSet = frameSets[0];
+    if (!firstSet) return;
+    const cachedStart = framePreviewCache[firstSet.id]?.start || firstSet.startFrameUrl;
+    if (cachedStart) {
+      resolveFileUrl(cachedStart).then(url => {
+        setScenePreviewCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: url }));
       });
-    });
-  }, [sortedScenes, sceneFrames, resolveFileUrl, scenePreviewCache]);
+    }
+  }, [activeScene?.id, frameSets, framePreviewCache, resolveFileUrl, scenePreviewCache]);
 
   if (!hasChapters) {
     return (
@@ -318,7 +504,9 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
             className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
               toast.tone === 'success'
                 ? 'bg-green-500/20 border-green-500/40 text-green-100'
-                : 'bg-red-500/20 border-red-500/40 text-red-100'
+                : toast.tone === 'error'
+                  ? 'bg-red-500/20 border-red-500/40 text-red-100'
+                  : 'bg-blue-500/20 border-blue-500/40 text-blue-100'
             }`}
           >
             {toast.message}
@@ -350,7 +538,11 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
-            const preview = scenePreviewCache[scene.id] || sceneFrames[scene.id]?.startUrl || scene.startFrameUrl;
+            const activePreview =
+              scene.id === activeScene?.id && selectedFrameSetId
+                ? framePreviewCache[selectedFrameSetId]?.start
+                : undefined;
+            const preview = scenePreviewCache[scene.id] || activePreview || scene.referenceImageUrl || '';
             return (
             <button
               key={scene.id}
@@ -389,6 +581,35 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
           </div>
         ) : (
         <>
+        {deleteTarget && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-[360px] rounded-2xl border border-white/10 bg-[#111111] shadow-2xl p-5 space-y-4">
+              <div className="flex items-center gap-2 text-white">
+                <div className="p-2 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
+                  <Trash2 size={16} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">删除帧集</p>
+                  <p className="text-xs text-white/50">帧集「{deleteTarget.name || '未命名'}」的所有版本都会被清空，确认继续？</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleDeleteFrameSet(deleteTarget.id)}
+                  className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold border border-red-500/60 shadow-md"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {storyboardError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
             <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
@@ -396,10 +617,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
             </div>
           </div>
         )}
-        {loadingStoryboard && (
+        {(loadingStoryboard || loadingVersions) && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
-              正在同步分镜数据...
+              {loadingStoryboard ? '正在同步分镜数据...' : '正在解析历史版本...'}
             </div>
           </div>
         )}
@@ -494,110 +715,246 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                 </div>
               </div>
 
-              {/* 主画稿卡片 */}
-              <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">起始帧 / 关键帧 A</span>
-                <button
-                  onClick={() => setHistoryPanel({ type: 'start', open: true })}
-                  className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                >
-                  <History size={12} /> 查看历史版本
-                </button>
-              </div>
-              <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
-                {startDisplayUrl ? (
-                  <>
-                    <img src={startDisplayUrl} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                      <button
-                        onClick={() => startInputRef.current?.click()}
-                        className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
-                        disabled={uploading.start}
-                      >
-                        {uploading.start ? '上传中...' : '更换图片'}
-                      </button>
+              {/* 帧集与画稿 */}
+              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400">
+                      <Camera size={16} />
                     </div>
-                    {frameData?.startVersion ? (
-                      <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
-                        版本 #{frameData.startVersion}
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <button
-                    onClick={() => startInputRef.current?.click()}
-                    className="absolute inset-0 flex flex-col items-center justify-center gap-3 hover:bg-white/5 transition-colors"
-                    disabled={uploading.start}
+                    <div>
+                      <p className="text-sm font-bold text-white">帧集管理</p>
+                      <p className="text-[11px] text-white/40">为同一场景拆分多套首尾帧，按序推进绘制</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setCreatingSet(true);
+                        setNewSetName('');
+                      }}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-[11px] rounded-lg border border-white/10 flex items-center gap-1 transition-all"
+                    >
+                      创建帧集
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {frameSets.map(fs => {
+                    const isActive = fs.id === selectedFrameSetId;
+                    return (
+                      <button
+                        key={fs.id}
+                        onClick={() => {
+                          setSelectedFrameSetId(fs.id);
+                          setHistoryPanel(prev => ({ ...prev, open: false }));
+                        }}
+                        className={`px-3 py-1.5 rounded-lg border text-sm flex items-center gap-2 transition-all ${
+                          isActive
+                            ? 'bg-blue-600/20 border-blue-500/60 text-white shadow-[0_0_12px_rgba(59,130,246,0.35)]'
+                            : 'bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white'
+                        }`}
                   >
-                    <Upload size={32} className="text-white/20" />
-                    <span className="text-xs font-bold text-white/20 uppercase">
-                      {uploading.start ? '上传中...' : '点击上传首帧'}
+                    <span>{fs.name || `帧集 #${Math.round(fs.index)}`}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 border border-white/10">
+                      A#{fs.startFrameVersion ?? '—'} · B#{fs.endFrameVersion ?? '—'}
                     </span>
                   </button>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={startInputRef}
-                  className="hidden"
-                  onChange={e => handleUploadFrame('start', e.target.files?.[0])}
-                />
-              </div>
+                );
+              })}
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">结束帧 / 关键帧 B</span>
-                <button
-                  onClick={() => setHistoryPanel({ type: 'end', open: true })}
-                  className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                >
-                  <History size={12} /> 查看历史版本
-                </button>
-              </div>
-              <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
-                {endDisplayUrl ? (
-                   <>
-                    <img src={endDisplayUrl} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                      <button
-                        onClick={() => endInputRef.current?.click()}
-                        className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
-                        disabled={uploading.end}
-                      >
-                        {uploading.end ? '上传中...' : '更换图片'}
-                      </button>
-                    </div>
-                    {frameData?.endVersion ? (
-                      <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
-                        版本 #{frameData.endVersion}
+                {creatingSet && (
+                  <div className="flex flex-wrap items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-3">
+                    <input
+                      value={newSetName}
+                      onChange={e => setNewSetName(e.target.value)}
+                      placeholder="镜头名称 / Shot A / 镜头1"
+                      className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={handleCreateFrameSet}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg border border-blue-500/60"
+                    >
+                      创建
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCreatingSet(false);
+                        setNewSetName('');
+                      }}
+                      className="px-3 py-2 bg-white/5 hover:bg-white/10 text-white/70 text-xs rounded-lg border border-white/10"
+                    >
+                      取消
+                    </button>
+                  </div>
+                )}
+
+                {selectedFrameSet ? (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={renameDraft}
+                          onChange={e => setRenameDraft(e.target.value)}
+                          onBlur={handleRenameFrameSet}
+                          className="min-w-[180px] bg-[#0c0c0c] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="填写帧集名称"
+                        />
+                        <button
+                          onClick={handleRenameFrameSet}
+                          className="px-2.5 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-1"
+                        >
+                          <Pencil size={12} /> 保存名称
+                        </button>
+                        <span className="text-[11px] text-white/30">
+                          当前版本 A#{selectedFrameSet.startFrameVersion ?? '—'} · B#{selectedFrameSet.endFrameVersion ?? '—'}
+                        </span>
                       </div>
-                    ) : null}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setHistoryPanel({ type: 'start', open: true })}
+                          className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                        >
+                          <History size={12} /> 起始帧历史
+                        </button>
+                        <button
+                          onClick={() => setHistoryPanel({ type: 'end', open: true })}
+                          className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                        >
+                          <History size={12} /> 结束帧历史
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(selectedFrameSet)}
+                          className="px-2.5 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-red-300 hover:text-white hover:border-red-500/40 hover:bg-red-500/20 flex items-center gap-1"
+                        >
+                          删除帧集
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">起始帧 / 关键帧 A</span>
+                          <button
+                            onClick={() => setHistoryPanel({ type: 'start', open: true })}
+                            className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                          >
+                            <History size={12} /> 查看历史
+                          </button>
+                        </div>
+                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
+                          {startDisplayUrl ? (
+                            <>
+                              <img src={startDisplayUrl} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                <button
+                                  onClick={() => startInputRef.current?.click()}
+                                  className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
+                                  disabled={uploading.start}
+                                >
+                                  {uploading.start ? '上传中...' : '更换图片'}
+                                </button>
+                              </div>
+                              {selectedFrameSet?.startFrameVersion ? (
+                                <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
+                                  版本 #{selectedFrameSet.startFrameVersion}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => startInputRef.current?.click()}
+                              className="absolute inset-0 flex flex-col items-center justify-center gap-3 hover:bg-white/5 transition-colors"
+                              disabled={uploading.start}
+                            >
+                              <Upload size={32} className="text-white/20" />
+                              <span className="text-xs font-bold text-white/20 uppercase">
+                                {uploading.start ? '上传中...' : '点击上传首帧'}
+                              </span>
+                            </button>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={startInputRef}
+                            className="hidden"
+                            onChange={e => handleUploadFrame('start', e.target.files?.[0])}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">结束帧 / 关键帧 B</span>
+                          <button
+                            onClick={() => setHistoryPanel({ type: 'end', open: true })}
+                            className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                          >
+                            <History size={12} /> 查看历史
+                          </button>
+                        </div>
+                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
+                          {endDisplayUrl ? (
+                             <>
+                              <img src={endDisplayUrl} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                <button
+                                  onClick={() => endInputRef.current?.click()}
+                                  className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
+                                  disabled={uploading.end}
+                                >
+                                  {uploading.end ? '上传中...' : '更换图片'}
+                                </button>
+                              </div>
+                              {selectedFrameSet?.endFrameVersion ? (
+                                <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
+                                  版本 #{selectedFrameSet.endFrameVersion}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => endInputRef.current?.click()}
+                              className="absolute inset-0 flex flex-col items-center justify-center gap-3 hover:bg-white/5 transition-colors"
+                              disabled={uploading.end}
+                            >
+                              <Upload size={32} className="text-white/20" />
+                              <span className="text-xs font-bold text-white/20 uppercase">
+                                {uploading.end ? '上传中...' : '上传尾帧 (可选)'}
+                              </span>
+                            </button>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={endInputRef}
+                            className="hidden"
+                            onChange={e => handleUploadFrame('end', e.target.files?.[0])}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </>
                 ) : (
-                  <button
-                    onClick={() => endInputRef.current?.click()}
-                    className="absolute inset-0 flex flex-col items-center justify-center gap-3 hover:bg-white/5 transition-colors"
-                    disabled={uploading.end}
-                  >
+                  <div className="border border-dashed border-white/10 rounded-xl p-6 flex flex-col items-center justify-center text-center gap-3 text-white/50">
                     <Upload size={32} className="text-white/20" />
-                    <span className="text-xs font-bold text-white/20 uppercase">
-                      {uploading.end ? '上传中...' : '上传尾帧 (可选)'}
-                    </span>
-                  </button>
+                    <p className="text-sm font-semibold text-white">当前场景还没有帧集</p>
+                    <p className="text-[12px] text-white/40">为不同镜头创建多套首尾帧，再开始上传图片</p>
+                    <button
+                      onClick={() => {
+                        setCreatingSet(true);
+                        setNewSetName('');
+                      }}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all"
+                    >
+                      新建第一套帧集
+                    </button>
+                  </div>
                 )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={endInputRef}
-                  className="hidden"
-                  onChange={e => handleUploadFrame('end', e.target.files?.[0])}
-                />
               </div>
-            </div>
-          </div>
 
             </div>
           </div>
@@ -631,7 +988,9 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                   <History size={16} className="text-blue-400" />
                   <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-white/40">历史版本</p>
-                    <p className="text-sm text-white/80">{historyPanel.type === 'start' ? '起始帧' : '结束帧'}</p>
+                    <p className="text-sm text-white/80">
+                      {historyPanel.type === 'start' ? '起始帧' : '结束帧'} · {selectedFrameSet?.name || '未命名帧集'}
+                    </p>
                   </div>
                 </div>
               </div>

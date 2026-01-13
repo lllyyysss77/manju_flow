@@ -405,21 +405,17 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
           .map(s => ({
             id: s.id,
             index: s.index,
-            description: s.description || '',
-            cameraMovement: s.cameraMovement || '',
-            dialogue: s.dialogue || '',
-            status: s.status as Status,
-            comments: [],
-            referenceImageUrl: s.referenceImageUrl,
-            startFrameUrl: s.startFrameUrl,
-            startFrameVersion: s.startFrameVersion,
-            endFrameUrl: s.endFrameUrl,
-            endFrameVersion: s.endFrameVersion,
-            animationUrl: (s as any).animationUrl,
-            animationVersion: (s as any).animationVersion,
-            clipUrl: (s as any).clipUrl || (s as any).animationUrl,
-          }) as Scene)
-          .sort((a, b) => a.index - b.index),
+        description: s.description || '',
+        cameraMovement: s.cameraMovement || '',
+        dialogue: s.dialogue || '',
+        status: s.status as Status,
+        comments: [],
+        referenceImageUrl: s.referenceImageUrl,
+        frameSets: (s as any).frameSets,
+        animations: (s as any).animations,
+        audios: (s as any).audios,
+      }) as Scene)
+      .sort((a, b) => a.index - b.index),
       })) as Episode[];
       const savedSig: Record<number, string> = {};
       data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));

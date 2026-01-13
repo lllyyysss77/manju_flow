@@ -470,7 +470,6 @@ const App: React.FC = () => {
           return (
             <DeliverReview
               episodes={selectedProject.episodes}
-              videoUrl={episode?.scenes[0]?.animationUrl || episode?.scenes[0]?.clipUrl}
               bookId={selectedProject.id}
             />
           );
