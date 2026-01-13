@@ -70,6 +70,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [loadingComments, setLoadingComments] = useState(false);
   const [postingComment, setPostingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const commentDraftRef = useRef('');
 
   const resolveFileUrl = useCallback(
     async (raw?: string | null) => {
@@ -287,12 +288,29 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       const created = await commentApi.createChapter(activeChapter.id, { content, meta });
       setComments(prev => [created, ...prev]);
       setCommentDraft('');
+      commentDraftRef.current = '';
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
       setToast({ message: msg, tone: 'error' });
     } finally {
       setPostingComment(false);
     }
+  };
+
+  const handleCommentDraftChange = (value: string) => {
+    const prev = commentDraftRef.current;
+    const isForwardTyping = value.length > prev.length;
+    const endsWithAt = value.endsWith('@');
+    const alreadyHasTimecode = /@\d{1,2}:\d{2}(?::\d{2})?/.test(value);
+    // 仅在用户新增 @ 且当前草稿末尾没有时间码时自动补全
+    if (isForwardTyping && endsWithAt && !alreadyHasTimecode) {
+      const auto = `${value}${formatTime(currentTime)} `;
+      setCommentDraft(auto);
+      commentDraftRef.current = auto;
+      return;
+    }
+    setCommentDraft(value);
+    commentDraftRef.current = value;
   };
 
   const probeVideoMeta = (file: File) =>
@@ -821,11 +839,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                       className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
                       onClick={() => typeof c.timeSeconds === 'number' && handleSeek(c.timeSeconds)}
                     >
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[10px] px-1.5 bg-blue-600/30 text-blue-400 font-mono rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          {c.timeLabel || '—'}
+                  <div className="flex justify-between mb-1">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-mono border border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]">
+                          @{c.timeLabel || '—'}
                         </span>
-                        <span className="text-[10px] font-bold text-white/40 uppercase">{getCommentAuthor(c)}</span>
+                        <span className="text-[10px] font-bold text-white/60 uppercase">{getCommentAuthor(c)}</span>
                       </div>
                       <p className="text-sm text-white/80 leading-snug whitespace-pre-line">{c.content}</p>
                     </div>
@@ -844,7 +862,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                     className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                     placeholder={`新评论 @ ${formatTime(currentTime)}`}
                     value={commentDraft}
-                    onChange={(e) => setCommentDraft(e.target.value)}
+                    onChange={(e) => handleCommentDraftChange(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
