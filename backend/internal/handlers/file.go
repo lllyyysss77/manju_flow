@@ -143,12 +143,28 @@ func (h *FileHandler) Get(c *gin.Context) {
 	}
 
 	// 查询文件记录
+	// 由于使用内容哈希作为 key，同一文件可能被多个用户上传，产生多条记录
+	// 优先查找当前用户的记录，确保用户能访问自己上传的文件
 	var fileRecord models.File
-	if err := database.GetDB().Where("`key` = ?", key).First(&fileRecord).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "文件不存在",
-		})
-		return
+	db := database.GetDB()
+	found := false
+
+	// 如果用户已登录，优先查找该用户的记录
+	if user, exists := c.Get("user"); exists {
+		currentUser := user.(*models.User)
+		if err := db.Where("`key` = ? AND uploader_id = ?", key, currentUser.ID).First(&fileRecord).Error; err == nil {
+			found = true
+		}
+	}
+
+	// 如果没有找到当前用户的记录，查找任意一条记录
+	if !found {
+		if err := db.Where("`key` = ?", key).First(&fileRecord).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "文件不存在",
+			})
+			return
+		}
 	}
 
 	// 检查权限
