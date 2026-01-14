@@ -119,7 +119,7 @@ func (h *ChapterHandler) Create(c *gin.Context) {
 		BookID:   uint(bookIdUint),
 		Title:    req.Title,
 		Synopsis: req.Synopsis,
-		Index:    req.Index,
+		Index:    *req.Index,
 		Status:   status,
 	}
 

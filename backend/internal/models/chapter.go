@@ -47,7 +47,7 @@ type ChapterListResponse struct {
 type CreateChapterRequest struct {
 	Title    string        `json:"title" binding:"required"`
 	Synopsis string        `json:"synopsis"` // 故事梗概
-	Index    float64       `json:"index" binding:"required"`
+	Index    *float64      `json:"index" binding:"required"` // 使用指针类型允许传递 0 值
 	Status   ChapterStatus `json:"status"`
 }
 

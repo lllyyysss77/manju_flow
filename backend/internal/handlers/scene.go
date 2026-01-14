@@ -107,12 +107,12 @@ func (h *SceneHandler) Create(c *gin.Context) {
 	}
 
 	scene := models.Scene{
-		ChapterID:      uint(chapterIdUint),
-		Index:          req.Index,
-		Status:         status,
-		Description:    req.Description,
-		CameraMovement: req.CameraMovement,
-		Dialogue:       req.Dialogue,
+		ChapterID:         uint(chapterIdUint),
+		Index:             *req.Index,
+		Status:            status,
+		Description:       req.Description,
+		CameraMovement:    req.CameraMovement,
+		Dialogue:          req.Dialogue,
 		ReferenceImageUrl: req.ReferenceImageUrl,
 	}
 
