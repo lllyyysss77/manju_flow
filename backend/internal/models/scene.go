@@ -49,7 +49,7 @@ type SceneListResponse struct {
 
 // CreateSceneRequest 创建场景请求
 type CreateSceneRequest struct {
-	Index             float64     `json:"index" binding:"required"`
+	Index             *float64    `json:"index" binding:"required"` // 使用指针类型允许传递 0 值
 	Status            SceneStatus `json:"status"`
 	Description       string      `json:"description" binding:"required"`
 	CameraMovement    string      `json:"cameraMovement"`
