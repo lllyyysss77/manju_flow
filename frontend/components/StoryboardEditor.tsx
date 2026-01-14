@@ -18,6 +18,7 @@ import {
   Send,
   Pencil,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 
@@ -97,6 +98,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -265,6 +267,12 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
       setLoadingVersions(false);
       return;
     }
+    setStoryboardError(null);
+    setFrameSets([]);
+    setSelectedFrameSetId(null);
+    setVersionsMap({});
+    setHistorySelection({});
+    setLoadingVersions(false);
     let cancelled = false;
     const load = async () => {
       await loadFrameSets(activeScene.id);
@@ -280,6 +288,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
 
   useEffect(() => {
     if (!activeScene?.id || !selectedFrameSetId) return;
+    const existsInCurrentScene = frameSets.some(fs => fs.id === selectedFrameSetId);
+    if (!existsInCurrentScene) return;
     let cancelled = false;
     const load = async () => {
       await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
@@ -289,7 +299,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, selectedFrameSetId, loadVersionsForFrameSet]);
+  }, [activeScene?.id, selectedFrameSetId, frameSets, loadVersionsForFrameSet]);
 
   useEffect(() => {
     const current = frameSets.find(fs => fs.id === selectedFrameSetId);
@@ -301,6 +311,20 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
       setHistoryPanel(prev => ({ ...prev, open: false }));
     }
   }, [selectedFrameSetId, historyPanel.open]);
+
+  const openImagePreview = useCallback((url?: string, title?: string) => {
+    if (!url) return;
+    setImagePreview({ url, title: title || '画面预览' });
+  }, []);
+
+  useEffect(() => {
+    if (!imagePreview) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImagePreview(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imagePreview]);
 
   const handleUploadFrame = async (type: 'start' | 'end', file?: File | null) => {
     if (!file || !activeScene?.id || !selectedFrameSetId) return;
@@ -758,9 +782,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                         }`}
                   >
                     <span>{fs.name || `帧集 #${Math.round(fs.index)}`}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 border border-white/10">
-                      A#{fs.startFrameVersion ?? '—'} · B#{fs.endFrameVersion ?? '—'}
-                    </span>
                   </button>
                 );
               })}
@@ -809,9 +830,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                         >
                           <Pencil size={12} /> 保存名称
                         </button>
-                        <span className="text-[11px] text-white/30">
-                          当前版本 A#{selectedFrameSet.startFrameVersion ?? '—'} · B#{selectedFrameSet.endFrameVersion ?? '—'}
-                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -839,26 +857,33 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">起始帧 / 关键帧 A</span>
-                          <button
-                            onClick={() => setHistoryPanel({ type: 'start', open: true })}
-                            className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                          >
-                            <History size={12} /> 查看历史
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-white/40">版本 {selectedFrameSet.startFrameVersion ?? '—'}</span>
+                            <button
+                              onClick={() => setHistoryPanel({ type: 'start', open: true })}
+                              className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                            >
+                              <History size={12} /> 查看历史
+                            </button>
+                          </div>
                         </div>
-                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
+                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative">
                           {startDisplayUrl ? (
                             <>
-                              <img src={startDisplayUrl} className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                                <button
-                                  onClick={() => startInputRef.current?.click()}
-                                  className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
-                                  disabled={uploading.start}
-                                >
-                                  {uploading.start ? '上传中...' : '更换图片'}
-                                </button>
-                              </div>
+                              <img
+                                src={startDisplayUrl}
+                                className="w-full h-full object-cover cursor-zoom-in"
+                                onClick={() => openImagePreview(startDisplayUrl, '起始帧预览')}
+                                alt="起始帧预览"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => startInputRef.current?.click()}
+                                className="absolute top-2 right-2 px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                                disabled={uploading.start}
+                              >
+                                {uploading.start ? '上传中...' : '重新上传'}
+                              </button>
                               {selectedFrameSet?.startFrameVersion ? (
                                 <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
                                   版本 #{selectedFrameSet.startFrameVersion}
@@ -890,26 +915,33 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">结束帧 / 关键帧 B</span>
-                          <button
-                            onClick={() => setHistoryPanel({ type: 'end', open: true })}
-                            className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
-                          >
-                            <History size={12} /> 查看历史
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-white/40">版本 {selectedFrameSet.endFrameVersion ?? '—'}</span>
+                            <button
+                              onClick={() => setHistoryPanel({ type: 'end', open: true })}
+                              className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
+                            >
+                              <History size={12} /> 查看历史
+                            </button>
+                          </div>
                         </div>
-                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group">
+                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative">
                           {endDisplayUrl ? (
                              <>
-                              <img src={endDisplayUrl} className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                                <button
-                                  onClick={() => endInputRef.current?.click()}
-                                  className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg shadow-xl"
-                                  disabled={uploading.end}
-                                >
-                                  {uploading.end ? '上传中...' : '更换图片'}
-                                </button>
-                              </div>
+                              <img
+                                src={endDisplayUrl}
+                                className="w-full h-full object-cover cursor-zoom-in"
+                                onClick={() => openImagePreview(endDisplayUrl, '结束帧预览')}
+                                alt="结束帧预览"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => endInputRef.current?.click()}
+                                className="absolute top-2 right-2 px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                                disabled={uploading.end}
+                              >
+                                {uploading.end ? '上传中...' : '重新上传'}
+                              </button>
                               {selectedFrameSet?.endFrameVersion ? (
                                 <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
                                   版本 #{selectedFrameSet.endFrameVersion}
@@ -1109,6 +1141,34 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
         </>
         )}
       </div>
+      {imagePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setImagePreview(null)}
+          />
+          <div className="relative z-10 max-w-5xl w-full px-6">
+            <div className="bg-[#111111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                <div className="text-sm font-semibold text-white">{imagePreview.title}</div>
+                <button
+                  onClick={() => setImagePreview(null)}
+                  className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="bg-black p-4 flex items-center justify-center">
+                <img
+                  src={imagePreview.url}
+                  alt={imagePreview.title}
+                  className="max-h-[70vh] max-w-full object-contain rounded-lg border border-white/5"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
