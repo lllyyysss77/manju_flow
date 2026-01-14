@@ -461,8 +461,10 @@ func (h *StoryboardHandler) listVersions(c *gin.Context, frameType models.FrameT
 	// 检查场景是否存在
 	var scene models.Scene
 	if err := db.First(&scene, sceneId).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Scene not found",
+		// 场景不存在时返回空数组
+		c.JSON(http.StatusOK, models.SceneFrameSetVersionListResponse{
+			Total: 0,
+			Data:  []models.SceneFrameSetVersion{},
 		})
 		return
 	}
@@ -470,8 +472,10 @@ func (h *StoryboardHandler) listVersions(c *gin.Context, frameType models.FrameT
 	// 检查帧集是否存在
 	var frameSet models.SceneFrameSet
 	if err := db.Where("id = ? AND scene_id = ?", frameSetId, scene.ID).First(&frameSet).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Frame set not found",
+		// 帧集不存在时返回空数组
+		c.JSON(http.StatusOK, models.SceneFrameSetVersionListResponse{
+			Total: 0,
+			Data:  []models.SceneFrameSetVersion{},
 		})
 		return
 	}
