@@ -167,26 +167,27 @@ func (h *FileHandler) Get(c *gin.Context) {
 		}
 	}
 
-	// 检查权限
-	if fileRecord.Visibility == models.FileVisibilityPrivate {
-		// 获取当前用户
-		user, exists := c.Get("user")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "需要登录才能访问此文件",
-			})
-			return
-		}
-		currentUser := user.(*models.User)
-
-		// 检查是否是上传者
-		if currentUser.ID != fileRecord.UploaderID {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "没有权限访问此文件",
-			})
-			return
-		}
-	}
+	// TODO: 权限设计完成后恢复以下权限校验逻辑
+	// // 检查权限
+	// if fileRecord.Visibility == models.FileVisibilityPrivate {
+	// 	// 获取当前用户
+	// 	user, exists := c.Get("user")
+	// 	if !exists {
+	// 		c.JSON(http.StatusUnauthorized, gin.H{
+	// 			"error": "需要登录才能访问此文件",
+	// 		})
+	// 		return
+	// 	}
+	// 	currentUser := user.(*models.User)
+	//
+	// 	// 检查是否是上传者
+	// 	if currentUser.ID != fileRecord.UploaderID {
+	// 		c.JSON(http.StatusForbidden, gin.H{
+	// 			"error": "没有权限访问此文件",
+	// 		})
+	// 		return
+	// 	}
+	// }
 
 	// 生成签名 URL（有效期 1 小时）
 	ossClient := oss.GetClient()
