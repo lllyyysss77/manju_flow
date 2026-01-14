@@ -52,6 +52,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [approving, setApproving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [originalProgress, setOriginalProgress] = useState<number | null>(null);
+  const [originalDragOver, setOriginalDragOver] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const originalInputRef = useRef<HTMLInputElement>(null);
@@ -380,6 +381,20 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     }
   };
 
+  const handleOriginalDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploadingOriginal) {
+      setOriginalDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUploadOriginal(file);
+    }
+    setOriginalDragOver(false);
+  };
+
   const handleRevert = async (version: number) => {
     if (!activeChapter?.id) return;
     setLoadingVideo(true);
@@ -500,8 +515,25 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
       <div className="flex-1 flex overflow-hidden">
         {!hasUploadedVideo ? (
-          <div className="flex-1 flex items-center justify-center p-10 bg-gradient-to-br from-[#0f172a] via-[#0a0a0a] to-black">
-            <div className="w-full max-w-3xl bg-[#0c0c0f] border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.45)] overflow-hidden">
+          <div
+            className="flex-1 flex items-center justify-center p-10 bg-gradient-to-br from-[#0f172a] via-[#0a0a0a] to-black"
+            onDragOver={e => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              setOriginalDragOver(true);
+            }}
+            onDragEnter={e => {
+              e.preventDefault();
+              setOriginalDragOver(true);
+            }}
+            onDragLeave={() => setOriginalDragOver(false)}
+            onDrop={handleOriginalDrop}
+          >
+            <div
+              className={`w-full max-w-3xl bg-[#0c0c0f] border rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.45)] overflow-hidden transition-colors ${
+                originalDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/10'
+              }`}
+            >
               <div className="px-8 py-6 border-b border-white/5 flex flex-col md:flex-row md:items-center gap-4">
                 <div className="p-3 rounded-xl bg-blue-600/20 text-blue-200 w-fit">
                   <Upload size={22} />
@@ -520,7 +552,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                 >
                   {uploadingOriginal
                     ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
-                    : '选择原始视频'}
+                    : '拖拽或选择原始视频'}
                 </button>
               </div>
               <div className="px-8 py-6 grid md:grid-cols-3 gap-4 text-sm text-white/70">
@@ -542,7 +574,22 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         ) : (
           <>
             {/* 视频播放器区域 */}
-            <div className="flex-1 flex flex-col h-full relative">
+            <div
+              className={`flex-1 flex flex-col h-full relative transition-colors ${
+                originalDragOver ? 'outline outline-2 outline-blue-500/60 outline-offset-0' : ''
+              }`}
+              onDragOver={e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                setOriginalDragOver(true);
+              }}
+              onDragEnter={e => {
+                e.preventDefault();
+                setOriginalDragOver(true);
+              }}
+              onDragLeave={() => setOriginalDragOver(false)}
+              onDrop={handleOriginalDrop}
+            >
               {loadingVideo && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                   <div className="flex items-center gap-2 px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-white/80 text-sm">
@@ -600,17 +647,20 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                onClick={() => originalInputRef.current?.click()}
-                disabled={uploadingOriginal}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] rounded-lg border border-blue-500/60 transition-all disabled:opacity-60 flex items-center gap-1"
-              >
-                <Upload size={14} />
+                    onClick={() => originalInputRef.current?.click()}
+                    disabled={uploadingOriginal}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] rounded-lg border border-blue-500/60 transition-all disabled:opacity-60 flex items-center gap-1"
+                  >
+                    <Upload size={14} />
                     {uploadingOriginal
                       ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
                       : videoDetail?.videoUrl
                         ? '更新原始视频'
                         : '上传原始视频'}
-                </button>
+                  </button>
+                  <span className="text-[11px] text-white/40">
+                    {originalDragOver ? '释放即可上传视频' : '可拖拽原始视频到此区域'}
+                  </span>
                   <div className="relative">
                     <button
                       onClick={() => setVersionMenuOpen((prev) => !prev)}

@@ -91,6 +91,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   const [loadingAnimation, setLoadingAnimation] = useState(false);
   const [animationError, setAnimationError] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoDragOver, setVideoDragOver] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
@@ -433,6 +434,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
       setUploadingVideo(false);
       if (videoInputRef.current) videoInputRef.current.value = '';
     }
+  };
+
+  const handleVideoDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploadingVideo) {
+      setVideoDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUploadVideo(file);
+    }
+    setVideoDragOver(false);
   };
 
   const handlePreviewVersion = (version: number) => {
@@ -867,7 +882,22 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                 </div>
               </div>
 
-              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
+              <div
+                className={`bg-[#111111] rounded-2xl border p-5 space-y-5 shadow-xl transition-colors ${
+                  videoDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
+                }`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setVideoDragOver(true);
+                }}
+                onDragEnter={e => {
+                  e.preventDefault();
+                  setVideoDragOver(true);
+                }}
+                onDragLeave={() => setVideoDragOver(false)}
+                onDrop={handleVideoDrop}
+              >
                 <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-purple-600/20 text-purple-300">
@@ -878,7 +908,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                       <p className="text-[11px] text-white/40">为场景拆分多段动画，独立留存版本</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 relative">
+                  <div className="flex items-center gap-2 relative flex-wrap">
                     <button
                       onClick={() => {
                         setCreatingClip(true);
@@ -906,6 +936,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                       className="hidden"
                       onChange={e => handleUploadVideo(e.target.files?.[0])}
                     />
+                    <span className="text-[11px] text-white/40">
+                      {videoDragOver ? '释放即可上传视频' : '可拖拽视频到此上传'}
+                    </span>
                   </div>
                 </div>
 
@@ -1098,7 +1131,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
                             <MonitorPlay size={48} />
                           </div>
                           <div className="text-center">
-                            <p className="text-sm font-bold text-white/40 mb-1">点击上传动画片段</p>
+                            <p className="text-sm font-bold text-white/40 mb-1">拖拽或点击上传动画片段</p>
                             <p className="text-[10px] text-white/20 uppercase tracking-widest">上传后全组成员均可即时查看</p>
                           </div>
                         </div>

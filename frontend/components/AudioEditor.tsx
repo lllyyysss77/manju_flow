@@ -112,6 +112,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const [audioError, setAudioError] = useState<string | null>(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
+  const [audioDragOver, setAudioDragOver] = useState(false);
   const [previewPlayingVersion, setPreviewPlayingVersion] = useState<number | null>(null);
   const [creatingTrack, setCreatingTrack] = useState(false);
   const [newTrackRole, setNewTrackRole] = useState('');
@@ -572,6 +573,20 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
     }
   };
 
+  const handleAudioDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploadingAudio) {
+      setAudioDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUploadAudio(file);
+    }
+    setAudioDragOver(false);
+  };
+
   const toggleVideoPlay = () => {
     if (!videoRef.current || !playbackVideoUrl) return;
     if (isVideoPlaying) {
@@ -973,7 +988,22 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                 </div>
               </div>
 
-              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
+              <div
+                className={`bg-[#111111] rounded-2xl border p-5 space-y-5 shadow-xl transition-colors ${
+                  audioDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
+                }`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setAudioDragOver(true);
+                }}
+                onDragEnter={e => {
+                  e.preventDefault();
+                  setAudioDragOver(true);
+                }}
+                onDragLeave={() => setAudioDragOver(false)}
+                onDrop={handleAudioDrop}
+              >
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400">
@@ -988,7 +1018,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 relative">
+                  <div className="flex items-center gap-2 relative flex-wrap">
                     <button
                       onClick={() => {
                         setCreatingTrack(true);
@@ -1016,6 +1046,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
                       className="hidden"
                       onChange={e => handleUploadAudio(e.target.files?.[0])}
                     />
+                    <span className="text-[11px] text-white/40">
+                      {audioDragOver ? '释放即可上传音频' : '可拖拽音频到此上传'}
+                    </span>
                   </div>
                 </div>
 

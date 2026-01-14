@@ -83,6 +83,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
+  const [frameDragOver, setFrameDragOver] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [historyPanel, setHistoryPanel] = useState<{ type: 'start' | 'end'; open: boolean }>({ type: 'start', open: false });
   const [historySelection, setHistorySelection] = useState<{ start?: string; end?: string }>({});
@@ -372,7 +373,22 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
       setUploading(prev => ({ ...prev, [type]: false }));
       if (type === 'start' && startInputRef.current) startInputRef.current.value = '';
       if (type === 'end' && endInputRef.current) endInputRef.current.value = '';
+      setFrameDragOver(prev => ({ ...prev, [type]: false }));
     }
+  };
+
+  const handleFrameDrop = (type: 'start' | 'end') => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploading[type]) {
+      setFrameDragOver(prev => ({ ...prev, [type]: false }));
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUploadFrame(type, file);
+    }
+    setFrameDragOver(prev => ({ ...prev, [type]: false }));
   };
 
   const applyVersion = async (type: 'start' | 'end', version: number) => {
@@ -867,7 +883,22 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                             </button>
                           </div>
                         </div>
-                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative">
+                        <div
+                          className={`aspect-video w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
+                            frameDragOver.start ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
+                          }`}
+                          onDragOver={e => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'copy';
+                            setFrameDragOver(prev => ({ ...prev, start: true }));
+                          }}
+                          onDragEnter={e => {
+                            e.preventDefault();
+                            setFrameDragOver(prev => ({ ...prev, start: true }));
+                          }}
+                          onDragLeave={() => setFrameDragOver(prev => ({ ...prev, start: false }))}
+                          onDrop={handleFrameDrop('start')}
+                        >
                           {startDisplayUrl ? (
                             <>
                               <img
@@ -898,7 +929,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                             >
                               <Upload size={32} className="text-white/20" />
                               <span className="text-xs font-bold text-white/20 uppercase">
-                                {uploading.start ? '上传中...' : '点击上传首帧'}
+                                {uploading.start ? '上传中...' : '拖拽或点击上传首帧'}
                               </span>
                             </button>
                           )}
@@ -925,7 +956,22 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                             </button>
                           </div>
                         </div>
-                        <div className="aspect-video w-full rounded-xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative">
+                        <div
+                          className={`aspect-video w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
+                            frameDragOver.end ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
+                          }`}
+                          onDragOver={e => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'copy';
+                            setFrameDragOver(prev => ({ ...prev, end: true }));
+                          }}
+                          onDragEnter={e => {
+                            e.preventDefault();
+                            setFrameDragOver(prev => ({ ...prev, end: true }));
+                          }}
+                          onDragLeave={() => setFrameDragOver(prev => ({ ...prev, end: false }))}
+                          onDrop={handleFrameDrop('end')}
+                        >
                           {endDisplayUrl ? (
                              <>
                               <img
@@ -956,7 +1002,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                             >
                               <Upload size={32} className="text-white/20" />
                               <span className="text-xs font-bold text-white/20 uppercase">
-                                {uploading.end ? '上传中...' : '上传尾帧 (可选)'}
+                                {uploading.end ? '上传中...' : '拖拽或点击上传尾帧 (可选)'}
                               </span>
                             </button>
                           )}

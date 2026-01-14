@@ -30,6 +30,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCoverDragOver, setIsCoverDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = mode === 'edit';
@@ -81,8 +82,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleCoverUpload = async (file?: File | null) => {
     if (!file) return;
     setIsUploadingCover(true);
     setError(null);
@@ -97,6 +97,26 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      setIsCoverDragOver(false);
+    }
+  };
+
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    handleCoverUpload(file);
+  };
+
+  const handleCoverDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isUploadingCover) {
+      setIsCoverDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    handleCoverUpload(file);
+    if (!file) {
+      setIsCoverDragOver(false);
     }
   };
 
@@ -210,7 +230,18 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
                 封面图片
               </label>
-              <div className="flex items-start gap-4 p-4 rounded-xl border border-white/10 bg-gradient-to-r from-white/5 via-white/5 to-blue-900/10">
+              <div
+                className={`flex items-start gap-4 p-4 rounded-xl border bg-gradient-to-r from-white/5 via-white/5 to-blue-900/10 transition-colors ${
+                  isCoverDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/10'
+                }`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setIsCoverDragOver(true);
+                }}
+                onDragLeave={() => setIsCoverDragOver(false)}
+                onDrop={handleCoverDrop}
+              >
                 <div className="w-24 h-32 rounded-lg overflow-hidden border border-white/10 bg-white/5 relative flex items-center justify-center text-white/30 text-[11px]">
                   {formData.cover ? (
                     <>
@@ -261,7 +292,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
                     )}
                   </div>
                   <p className="text-white/40 text-xs leading-relaxed">
-                    上传图片后会自动填充封面链接并保存到作品信息。建议尺寸 600×900，JPG/PNG 均可。
+                    上传图片后会自动填充封面链接并保存到作品信息，支持拖拽到此区域。建议尺寸 600×900，JPG/PNG 均可。
                   </p>
                 </div>
               </div>

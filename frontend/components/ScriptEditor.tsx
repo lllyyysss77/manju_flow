@@ -61,6 +61,7 @@ const ReferenceSection: React.FC<{
   const [isDrawing, setIsDrawing] = useState(false);
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragOverUpload, setDragOverUpload] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,6 +153,20 @@ const ReferenceSection: React.FC<{
     }
   };
 
+  const handleDropUpload = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) {
+      setDragOverUpload(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUpload(file);
+    }
+    setDragOverUpload(false);
+  };
+
   const busy = isUploading || localUploading;
 
   if (mode === 'VIEW' && initialImage) {
@@ -182,14 +197,29 @@ const ReferenceSection: React.FC<{
         <button 
           disabled={busy}
           onClick={() => !busy && fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed border-white/5 rounded-2xl hover:bg-white/5 hover:border-blue-500/30 transition-all group disabled:opacity-60"
+          onDragOver={e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            setDragOverUpload(true);
+          }}
+          onDragEnter={e => {
+            e.preventDefault();
+            setDragOverUpload(true);
+          }}
+          onDragLeave={() => setDragOverUpload(false)}
+          onDrop={handleDropUpload}
+          className={`flex flex-col items-center justify-center gap-4 p-12 bg-[#1a1a1a] border-2 border-dashed rounded-2xl hover:bg-white/5 hover:border-blue-500/30 transition-all group disabled:opacity-60 ${
+            dragOverUpload ? 'border-blue-500/50 bg-blue-900/20' : 'border-white/5'
+          }`}
         >
           <div className="p-4 rounded-full bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform">
             <Upload size={32} />
           </div>
           <div className="text-center">
             <span className="block text-sm font-bold text-white mb-1">{busy ? '上传中...' : '上传本地参考图'}</span>
-            <span className="text-[10px] text-white/20 uppercase tracking-widest">保持原始尺寸，不拉伸</span>
+            <span className="text-[10px] text-white/20 uppercase tracking-widest">
+              {dragOverUpload ? '释放即可上传' : '保持原始尺寸，不拉伸，支持拖拽'}
+            </span>
           </div>
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
         </button>
