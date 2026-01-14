@@ -89,6 +89,7 @@ manju_flow/
 | Description | string | 场景描述 (必填，用于预览) |
 | CameraMovement | string | 运镜 |
 | Dialogue | string | 台词/旁白 |
+| ThumbnailUrl | string | 缩略图 URL (首帧) |
 
 ### File (文件)
 | 字段 | 类型 | 说明 |

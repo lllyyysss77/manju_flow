@@ -25,6 +25,7 @@ type Scene struct {
 	CameraMovement    string      `gorm:"type:text" json:"cameraMovement"`       // 运镜
 	Dialogue          string      `gorm:"type:text" json:"dialogue"`             // 台词/旁白
 	ReferenceImageUrl string      `gorm:"type:text" json:"referenceImageUrl"`    // 参考图
+	ThumbnailUrl      string      `gorm:"type:text" json:"thumbnailUrl"`         // 缩略图 (首帧 URL)
 	// 分镜绘制 - 使用 SceneFrameSet 表存储多套首尾帧，不再在 Scene 表中存储
 	// 动画制作 - 使用 SceneAnimation 表存储多个动画，不再在 Scene 表中存储
 	// 音频后期 - 使用 SceneAudio 表存储多音频轨道，不再在 Scene 表中存储
@@ -55,6 +56,7 @@ type CreateSceneRequest struct {
 	CameraMovement    string      `json:"cameraMovement"`
 	Dialogue          string      `json:"dialogue"`
 	ReferenceImageUrl string      `json:"referenceImageUrl"`
+	ThumbnailUrl      string      `json:"thumbnailUrl"`
 }
 
 // UpdateSceneRequest 更新场景请求
@@ -65,4 +67,5 @@ type UpdateSceneRequest struct {
 	CameraMovement    *string      `json:"cameraMovement"`
 	Dialogue          *string      `json:"dialogue"`
 	ReferenceImageUrl *string      `json:"referenceImageUrl"`
+	ThumbnailUrl      *string      `json:"thumbnailUrl"`
 }
