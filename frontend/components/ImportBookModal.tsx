@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, BookOpen, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
-import { BookType, CreateBookRequest } from '../api';
+import { CreateBookRequest, fileApi } from '../api';
 
 interface ImportBookModalProps {
   isOpen: boolean;
@@ -28,7 +28,9 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
   };
   const [formData, setFormData] = useState<CreateBookRequest>(initialData || defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = mode === 'edit';
 
@@ -51,6 +53,10 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
       setError('请输入作者名称');
       return;
     }
+    if (isUploadingCover) {
+      setError('封面上传中，请稍候');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -70,6 +76,25 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingCover(true);
+    setError(null);
+    try {
+      const res = await fileApi.upload(file, 'public');
+      setFormData(prev => ({ ...prev, cover: res.url || res.key }));
+    } catch (err) {
+      console.error('Failed to upload cover', err);
+      setError(err instanceof Error ? err.message : '封面上传失败，请稍后重试');
+    } finally {
+      setIsUploadingCover(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   if (!isOpen) return null;
@@ -177,19 +202,66 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               />
             </div>
 
-            {/* 封面 URL */}
+            {/* 封面 */}
             <div>
               <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
-                封面图片 URL
+                封面图片
               </label>
-              <input
-                type="text"
-                name="cover"
-                value={formData.cover}
-                onChange={handleInputChange}
-                placeholder="https://example.com/cover.jpg（可选）"
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-              />
+              <div className="flex items-start gap-4 p-4 rounded-xl border border-white/10 bg-gradient-to-r from-white/5 via-white/5 to-blue-900/10">
+                <div className="w-24 h-32 rounded-lg overflow-hidden border border-white/10 bg-white/5 relative flex items-center justify-center text-white/30 text-[11px]">
+                  {formData.cover ? (
+                    <>
+                      <img src={formData.cover} alt="封面预览" className="w-full h-full object-cover" />
+                      <span className="absolute left-2 top-2 px-2 py-1 rounded-md bg-black/50 text-[10px] font-bold uppercase tracking-widest text-white/70">
+                        Preview
+                      </span>
+                    </>
+                  ) : (
+                    '暂无封面'
+                  )}
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCoverFileChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingCover}
+                      className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-blue-900/30"
+                    >
+                      {isUploadingCover ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          <span>上传中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={16} />
+                          <span>上传封面</span>
+                        </>
+                      )}
+                    </button>
+                    {formData.cover && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, cover: '' }))}
+                        className="px-4 py-2 rounded-lg border border-white/10 text-white/70 font-semibold hover:bg-white/10 transition-all"
+                      >
+                        移除封面
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-white/40 text-xs leading-relaxed">
+                    上传图片后会自动填充封面链接并保存到作品信息。建议尺寸 600×900，JPG/PNG 均可。
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* 简介 */}
@@ -218,7 +290,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingCover}
                 className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (
