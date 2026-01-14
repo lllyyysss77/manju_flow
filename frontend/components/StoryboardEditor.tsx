@@ -78,7 +78,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [previewCache, setPreviewCache] = useState<Record<number, string>>({});
   const [scenePreviewCache, setScenePreviewCache] = useState<Record<number, string>>({});
-  const [urlCache, setUrlCache] = useState<Record<string, string>>({});
+  const urlCacheRef = useRef<Record<string, string>>({});
   const [loadingStoryboard, setLoadingStoryboard] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
@@ -145,18 +145,18 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     if (!raw) return '';
     const normalized = ensureHttpsUrl(raw);
     if (normalized.startsWith('http')) return normalized;
-    const cached = urlCache[normalized];
+    const cached = urlCacheRef.current[normalized];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(normalized);
       const resolved = ensureHttpsUrl(res.url || normalized);
-      setUrlCache(prev => ({ ...prev, [normalized]: resolved }));
+      urlCacheRef.current[normalized] = resolved;
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
       return normalized;
     }
-  }, [urlCache]);
+  }, []);
 
   useEffect(() => {
     if (!activeScene?.referenceImageUrl) {
@@ -288,21 +288,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   }, [activeScene?.id, loadFrameSets]);
 
   useEffect(() => {
-    if (!activeScene?.id || !selectedFrameSetId) return;
-    const existsInCurrentScene = frameSets.some(fs => fs.id === selectedFrameSetId);
-    if (!existsInCurrentScene) return;
-    let cancelled = false;
-    const load = async () => {
-      await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
-      if (!cancelled) setHistorySelection({});
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeScene?.id, selectedFrameSetId, frameSets, loadVersionsForFrameSet]);
-
-  useEffect(() => {
     const current = frameSets.find(fs => fs.id === selectedFrameSetId);
     setRenameDraft(current?.name || '');
   }, [selectedFrameSetId, frameSets]);
@@ -317,6 +302,18 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
     if (!url) return;
     setImagePreview({ url, title: title || '画面预览' });
   }, []);
+
+  const handleOpenHistory = useCallback(
+    (type: 'start' | 'end') => {
+      if (!activeScene?.id || !selectedFrameSetId) return;
+      const existsInCurrentScene = frameSets.some(fs => fs.id === selectedFrameSetId);
+      if (!existsInCurrentScene) return;
+      setHistoryPanel({ type, open: true });
+      setHistorySelection({});
+      loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
+    },
+    [activeScene?.id, selectedFrameSetId, frameSets, loadVersionsForFrameSet]
+  );
 
   useEffect(() => {
     if (!imagePreview) return;
@@ -849,13 +846,13 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => setHistoryPanel({ type: 'start', open: true })}
+                          onClick={() => handleOpenHistory('start')}
                           className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
                         >
                           <History size={12} /> 起始帧历史
                         </button>
                         <button
-                          onClick={() => setHistoryPanel({ type: 'end', open: true })}
+                          onClick={() => handleOpenHistory('end')}
                           className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
                         >
                           <History size={12} /> 结束帧历史
@@ -876,7 +873,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-white/40">版本 {selectedFrameSet.startFrameVersion ?? '—'}</span>
                             <button
-                              onClick={() => setHistoryPanel({ type: 'start', open: true })}
+                              onClick={() => handleOpenHistory('start')}
                               className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
                             >
                               <History size={12} /> 查看历史
@@ -949,7 +946,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-white/40">版本 {selectedFrameSet.endFrameVersion ?? '—'}</span>
                             <button
-                              onClick={() => setHistoryPanel({ type: 'end', open: true })}
+                              onClick={() => handleOpenHistory('end')}
                               className="flex items-center gap-1 text-[11px] px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 transition-all"
                             >
                               <History size={12} /> 查看历史
