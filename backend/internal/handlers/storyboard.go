@@ -52,6 +52,11 @@ func (h *StoryboardHandler) List(c *gin.Context) {
 		return
 	}
 
+	// 确保返回空数组而不是 null
+	if frameSets == nil {
+		frameSets = []models.SceneFrameSet{}
+	}
+
 	c.JSON(http.StatusOK, models.SceneFrameSetListResponse{
 		Total: int64(len(frameSets)),
 		Data:  frameSets,
@@ -479,6 +484,11 @@ func (h *StoryboardHandler) listVersions(c *gin.Context, frameType models.FrameT
 			"error": "Failed to fetch versions",
 		})
 		return
+	}
+
+	// 确保返回空数组而不是 null
+	if versions == nil {
+		versions = []models.SceneFrameSetVersion{}
 	}
 
 	c.JSON(http.StatusOK, models.SceneFrameSetVersionListResponse{
