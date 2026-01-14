@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
-import { fileApi, storyboardApi } from '../api';
+import { ensureHttpsUrl, fileApi, storyboardApi } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -140,17 +140,18 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
-    if (raw.startsWith('http')) return raw;
-    const cached = urlCache[raw];
+    const normalized = ensureHttpsUrl(raw);
+    if (normalized.startsWith('http')) return normalized;
+    const cached = urlCache[normalized];
     if (cached) return cached;
     try {
-      const res = await fileApi.getSignedUrl(raw);
-      const resolved = res.url || raw;
-      setUrlCache(prev => ({ ...prev, [raw]: resolved }));
+      const res = await fileApi.getSignedUrl(normalized);
+      const resolved = ensureHttpsUrl(res.url || normalized);
+      setUrlCache(prev => ({ ...prev, [normalized]: resolved }));
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return raw;
+      return normalized;
     }
   }, [urlCache]);
 

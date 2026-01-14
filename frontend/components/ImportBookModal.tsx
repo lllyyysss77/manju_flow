@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, BookOpen, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
-import { CreateBookRequest, fileApi } from '../api';
+import { CreateBookRequest, ensureHttpsUrl, fileApi } from '../api';
 
 interface ImportBookModalProps {
   isOpen: boolean;
@@ -36,7 +36,10 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFormData(initialData || defaultFormData);
+      const hydrated = initialData
+        ? { ...initialData, cover: ensureHttpsUrl(initialData.cover) }
+        : defaultFormData;
+      setFormData(hydrated);
       setError(null);
     }
   }, [isOpen, initialData]);
@@ -85,7 +88,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
     setError(null);
     try {
       const res = await fileApi.upload(file, 'public');
-      setFormData(prev => ({ ...prev, cover: res.url || res.key }));
+      setFormData(prev => ({ ...prev, cover: ensureHttpsUrl(res.url) || res.key }));
     } catch (err) {
       console.error('Failed to upload cover', err);
       setError(err instanceof Error ? err.message : '封面上传失败，请稍后重试');

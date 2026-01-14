@@ -18,7 +18,7 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi } from '../api';
+import { chapterApi, ensureHttpsUrl, sceneApi, fileApi } from '../api';
 import { useSceneComments } from './useSceneComments';
 
 interface ScriptEditorProps {
@@ -444,7 +444,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       setResolvedReferenceUrl(undefined);
       return;
     }
-    const ref = typeof raw === 'string' ? raw : String(raw);
+    const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
     // Base64/data URL — render directly
     if (ref.startsWith('data:')) {
       setResolvedReferenceUrl(ref);
@@ -467,8 +467,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     }
     try {
       const signed = await fileApi.getSignedUrl(key);
-      referenceUrlCache.current[key] = signed.url;
-      setResolvedReferenceUrl(signed.url);
+      const resolved = ensureHttpsUrl(signed.url || ref);
+      referenceUrlCache.current[key] = resolved;
+      setResolvedReferenceUrl(resolved);
     } catch (e) {
       console.error('Failed to resolve reference image', e);
       setResolvedReferenceUrl(ref);

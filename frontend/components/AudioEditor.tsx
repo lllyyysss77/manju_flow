@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, Scene, Status } from '../types';
-import { fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi } from '../api';
+import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -166,18 +166,19 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({ episode, episodes }) =
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
     if (raw.startsWith('blob:')) return raw;
-    const isApiFile = raw.startsWith('http') && raw.includes('/api/files/');
-    if (raw.startsWith('http') && !isApiFile) return raw;
-    const cached = urlCache[raw];
+    const normalized = ensureHttpsUrl(raw);
+    const isApiFile = normalized.startsWith('http') && normalized.includes('/api/files/');
+    if (normalized.startsWith('http') && !isApiFile) return normalized;
+    const cached = urlCache[normalized];
     if (cached) return cached;
     try {
-      const res = await fileApi.getSignedUrl(raw);
-      const resolved = res.url || raw;
-      setUrlCache(prev => ({ ...prev, [raw]: resolved }));
+      const res = await fileApi.getSignedUrl(normalized);
+      const resolved = ensureHttpsUrl(res.url || normalized);
+      setUrlCache(prev => ({ ...prev, [normalized]: resolved }));
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return raw;
+      return normalized;
     }
   }, [urlCache]);
 

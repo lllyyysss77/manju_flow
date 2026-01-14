@@ -1,6 +1,22 @@
 // API 服务层 - 连接后端接口
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const isBrowser = typeof window !== 'undefined';
+const shouldForceHttps = isBrowser && window.location.protocol === 'https:';
+
+export const ensureHttpsUrl = (url?: string | null): string => {
+  if (!url) return '';
+  if (!shouldForceHttps) return url;
+  if (!url.startsWith('http:')) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.protocol = 'https:';
+    return parsed.toString();
+  } catch {
+    return url.replace(/^http:/, 'https:');
+  }
+};
+
+const API_BASE_URL = ensureHttpsUrl(import.meta.env.VITE_API_URL || 'http://localhost:8080');
 
 // 后端 Book 类型定义
 export type BookType = 'NOVEL' | 'COMIC';
@@ -271,7 +287,7 @@ export const fileApi = {
     return request<FileUploadResponse>('/api/files', {
       method: 'POST',
       body: formData,
-    });
+    }).then(res => ({ ...res, url: ensureHttpsUrl(res.url) }));
   },
 
   // 带进度回调的上传（适合大文件）
@@ -296,7 +312,8 @@ export const fileApi = {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
-            resolve(JSON.parse(xhr.responseText));
+            const parsed = JSON.parse(xhr.responseText) as FileUploadResponse;
+            resolve({ ...parsed, url: ensureHttpsUrl(parsed.url) });
           } catch {
             reject(new ApiError(xhr.status, 'Invalid JSON response'));
           }
@@ -329,7 +346,10 @@ export const fileApi = {
     const idx = keyOrUrl.lastIndexOf('/api/files/');
     const key = idx >= 0 ? keyOrUrl.slice(idx + '/api/files/'.length) : keyOrUrl;
     const encodedKey = encodeURIComponent(key);
-    return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`);
+    return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`).then(res => ({
+      ...res,
+      url: ensureHttpsUrl(res.url),
+    }));
   },
 };
 
