@@ -22,6 +22,29 @@ import {
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 
+const computeFrameSetReorder = (
+  list: SceneFrameSet[],
+  sourceId: number,
+  slotIndex: number
+): { nextList: SceneFrameSet[]; newIndex: number } | null => {
+  const source = list.find(fs => fs.id === sourceId);
+  if (!source) return null;
+  const ordered = [...list].sort((a, b) => a.index - b.index);
+  const withoutSource = ordered.filter(fs => fs.id !== sourceId);
+   const currentSlot = ordered.findIndex(fs => fs.id === sourceId);
+  const clampedSlot = Math.min(Math.max(slotIndex, 0), withoutSource.length);
+   if (clampedSlot === currentSlot) return null;
+  const prev = withoutSource[clampedSlot - 1];
+  const next = withoutSource[clampedSlot];
+  let newIndex = source.index;
+  if (!prev && next) newIndex = next.index - 0.5;
+  else if (prev && !next) newIndex = prev.index + 1;
+  else if (prev && next) newIndex = (prev.index + next.index) / 2;
+  const nextList = [...withoutSource];
+  nextList.splice(clampedSlot, 0, { ...source, index: newIndex });
+  return { nextList, newIndex };
+};
+
 interface StoryboardEditorProps {
   bookId?: number;
   episodes?: Episode[];
@@ -153,6 +176,9 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
   const [frameDragOver, setFrameDragOver] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
+  const [draggingFrameSetId, setDraggingFrameSetId] = useState<number | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+  const [savingFrameSetOrder, setSavingFrameSetOrder] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [historyPanel, setHistoryPanel] = useState<{ type: 'start' | 'end'; open: boolean }>({ type: 'start', open: false });
   const [historySelection, setHistorySelection] = useState<{ start?: string; end?: string }>({});
@@ -607,6 +633,51 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     }
   };
 
+  const handleFrameSetDropAtSlot = async (slotIndex: number, e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!activeScene?.id || savingFrameSetOrder) {
+      setDraggingFrameSetId(null);
+      setDragOverSlot(null);
+      return;
+    }
+    const sourceIdStr = e.dataTransfer.getData('text/plain');
+    const sourceId = draggingFrameSetId ?? Number.parseInt(sourceIdStr, 10);
+    if (!sourceId || Number.isNaN(sourceId)) {
+      setDraggingFrameSetId(null);
+      setDragOverSlot(null);
+      return;
+    }
+    const previous = [...frameSets];
+    const reordered = computeFrameSetReorder(frameSets, sourceId, slotIndex);
+    setDragOverSlot(null);
+    if (!reordered) {
+      setDraggingFrameSetId(null);
+      return;
+    }
+    const { nextList, newIndex } = reordered;
+    setFrameSets(nextList);
+    setSavingFrameSetOrder(true);
+    try {
+      const updated = await storyboardApi.update(activeScene.id, sourceId, { index: newIndex });
+      setFrameSets(prev => {
+        const merged = prev.map(fs =>
+          fs.id === sourceId ? { ...fs, ...updated, index: updated.index ?? newIndex } : fs
+        );
+        return [...merged].sort((a, b) => a.index - b.index);
+      });
+      setToast({ message: '帧集顺序已更新', tone: 'success' });
+    } catch (err) {
+      console.error('Reorder frame sets failed', err);
+      setFrameSets(previous);
+      setToast({ message: '调整顺序失败，请重试', tone: 'error' });
+    } finally {
+      setSavingFrameSetOrder(false);
+      setDraggingFrameSetId(null);
+      setDragOverSlot(null);
+    }
+  };
+
   const selectedFrameSet = frameSets.find(fs => fs.id === selectedFrameSetId) || null;
   const currentFramePreview = selectedFrameSet ? framePreviewCache[selectedFrameSet.id] : undefined;
   const currentVersions = selectedFrameSet ? versionsMap[selectedFrameSet.id] || { start: [], end: [] } : { start: [], end: [] };
@@ -850,7 +921,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                     </div>
                     <div>
                       <p className="text-sm font-bold text-white">帧集管理</p>
-                      <p className="text-[11px] text-white/40">为同一场景拆分多套首尾帧，按序推进绘制</p>
+                      <p className="text-[11px] text-white/40">为同一场景拆分多套首尾帧，按序推进绘制(拖拽帧集可调整顺序)</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -867,26 +938,97 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {frameSets.map(fs => {
-                    const isActive = fs.id === selectedFrameSetId;
+                  {(() => {
+                    const renderDropSlot = (slotIndex: number) => {
+                      const isActiveSlot = dragOverSlot === slotIndex && draggingFrameSetId !== null;
+                      return (
+                        <div
+                          key={`slot-${slotIndex}`}
+                          onDragOver={e => {
+                            if (savingFrameSetOrder || draggingFrameSetId === null) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            setDragOverSlot(slotIndex);
+                          }}
+                          onDragEnter={e => {
+                            if (savingFrameSetOrder || draggingFrameSetId === null) return;
+                            e.preventDefault();
+                            setDragOverSlot(slotIndex);
+                          }}
+                          onDragLeave={() => setDragOverSlot(prev => (prev === slotIndex ? null : prev))}
+                          onDrop={e => handleFrameSetDropAtSlot(slotIndex, e)}
+                          className={`w-9 h-10 flex items-center justify-center rounded-lg border border-dashed transition-all ${
+                            isActiveSlot
+                              ? 'border-blue-400/70 bg-blue-500/15 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]'
+                              : 'border-white/10 bg-white/0'
+                          } ${draggingFrameSetId !== null ? 'opacity-100' : 'opacity-40'}`}
+                        >
+                          <div className={`w-1.5 h-6 rounded-full ${isActiveSlot ? 'bg-blue-400' : 'bg-white/10'}`} />
+                        </div>
+                      );
+                    };
+
                     return (
-                      <button
-                        key={fs.id}
-                        onClick={() => {
-                          setSelectedFrameSetId(fs.id);
-                          setHistoryPanel(prev => ({ ...prev, open: false }));
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-sm flex items-center gap-2 transition-all ${
-                          isActive
-                            ? 'bg-blue-600/20 border-blue-500/60 text-white shadow-[0_0_12px_rgba(59,130,246,0.35)]'
-                            : 'bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white'
-                        }`}
-                  >
-                    <span>{fs.name || `帧集 #${Math.round(fs.index)}`}</span>
-                  </button>
-                );
-              })}
-            </div>
+                      <>
+                        {renderDropSlot(0)}
+                        {frameSets.map((fs, idx) => {
+                          const isActive = fs.id === selectedFrameSetId;
+                          const isDragging = draggingFrameSetId === fs.id;
+                          return (
+                            <React.Fragment key={fs.id}>
+                              <button
+                                draggable
+                                onClick={() => {
+                                  setSelectedFrameSetId(fs.id);
+                                  setHistoryPanel(prev => ({ ...prev, open: false }));
+                                }}
+                                onDragStart={e => {
+                                  setDraggingFrameSetId(fs.id);
+                                  setDragOverSlot(null);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                  e.dataTransfer.setData('text/plain', String(fs.id));
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingFrameSetId(null);
+                                  setDragOverSlot(null);
+                                }}
+                                onDragOver={e => {
+                                  if (savingFrameSetOrder) return;
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  if (draggingFrameSetId === null) return;
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const dropPosition: 'before' | 'after' =
+                                    e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                                  const slotIndex = dropPosition === 'before' ? idx : idx + 1;
+                                  setDragOverSlot(slotIndex);
+                                }}
+                                onDragLeave={() => {
+                                  setDragOverSlot(null);
+                                }}
+                                onDrop={e => {
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const dropPosition: 'before' | 'after' =
+                                    e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                                  const slotIndex = dropPosition === 'before' ? idx : idx + 1;
+                                  handleFrameSetDropAtSlot(slotIndex, e);
+                                }}
+                                className={`px-3 py-1.5 rounded-lg border text-sm flex items-center gap-2 transition-all ${
+                                  isActive
+                                    ? 'bg-blue-600/20 border-blue-500/60 text-white shadow-[0_0_12px_rgba(59,130,246,0.35)]'
+                                    : 'bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white'
+                                } ${isDragging ? 'opacity-60 cursor-grabbing' : 'cursor-grab'}`}
+                              >
+                                <span>{fs.name || `帧集 #${Math.round(fs.index)}`}</span>
+                              </button>
+                              {renderDropSlot(idx + 1)}
+                            </React.Fragment>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </div>
 
                 {creatingSet && (
                   <div className="flex flex-wrap items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-3">
