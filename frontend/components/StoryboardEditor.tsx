@@ -141,6 +141,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [previewCache, setPreviewCache] = useState<Record<number, string>>({});
   const [scenePreviewCache, setScenePreviewCache] = useState<Record<number, string>>({});
+  // 用于追踪已发起请求的 scene ID，避免重复请求
+  const scenePreviewRequestedRef = useRef<Set<number>>(new Set());
   const firstFrameSetId = useMemo(() => {
     if (!frameSets.length) return null;
     return [...frameSets].sort((a, b) => a.index - b.index)[0]?.id ?? null;
@@ -243,15 +245,18 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     };
   }, [activeScene?.referenceImageUrl, resolveFileUrl]);
 
+  // 加载场景缩略图 - 移除 scenePreviewCache 依赖避免循环
   useEffect(() => {
     sortedScenes.forEach(scene => {
       if (!scene.thumbnailUrl) return;
-      if (scenePreviewCache[scene.id]) return;
+      // 使用 ref 检查是否已发起请求，避免重复
+      if (scenePreviewRequestedRef.current.has(scene.id)) return;
+      scenePreviewRequestedRef.current.add(scene.id);
       resolveFileUrl(scene.thumbnailUrl).then(url => {
-        setScenePreviewCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url || scene.thumbnailUrl }));
+        setScenePreviewCache(prev => ({ ...prev, [scene.id]: url || scene.thumbnailUrl }));
       });
     });
-  }, [sortedScenes, scenePreviewCache, resolveFileUrl]);
+  }, [sortedScenes, resolveFileUrl]);
 
   const primeVersionCache = useCallback(async (items: SceneFrameSetVersion[]) => {
     const entries = await Promise.all(

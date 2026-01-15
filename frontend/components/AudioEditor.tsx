@@ -160,6 +160,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     urlCacheRef.current = urlCache;
   }, [urlCache]);
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
+  // 用于追踪已发起请求的 scene ID，避免重复请求
+  const sceneThumbRequestedRef = useRef<Set<number>>(new Set());
   const [animationPreviewMap, setAnimationPreviewMap] = useState<Record<number, { url?: string; version?: number }>>({});
   const [audioTracks, setAudioTracks] = useState<SceneAudioTrack[]>([]);
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(null);
@@ -422,16 +424,19 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     };
   }, [activeScene?.id, selectedAudioId, audioTracks, resolveFileUrl, resolveVersions]);
 
+  // 加载场景缩略图 - 移除 sceneThumbCache 依赖避免循环
   useEffect(() => {
     sortedScenes.forEach(scene => {
-      if (sceneThumbCache[scene.id]) return;
+      // 使用 ref 检查是否已发起请求，避免重复
+      if (sceneThumbRequestedRef.current.has(scene.id)) return;
       const raw = scene.thumbnailUrl;
       if (!raw) return;
+      sceneThumbRequestedRef.current.add(scene.id);
       resolveFileUrl(raw).then(url => {
-        setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
+        setSceneThumbCache(prev => ({ ...prev, [scene.id]: url }));
       });
     });
-  }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
+  }, [sortedScenes, resolveFileUrl]);
 
   useEffect(() => {
     const current = audioTracks.find(t => t.id === selectedAudioId);
