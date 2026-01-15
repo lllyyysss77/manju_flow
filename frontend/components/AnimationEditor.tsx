@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Comment, Episode, Scene, SceneAnimation, SceneAnimationVersion, Status } from '../types';
-import { ensureHttpsUrl, fileApi, animationApi, storyboardApi } from '../api';
+import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -220,18 +220,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     if (!raw) return '';
     if (raw.startsWith('blob:')) return raw;
     const normalized = ensureHttpsUrl(raw);
-    const isApiFile = normalized.startsWith('http') && normalized.includes('/api/files/');
-    if (normalized.startsWith('http') && !isApiFile) return normalized;
-    const cached = urlCache[normalized];
+    const { key, externalUrl } = normalizeFileKey(normalized);
+    const fallback = externalUrl || normalized;
+    if (!key) return fallback;
+    const cacheKey = key || fallback;
+    const cached = urlCache[cacheKey];
     if (cached) return cached;
     try {
-      const res = await fileApi.getSignedUrl(normalized);
-      const resolved = ensureHttpsUrl(res.url || normalized);
-      setUrlCache(prev => ({ ...prev, [normalized]: resolved }));
+      const res = await fileApi.getSignedUrl(key);
+      const resolved = ensureHttpsUrl(res.url || fallback);
+      setUrlCache(prev => ({ ...prev, [cacheKey]: resolved }));
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return normalized;
+      return fallback;
     }
   }, [urlCache]);
 

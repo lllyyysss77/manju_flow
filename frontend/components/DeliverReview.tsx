@@ -12,7 +12,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
-import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi } from '../api';
+import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey } from '../api';
 
 type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
@@ -77,17 +77,20 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     async (raw?: string | null) => {
       if (!raw) return '';
       const normalized = ensureHttpsUrl(raw);
-      if (normalized.startsWith('http') && !normalized.includes('/api/files/')) return normalized;
-      const cached = urlCache.current[normalized];
+      const { key, externalUrl } = normalizeFileKey(normalized);
+      const fallback = externalUrl || normalized;
+      if (!key) return fallback;
+      const cacheKey = key || fallback;
+      const cached = urlCache.current[cacheKey];
       if (cached) return cached;
       try {
-        const res = await fileApi.getSignedUrl(normalized);
-        const resolved = ensureHttpsUrl(res.url || normalized);
-        urlCache.current[normalized] = resolved;
+        const res = await fileApi.getSignedUrl(key);
+        const resolved = ensureHttpsUrl(res.url || fallback);
+        urlCache.current[cacheKey] = resolved;
         return resolved;
       } catch (err) {
         console.error('Resolve video url failed', err);
-        return normalized;
+        return fallback;
       }
     },
     []

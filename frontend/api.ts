@@ -17,6 +17,42 @@ export const ensureHttpsUrl = (url?: string | null): string => {
 };
 
 const API_BASE_URL = ensureHttpsUrl(import.meta.env.VITE_API_URL || 'http://localhost:8080');
+const FILE_API_PREFIX = '/api/files/';
+const API_HOST = (() => {
+  try {
+    return new URL(API_BASE_URL).host;
+  } catch {
+    return '';
+  }
+})();
+
+export const normalizeFileKey = (input?: string | null): { key: string | null; externalUrl?: string } => {
+  if (!input) return { key: null };
+  const normalized = ensureHttpsUrl(typeof input === 'string' ? input : String(input));
+  if (normalized.startsWith('data:') || normalized.startsWith('blob:')) {
+    return { key: null, externalUrl: normalized };
+  }
+  const idx = normalized.lastIndexOf(FILE_API_PREFIX);
+  if (idx >= 0) {
+    const key = normalized.slice(idx + FILE_API_PREFIX.length).replace(/^\//, '');
+    return { key: key || null };
+  }
+  if (/^https?:\/\//.test(normalized)) {
+    try {
+      const parsed = new URL(normalized);
+      const pathKey = parsed.pathname.replace(/^\//, '');
+      const isSameOrigin = isBrowser && parsed.origin === window.location.origin;
+      const isApiHost = API_HOST && parsed.host === API_HOST;
+      if (isSameOrigin || isApiHost) {
+        return { key: pathKey || null };
+      }
+      return { key: null, externalUrl: normalized };
+    } catch {
+      return { key: null, externalUrl: normalized };
+    }
+  }
+  return { key: normalized.replace(/^\//, '') };
+};
 
 // 后端 Book 类型定义
 export type BookType = 'NOVEL' | 'COMIC';
@@ -344,8 +380,10 @@ export const fileApi = {
   },
 
   getSignedUrl: (keyOrUrl: string) => {
-    const idx = keyOrUrl.lastIndexOf('/api/files/');
-    const key = idx >= 0 ? keyOrUrl.slice(idx + '/api/files/'.length) : keyOrUrl;
+    const { key, externalUrl } = normalizeFileKey(keyOrUrl);
+    if (!key) {
+      return Promise.resolve({ url: ensureHttpsUrl(externalUrl || '') });
+    }
     const encodedKey = encodeURIComponent(key);
     return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`).then(res => ({
       ...res,

@@ -18,7 +18,7 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, ensureHttpsUrl, sceneApi, fileApi } from '../api';
+import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey } from '../api';
 import { useSceneComments } from './useSceneComments';
 
 interface ScriptEditorProps {
@@ -552,20 +552,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       return;
     }
     const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
-    // Base64/data URL — render directly
-    if (ref.startsWith('data:')) {
+    if (ref.startsWith('data:') || ref.startsWith('blob:')) {
       setResolvedReferenceUrl(ref);
       return;
     }
-    // Already an absolute URL that is not our file endpoint
-    if (/^https?:\/\//.test(ref) && !ref.includes('/api/files/')) {
-      setResolvedReferenceUrl(ref);
-      return;
-    }
-    const idx = ref.lastIndexOf('/api/files/');
-    const key = idx >= 0 ? ref.slice(idx + '/api/files/'.length) : ref;
+    const { key, externalUrl } = normalizeFileKey(ref);
+    const fallback = externalUrl || ref;
     if (!key) {
-      setResolvedReferenceUrl(undefined);
+      setResolvedReferenceUrl(fallback || undefined);
       return;
     }
     if (referenceUrlCache.current[key]) {
@@ -574,12 +568,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }
     try {
       const signed = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(signed.url || ref);
+      const resolved = ensureHttpsUrl(signed.url || fallback);
       referenceUrlCache.current[key] = resolved;
       setResolvedReferenceUrl(resolved);
     } catch (e) {
       console.error('Failed to resolve reference image', e);
-      setResolvedReferenceUrl(ref);
+      setResolvedReferenceUrl(fallback || undefined);
     }
   }, []);
 
