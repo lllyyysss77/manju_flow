@@ -148,6 +148,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [videoDragOver, setVideoDragOver] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
+  const urlCacheRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    urlCacheRef.current = urlCache;
+  }, [urlCache]);
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
@@ -224,7 +228,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const fallback = externalUrl || normalized;
     if (!key) return fallback;
     const cacheKey = key || fallback;
-    const cached = urlCache[cacheKey];
+    const cached = urlCacheRef.current[cacheKey];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
@@ -235,7 +239,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       console.error('Failed to resolve file url', err);
       return fallback;
     }
-  }, [urlCache]);
+  }, []);
 
   const resolveVersions = useCallback(
     async (animationId: number, versions: SceneAnimationVersion[]) => {
