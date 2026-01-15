@@ -44,6 +44,9 @@ const STATUS_MAP: Record<Status, string> = {
   COMPLETED: '已完成'
 };
 
+const DEFAULT_SCENE_THUMB =
+  'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"180\" viewBox=\"0 0 320 180\"><defs><linearGradient id=\"g\" x1=\"0\" x2=\"1\" y1=\"0\" y2=\"1\"><stop stop-color=\"%23212121\" offset=\"0%\"/><stop stop-color=\"%230d0d0d\" offset=\"100%\"/></linearGradient></defs><rect width=\"320\" height=\"180\" fill=\"url(%23g)\"/><rect x=\"18\" y=\"18\" width=\"284\" height=\"144\" rx=\"18\" ry=\"18\" stroke=\"%23333333\" stroke-width=\"4\" fill=\"none\"/><path d=\"M70 120h180M140 76l-26 44m96-44l26 44\" stroke=\"%23555555\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"118\" cy=\"84\" r=\"12\" fill=\"none\" stroke=\"%23707070\" stroke-width=\"4\"/><text x=\"160\" y=\"152\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"14\" fill=\"%23666666\">SCENE PREVIEW</text></svg>';
+
 export const AudioEditor: React.FC<AudioEditorProps> = ({
   episode,
   episodes,
@@ -416,7 +419,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   useEffect(() => {
     sortedScenes.forEach(scene => {
       if (sceneThumbCache[scene.id]) return;
-      const raw = scene.thumbnailUrl || scene.referenceImageUrl;
+      const raw = scene.thumbnailUrl;
       if (!raw) return;
       resolveFileUrl(raw).then(url => {
         setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
@@ -827,11 +830,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           ) : (
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
-              const thumb =
-                sceneThumbCache[scene.id] ||
-                animationPreviewMap[scene.id]?.url ||
-                scene.thumbnailUrl ||
-                scene.referenceImageUrl;
+              const thumb = scene.thumbnailUrl
+                ? sceneThumbCache[scene.id] || scene.thumbnailUrl
+                : DEFAULT_SCENE_THUMB;
               return (
               <button
                 key={scene.id}

@@ -38,6 +38,9 @@ const STATUS_MAP: Record<Status, string> = {
   IN_PROGRESS: '进行中',
   COMPLETED: '已完成'
 };
+
+const DEFAULT_SCENE_THUMB =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="%23212121" offset="0%"/><stop stop-color="%230d0d0d" offset="100%"/></linearGradient></defs><rect width="320" height="180" fill="url(%23g)"/><rect x="18" y="18" width="284" height="144" rx="18" ry="18" stroke="%23333333" stroke-width="4" fill="none"/><path d="M70 120h180M140 76l-26 44m96-44l26 44" stroke="%23555555" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="118" cy="84" r="12" fill="none" stroke="%23707070" stroke-width="4"/><text x="160" y="152" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="%23666666">SCENE PREVIEW</text></svg>';
 export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   bookId,
   episodes = [],
@@ -271,9 +274,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
           end: end || undefined,
         },
       }));
-      if (sceneId && start) {
-        setScenePreviewCache(prev => ({ ...prev, [sceneId]: start }));
-      }
     },
     [resolveFileUrl]
   );
@@ -481,6 +481,17 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       }
       setFrameSets(prev => prev.map(fs => (fs.id === selectedFrameSetId ? { ...fs, ...updated } : fs)));
       await resolveFrameSetPreview(updated, activeScene.id);
+      if (type === 'start' && updated.startFrameUrl) {
+        const resolvedStart = await resolveFileUrl(updated.startFrameUrl);
+        const chapterId = activeScene.chapterId ?? activeEpisode?.id;
+        const isFirstFrameSet = firstFrameSetId ? selectedFrameSetId === firstFrameSetId : true;
+        setScenePreviewCache(prev => ({ ...prev, [activeScene.id]: resolvedStart || updated.startFrameUrl }));
+        if (isFirstFrameSet && bookId && chapterId) {
+          sceneApi.update(bookId, chapterId, activeScene.id, { thumbnailUrl: updated.startFrameUrl }).catch(err => {
+            console.error('Failed to update scene thumbnail', err);
+          });
+        }
+      }
       await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
       setHistorySelection({});
       setToast({ message: '已切换到该版本', tone: 'success' });
@@ -594,19 +605,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
   const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
-  useEffect(() => {
-    if (!activeScene?.id) return;
-    if (scenePreviewCache[activeScene.id]) return;
-    const firstSet = frameSets[0];
-    if (!firstSet) return;
-    const cachedStart = framePreviewCache[firstSet.id]?.start || firstSet.startFrameUrl;
-    if (cachedStart) {
-      resolveFileUrl(cachedStart).then(url => {
-        setScenePreviewCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: url }));
-      });
-    }
-  }, [activeScene?.id, frameSets, framePreviewCache, resolveFileUrl, scenePreviewCache]);
-
   if (!hasChapters) {
     return (
       <div className="flex items-center justify-center h-full text-white/40 text-sm bg-[#0f0f0f]">
@@ -657,12 +655,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
-            const activePreview =
-              scene.id === activeScene?.id && selectedFrameSetId
-                ? framePreviewCache[selectedFrameSetId]?.start
-                : undefined;
-            const preview =
-              scenePreviewCache[scene.id] || activePreview || scene.thumbnailUrl || scene.referenceImageUrl || '';
+            const previewSource = scenePreviewCache[scene.id] || scene.thumbnailUrl;
+            const preview = previewSource || DEFAULT_SCENE_THUMB;
             return (
             <button
               key={scene.id}
