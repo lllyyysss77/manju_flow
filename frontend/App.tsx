@@ -42,6 +42,12 @@ const STATUS_MAP: Record<Status, string> = {
   COMPLETED: '已完成'
 };
 
+const BUILD_VERSION = __APP_VERSION__ || 'dev';
+const BUILD_TIME = (() => {
+  const parsed = new Date(__BUILD_TIME__);
+  return Number.isNaN(parsed.getTime()) ? __BUILD_TIME__ : parsed.toLocaleString('zh-CN', { hour12: false });
+})();
+
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'PRODUCTION'>('DASHBOARD');
   const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.SCRIPT);
@@ -432,6 +438,10 @@ const App: React.FC = () => {
           )}
         </div>
       </div>
+
+      <footer className="border-t border-white/5 bg-[#0f0f0f] text-white/40 text-[11px] text-center py-3">
+        前端版本 {BUILD_VERSION} · 构建 {BUILD_TIME}
+      </footer>
 
       {/* 导入作品弹窗 */}
       <ImportBookModal
