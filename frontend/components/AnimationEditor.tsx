@@ -154,6 +154,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   }, [urlCache]);
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
+  // 用于追踪已发起请求的 scene ID，避免重复请求
+  const sceneThumbRequestedRef = useRef<Set<number>>(new Set());
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
@@ -344,16 +346,19 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     };
   }, [activeScene?.id, resolveFileUrl]);
 
+  // 加载场景缩略图 - 移除 sceneThumbCache 依赖避免循环
   useEffect(() => {
     sortedScenes.forEach(scene => {
-      if (sceneThumbCache[scene.id]) return;
+      // 使用 ref 检查是否已发起请求，避免重复
+      if (sceneThumbRequestedRef.current.has(scene.id)) return;
       const raw = scene.thumbnailUrl;
       if (!raw) return;
+      sceneThumbRequestedRef.current.add(scene.id);
       resolveFileUrl(raw).then(url => {
-        setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
+        setSceneThumbCache(prev => ({ ...prev, [scene.id]: url }));
       });
     });
-  }, [sortedScenes, sceneThumbCache, resolveFileUrl]);
+  }, [sortedScenes, resolveFileUrl]);
 
   useEffect(() => {
     if (!activeScene?.id) {
