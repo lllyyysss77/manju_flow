@@ -43,6 +43,7 @@ export interface ReviewCommentMeta {
 
 export interface Scene {
   id: number;
+  chapterId?: number;
   index: number;
   description: string;
   cameraMovement: string;
@@ -50,6 +51,7 @@ export interface Scene {
   status: Status;
   comments?: Comment[];
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
+  thumbnailUrl?: string; // 场景预览缩略图（首帧）
   audios?: SceneAudioTrack[]; // 多音轨
   frameSets?: SceneFrameSet[];
   animations?: SceneAnimation[];

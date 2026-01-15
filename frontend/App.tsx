@@ -450,7 +450,7 @@ const App: React.FC = () => {
           );
         case ProductionStage.ART:
           return selectedProject.episodes.length > 0 ? (
-            <StoryboardEditor episodes={selectedProject.episodes} />
+            <StoryboardEditor bookId={selectedProject.id} episodes={selectedProject.episodes} />
           ) : (
             <div className="p-20 text-center text-white/20">暂无剧本</div>
           );

@@ -232,6 +232,7 @@ export interface ScenePayload {
   cameraMovement: string;
   dialogue: string;
   referenceImageUrl?: string;
+  thumbnailUrl?: string;
 }
 
 export const chapterApi = {

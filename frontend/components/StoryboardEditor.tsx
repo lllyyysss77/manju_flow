@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
-import { ensureHttpsUrl, fileApi, storyboardApi } from '../api';
+import { ensureHttpsUrl, fileApi, sceneApi, storyboardApi } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -23,6 +23,7 @@ import {
 import { useSceneComments } from './useSceneComments';
 
 interface StoryboardEditorProps {
+  bookId?: number;
   episodes?: Episode[];
   episode?: Episode; // backward compatibility
 }
@@ -32,7 +33,7 @@ const STATUS_MAP: Record<Status, string> = {
   IN_PROGRESS: '进行中',
   COMPLETED: '已完成'
 };
-export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [], episode }) => {
+export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ bookId, episodes = [], episode }) => {
   const chapterList = useMemo(() => {
     if (episodes.length > 0) return episodes;
     return episode ? [episode] : [];
@@ -78,6 +79,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [previewCache, setPreviewCache] = useState<Record<number, string>>({});
   const [scenePreviewCache, setScenePreviewCache] = useState<Record<number, string>>({});
+  const firstFrameSetId = useMemo(() => {
+    if (!frameSets.length) return null;
+    return [...frameSets].sort((a, b) => a.index - b.index)[0]?.id ?? null;
+  }, [frameSets]);
   const urlCacheRef = useRef<Record<string, string>>({});
   const [loadingStoryboard, setLoadingStoryboard] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
@@ -172,6 +177,16 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
       cancelled = true;
     };
   }, [activeScene?.referenceImageUrl, resolveFileUrl]);
+
+  useEffect(() => {
+    sortedScenes.forEach(scene => {
+      if (!scene.thumbnailUrl) return;
+      if (scenePreviewCache[scene.id]) return;
+      resolveFileUrl(scene.thumbnailUrl).then(url => {
+        setScenePreviewCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url || scene.thumbnailUrl }));
+      });
+    });
+  }, [sortedScenes, scenePreviewCache, resolveFileUrl]);
 
   const primeVersionCache = useCallback(async (items: SceneFrameSetVersion[]) => {
     const entries = await Promise.all(
@@ -340,6 +355,13 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
               : fs
           )
         );
+        const isFirstFrameSet = firstFrameSetId ? selectedFrameSetId === firstFrameSetId : true;
+        const chapterId = activeScene.chapterId ?? activeEpisode?.id;
+        if (isFirstFrameSet && bookId && chapterId) {
+          sceneApi.update(bookId, chapterId, activeScene.id, { thumbnailUrl: key }).catch(err => {
+            console.error('Failed to update scene thumbnail', err);
+          });
+        }
       } else {
         const version = await storyboardApi.updateEndFrame(activeScene.id, selectedFrameSetId, key);
         setFrameSets(prev =>
@@ -580,7 +602,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ episodes = [
               scene.id === activeScene?.id && selectedFrameSetId
                 ? framePreviewCache[selectedFrameSetId]?.start
                 : undefined;
-            const preview = scenePreviewCache[scene.id] || activePreview || scene.referenceImageUrl || '';
+            const preview =
+              scenePreviewCache[scene.id] || activePreview || scene.thumbnailUrl || scene.referenceImageUrl || '';
             return (
             <button
               key={scene.id}

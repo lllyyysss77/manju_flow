@@ -290,7 +290,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   useEffect(() => {
     sortedScenes.forEach(scene => {
       if (sceneThumbCache[scene.id]) return;
-      const raw = scene.referenceImageUrl;
+      const raw = scene.thumbnailUrl || scene.referenceImageUrl;
       if (!raw) return;
       resolveFileUrl(raw).then(url => {
         setSceneThumbCache(prev => (prev[scene.id] ? prev : { ...prev, [scene.id]: url }));
@@ -683,7 +683,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
               const sceneClip = scene.id === activeScene?.id ? displayClipUrl : undefined;
-              const thumb = sceneThumbCache[scene.id] || framePreviewCache[scene.id]?.start || scene.referenceImageUrl;
+              const thumb =
+                sceneThumbCache[scene.id] ||
+                framePreviewCache[scene.id]?.start ||
+                scene.thumbnailUrl ||
+                scene.referenceImageUrl;
               return (
               <button
                 key={scene.id}

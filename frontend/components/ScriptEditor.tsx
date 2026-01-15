@@ -434,18 +434,20 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
         scenes: (ch.scenes || [])
           .map(s => ({
             id: s.id,
+            chapterId: (s as any).chapterId ?? ch.id,
             index: s.index,
-        description: s.description || '',
-        cameraMovement: s.cameraMovement || '',
-        dialogue: s.dialogue || '',
-        status: s.status as Status,
-        comments: [],
-        referenceImageUrl: s.referenceImageUrl,
-        frameSets: (s as any).frameSets,
-        animations: (s as any).animations,
-        audios: (s as any).audios,
-      }) as Scene)
-      .sort((a, b) => a.index - b.index),
+            description: s.description || '',
+            cameraMovement: s.cameraMovement || '',
+            dialogue: s.dialogue || '',
+            status: s.status as Status,
+            comments: [],
+            referenceImageUrl: s.referenceImageUrl,
+            thumbnailUrl: (s as any).thumbnailUrl,
+            frameSets: (s as any).frameSets,
+            animations: (s as any).animations,
+            audios: (s as any).audios,
+          }) as Scene)
+          .sort((a, b) => a.index - b.index),
       })) as Episode[];
       const savedSig: Record<number, string> = {};
       data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));
@@ -559,7 +561,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       dialogue: '',
       status: 'DRAFT',
     }).then(newScene => {
-      const created: Scene = { ...newScene, comments: newScene.comments || [] };
+      const created: Scene = { ...newScene, chapterId, comments: newScene.comments || [] };
       savedSignaturesRef.current[created.id] = getSignature(created);
       const next = chapters.map(ch => {
         if (ch.id !== chapterId) return ch;
