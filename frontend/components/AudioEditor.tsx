@@ -155,6 +155,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
+  const urlCacheRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    urlCacheRef.current = urlCache;
+  }, [urlCache]);
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
   const [animationPreviewMap, setAnimationPreviewMap] = useState<Record<number, { url?: string; version?: number }>>({});
   const [audioTracks, setAudioTracks] = useState<SceneAudioTrack[]>([]);
@@ -224,7 +228,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     const fallback = externalUrl || normalized;
     if (!key) return fallback;
     const cacheKey = key || fallback;
-    const cached = urlCache[cacheKey];
+    const cached = urlCacheRef.current[cacheKey];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
@@ -235,7 +239,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       console.error('Failed to resolve file url', err);
       return fallback;
     }
-  }, [urlCache]);
+  }, []);
 
   const resolveVersions = useCallback(
     async (audioId: number, versions: AudioVersion[]) => {
