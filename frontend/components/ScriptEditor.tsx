@@ -25,6 +25,11 @@ interface ScriptEditorProps {
   bookId: number;
   episodes?: Episode[];
   onEpisodesChange?: (episodes: Episode[]) => void;
+  // 跨模块状态同步
+  initialChapterId?: number | null;
+  initialSceneId?: number | null;
+  onActiveChapterChange?: (chapterId: number | null) => void;
+  onActiveSceneChange?: (sceneId: number | null) => void;
 }
 
 const STATUS_MAP: Record<Status, string> = {
@@ -340,10 +345,54 @@ const ReferenceSection: React.FC<{
   );
 };
 
-export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [], onEpisodesChange }) => {
+export const ScriptEditor: React.FC<ScriptEditorProps> = ({
+  bookId,
+  episodes = [],
+  onEpisodesChange,
+  initialChapterId,
+  initialSceneId,
+  onActiveChapterChange,
+  onActiveSceneChange,
+}) => {
   const [chapters, setChapters] = useState<Episode[]>(episodes || []);
-  const [activeChapterId, setActiveChapterId] = useState<number | null>(episodes?.[0]?.id ?? null);
-  const [activeScene, setActiveScene] = useState<Scene | null>(episodes?.[0]?.scenes[0] || null);
+
+  // 计算初始章节ID：优先使用外部传入的，否则使用第一个章节
+  const computeInitialChapterId = () => {
+    if (initialChapterId != null) {
+      // 验证章节是否存在
+      const exists = (episodes || []).some(ep => ep.id === initialChapterId);
+      if (exists) return initialChapterId;
+    }
+    return episodes?.[0]?.id ?? null;
+  };
+
+  // 计算初始场景：优先使用外部传入的，否则使用对应章节的第一个场景
+  const computeInitialScene = (chapterId: number | null): Scene | null => {
+    if (!chapterId) return null;
+    const chapter = (episodes || []).find(ep => ep.id === chapterId);
+    if (!chapter?.scenes?.length) return null;
+
+    if (initialSceneId != null) {
+      const scene = chapter.scenes.find(s => s.id === initialSceneId);
+      if (scene) return scene;
+    }
+    return chapter.scenes[0] || null;
+  };
+
+  const [activeChapterId, setActiveChapterIdInternal] = useState<number | null>(() => computeInitialChapterId());
+  const [activeScene, setActiveSceneInternal] = useState<Scene | null>(() => computeInitialScene(computeInitialChapterId()));
+
+  // 包装 setActiveChapterId 以同步到父组件
+  const setActiveChapterId = useCallback((id: number | null) => {
+    setActiveChapterIdInternal(id);
+    onActiveChapterChange?.(id);
+  }, [onActiveChapterChange]);
+
+  // 包装 setActiveScene 以同步到父组件
+  const setActiveScene = useCallback((scene: Scene | null) => {
+    setActiveSceneInternal(scene);
+    onActiveSceneChange?.(scene?.id ?? null);
+  }, [onActiveSceneChange]);
   const [commentDraft, setCommentDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -456,9 +505,29 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
       data.forEach(ch => { savedChapterSig[ch.id] = getSynopsisSignature(ch.synopsis); });
       savedChapterSynopsisRef.current = savedChapterSig;
       setChapters(data);
-      const firstChapterId = data[0]?.id ?? null;
-      setActiveChapterId(firstChapterId);
-      setActiveScene(null);
+
+      // 保持跨模块的选中状态：优先使用初始值，否则使用第一个章节
+      let targetChapterId: number | null = null;
+      let targetScene: Scene | null = null;
+
+      if (initialChapterId != null) {
+        const chapter = data.find(ch => ch.id === initialChapterId);
+        if (chapter) {
+          targetChapterId = chapter.id;
+          if (initialSceneId != null) {
+            const scene = chapter.scenes?.find(s => s.id === initialSceneId);
+            if (scene) targetScene = scene;
+          }
+        }
+      }
+
+      // 如果初始值无效，回退到第一个章节
+      if (targetChapterId == null) {
+        targetChapterId = data[0]?.id ?? null;
+      }
+
+      setActiveChapterId(targetChapterId);
+      setActiveScene(targetScene);
       setResolvedReferenceUrl(undefined);
       setIsDirty(false);
       setIsSynopsisDirty(false);
@@ -469,7 +538,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({ bookId, episodes = [
     } finally {
       setIsLoading(false);
     }
-  }, [bookId]);
+  }, [bookId, initialChapterId, initialSceneId]);
 
   const resolveReferenceImage = useCallback(async (raw?: string | null) => {
     if (!raw) {

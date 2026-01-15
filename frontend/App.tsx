@@ -49,6 +49,10 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AuthResponse['user'] | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(() => authStorage.getToken());
 
+  // 跨模块共享的场景状态 - 确保模块切换时保持选中的章节和场景
+  const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
+  const [activeSceneId, setActiveSceneId] = useState<number | null>(null);
+
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
@@ -154,12 +158,24 @@ const App: React.FC = () => {
     setSelectedProject({ ...project, episodes: project.episodes || [] });
     setViewMode('PRODUCTION');
     setCurrentStage(ProductionStage.SCRIPT);
+    // 重置跨模块的场景状态
+    setActiveChapterId(null);
+    setActiveSceneId(null);
   };
 
   const handleEpisodesChange = (episodes: Episode[]) => {
     setSelectedProject(prev => (prev ? { ...prev, episodes } : prev));
     setProjects(prev => prev.map(p => (p.id === selectedProject?.id ? { ...p, episodes } : p)));
   };
+
+  // 跨模块场景状态变更回调
+  const handleActiveChapterChange = useCallback((chapterId: number | null) => {
+    setActiveChapterId(chapterId);
+  }, []);
+
+  const handleActiveSceneChange = useCallback((sceneId: number | null) => {
+    setActiveSceneId(sceneId);
+  }, []);
 
   const handleDeleteBook = async (projectId: number) => {
     if (!window.confirm('确定删除该作品吗？此操作不可撤销。')) return;
@@ -446,23 +462,46 @@ const App: React.FC = () => {
               bookId={selectedProject.id}
               episodes={selectedProject.episodes}
               onEpisodesChange={handleEpisodesChange}
+              initialChapterId={activeChapterId}
+              initialSceneId={activeSceneId}
+              onActiveChapterChange={handleActiveChapterChange}
+              onActiveSceneChange={handleActiveSceneChange}
             />
           );
         case ProductionStage.ART:
           return selectedProject.episodes.length > 0 ? (
-            <StoryboardEditor bookId={selectedProject.id} episodes={selectedProject.episodes} />
+            <StoryboardEditor
+              bookId={selectedProject.id}
+              episodes={selectedProject.episodes}
+              initialChapterId={activeChapterId}
+              initialSceneId={activeSceneId}
+              onActiveChapterChange={handleActiveChapterChange}
+              onActiveSceneChange={handleActiveSceneChange}
+            />
           ) : (
             <div className="p-20 text-center text-white/20">暂无剧本</div>
           );
         case ProductionStage.ANIMATE:
           return selectedProject.episodes.length > 0 ? (
-            <AnimationEditor episodes={selectedProject.episodes} />
+            <AnimationEditor
+              episodes={selectedProject.episodes}
+              initialChapterId={activeChapterId}
+              initialSceneId={activeSceneId}
+              onActiveChapterChange={handleActiveChapterChange}
+              onActiveSceneChange={handleActiveSceneChange}
+            />
           ) : (
             <div className="p-20 text-center text-white/20">暂无分镜</div>
           );
         case ProductionStage.AUDIO:
           return selectedProject.episodes.length > 0 ? (
-            <AudioEditor episodes={selectedProject.episodes} />
+            <AudioEditor
+              episodes={selectedProject.episodes}
+              initialChapterId={activeChapterId}
+              initialSceneId={activeSceneId}
+              onActiveChapterChange={handleActiveChapterChange}
+              onActiveSceneChange={handleActiveSceneChange}
+            />
           ) : (
             <div className="p-20 text-center text-white/20">暂无动画</div>
           );
