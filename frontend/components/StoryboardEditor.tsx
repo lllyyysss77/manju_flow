@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
-import { ensureHttpsUrl, fileApi, sceneApi, storyboardApi, normalizeFileKey } from '../api';
+import { ensureHttpsUrl, fileApi, sceneApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -253,7 +253,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       if (scenePreviewRequestedRef.current.has(scene.id)) return;
       scenePreviewRequestedRef.current.add(scene.id);
       resolveFileUrl(scene.thumbnailUrl).then(url => {
-        setScenePreviewCache(prev => ({ ...prev, [scene.id]: url || scene.thumbnailUrl }));
+        // 只有当 url 是有效的媒体 URL 时才缓存，避免使用未 resolve 的文件 key
+        if (url && isValidMediaUrl(url)) {
+          setScenePreviewCache(prev => ({ ...prev, [scene.id]: url }));
+        }
       });
     });
   }, [sortedScenes, resolveFileUrl]);
@@ -663,8 +666,9 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
-            const previewSource = scenePreviewCache[scene.id] || scene.thumbnailUrl;
-            const preview = previewSource || DEFAULT_SCENE_THUMB;
+            // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
+            const cachedUrl = scenePreviewCache[scene.id];
+            const preview = cachedUrl || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
             return (
             <button
               key={scene.id}
@@ -791,7 +795,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-widest">参考图</h3>
             </div>
             {activeScene.referenceImageUrl ? (
-              <img src={resolvedReference || activeScene.referenceImageUrl} className="w-full rounded-lg border border-white/10" alt="参考图" />
+              <img src={resolvedReference || (isValidMediaUrl(activeScene.referenceImageUrl) ? activeScene.referenceImageUrl : undefined)} className="w-full rounded-lg border border-white/10" alt="参考图" />
             ) : (
               <p className="text-xs text-white/40 leading-relaxed px-1">暂无参考图</p>
             )}
@@ -1156,7 +1160,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               </div>
               <div className="p-4 space-y-3 overflow-y-auto h-full">
                 {(historyPanel.type === 'start' ? currentVersions.start : currentVersions.end).map(item => {
-                  const url = previewCache[item.id] || item.imageUrl;
+                  // 只使用已 resolve 的缓存 URL 或有效的原始 URL
+                  const url = previewCache[item.id] || (isValidMediaUrl(item.imageUrl) ? item.imageUrl : '');
                   const label = `版本 #${item.version}`;
                   const time = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) : '时间未知';
                   return (

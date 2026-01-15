@@ -26,6 +26,21 @@ const API_HOST = (() => {
   }
 })();
 
+/**
+ * 检查 URL 是否可以直接用于 img/video 标签的 src 属性
+ * 只有完整的 http(s) URL、data URL 或 blob URL 才是有效的
+ * 文件 key（如 "abc123"）不能直接使用，会被浏览器解析为相对路径
+ */
+export const isValidMediaUrl = (url?: string | null): boolean => {
+  if (!url) return false;
+  return (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:')
+  );
+};
+
 export const normalizeFileKey = (input?: string | null): { key: string | null; externalUrl?: string } => {
   if (!input) return { key: null };
   const normalized = ensureHttpsUrl(typeof input === 'string' ? input : String(input));

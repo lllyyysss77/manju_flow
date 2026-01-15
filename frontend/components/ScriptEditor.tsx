@@ -18,7 +18,7 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey } from '../api';
+import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { useSceneComments } from './useSceneComments';
 
 interface ScriptEditorProps {
@@ -1230,8 +1230,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                         <ImageIcon size={14} className="text-blue-500" />
                         <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
                       </div>
-                    <ReferenceSection 
-                      initialImage={resolvedReferenceUrl || activeScene.referenceImageUrl}
+                    <ReferenceSection
+                      initialImage={resolvedReferenceUrl || (isValidMediaUrl(activeScene.referenceImageUrl) ? activeScene.referenceImageUrl : undefined)}
                       onUpload={handleSaveReference}
                       onRemove={handleRemoveReference}
                       isUploading={isUploadingReference}

@@ -12,7 +12,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
-import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey } from '../api';
+import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
 
 type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
@@ -60,8 +60,9 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl || resolvedVideoUrl || resolvedPreviewUrl);
   const [preferPreview, setPreferPreview] = useState(true);
-  const previewSource = resolvedPreviewUrl || videoDetail?.previewUrl || '';
-  const originalSource = resolvedVideoUrl || videoDetail?.videoUrl || videoUrl || '';
+  // 只使用已 resolve 的 URL 或有效的原始 URL，避免使用未 resolve 的文件 key
+  const previewSource = resolvedPreviewUrl || (isValidMediaUrl(videoDetail?.previewUrl) ? videoDetail?.previewUrl : '') || '';
+  const originalSource = resolvedVideoUrl || (isValidMediaUrl(videoDetail?.videoUrl) ? videoDetail?.videoUrl : '') || (isValidMediaUrl(videoUrl) ? videoUrl : '') || '';
   const playbackSource = hasUploadedVideo
     ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
     : '';
@@ -423,8 +424,14 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     setDownloading(true);
     try {
       const resolved = await resolveFileUrl(raw);
+      // 只使用已 resolve 的 URL 或有效的原始 URL
+      const downloadUrl = resolved || (isValidMediaUrl(raw) ? raw : '');
+      if (!downloadUrl) {
+        setToast({ message: '无法解析视频地址', tone: 'error' });
+        return;
+      }
       const link = document.createElement('a');
-      link.href = resolved || raw;
+      link.href = downloadUrl;
       link.download = '';
       link.target = '_blank';
       document.body.appendChild(link);
