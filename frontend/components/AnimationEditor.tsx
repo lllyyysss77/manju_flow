@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Comment, Episode, Scene, SceneAnimation, SceneAnimationVersion, Status } from '../types';
-import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey } from '../api';
+import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -533,7 +533,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setAnimations(prev =>
         prev.map(a => (a.id === selectedAnimationId ? { ...a, ...animation } : a))
       );
-      setResolvedVideoUrl(resolvedSceneUrl || animation.animationUrl || undefined);
+      setResolvedVideoUrl(resolvedSceneUrl || (isValidMediaUrl(animation.animationUrl) ? animation.animationUrl : undefined));
       const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
       await resolveVersions(selectedAnimationId, versionsRes.data || []);
       setToast({ message: `已回滚到版本 #${version}`, tone: 'success' });
@@ -745,9 +745,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
               const sceneClip = scene.id === activeScene?.id ? displayClipUrl : undefined;
-              const thumb = scene.thumbnailUrl
-                ? sceneThumbCache[scene.id] || scene.thumbnailUrl
-                : DEFAULT_SCENE_THUMB;
+              // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
+              const cachedThumb = sceneThumbCache[scene.id];
+              const thumb = cachedThumb || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
               return (
               <button
                 key={scene.id}

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Comment, Episode, Scene, Status } from '../types';
-import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey } from '../api';
+import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { 
   MessageSquare, 
   CheckCircle2, 
@@ -364,11 +364,15 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         }
         const resolved = await resolveFileUrl(first.animationUrl);
         if (!cancelled) {
+          // 只使用已 resolve 的 URL 或有效的原始 URL，避免使用未 resolve 的文件 key
+          const validUrl = resolved || (isValidMediaUrl(first.animationUrl) ? first.animationUrl : undefined);
           setAnimationPreviewMap(prev => ({
             ...prev,
-            [activeScene.id]: { url: resolved || first.animationUrl, version: first.animationVersion },
+            [activeScene.id]: { url: validUrl, version: first.animationVersion },
           }));
-          setSceneThumbCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: resolved || first.animationUrl }));
+          if (validUrl) {
+            setSceneThumbCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: validUrl }));
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -566,7 +570,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
             : track
         )
       );
-      setResolvedAudioUrl(resolvedSceneUrl || updated.audioUrl || undefined);
+      setResolvedAudioUrl(resolvedSceneUrl || (isValidMediaUrl(updated.audioUrl) ? updated.audioUrl : undefined));
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
@@ -841,9 +845,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           ) : (
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
-              const thumb = scene.thumbnailUrl
-                ? sceneThumbCache[scene.id] || scene.thumbnailUrl
-                : DEFAULT_SCENE_THUMB;
+              // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
+              const cachedThumb = sceneThumbCache[scene.id];
+              const thumb = cachedThumb || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
               return (
               <button
                 key={scene.id}
