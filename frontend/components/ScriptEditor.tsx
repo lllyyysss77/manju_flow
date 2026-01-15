@@ -534,7 +534,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
       setActiveChapterId(targetChapterId);
       setActiveScene(targetScene);
-      setResolvedReferenceUrl(undefined);
+      // 不在这里清除 resolvedReferenceUrl，让 useEffect 根据 activeScene?.referenceImageUrl 自然处理
+      // 这样可以避免在 resolve 完成前图片闪烁消失
       setIsDirty(false);
       setIsSynopsisDirty(false);
       onEpisodesChangeRef.current?.(data);
@@ -557,9 +558,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       return;
     }
     const { key, externalUrl } = normalizeFileKey(ref);
-    const fallback = externalUrl || ref;
+    // 只有当 externalUrl 是有效的媒体 URL 时才使用，否则不作为 fallback
+    const fallback = externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : undefined;
     if (!key) {
-      setResolvedReferenceUrl(fallback || undefined);
+      setResolvedReferenceUrl(fallback);
       return;
     }
     if (referenceUrlCache.current[key]) {
@@ -568,12 +570,19 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }
     try {
       const signed = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(signed.url || fallback);
-      referenceUrlCache.current[key] = resolved;
-      setResolvedReferenceUrl(resolved);
+      const resolved = ensureHttpsUrl(signed.url);
+      // 只有当 resolved 是有效的媒体 URL 时才缓存和设置
+      if (resolved && isValidMediaUrl(resolved)) {
+        referenceUrlCache.current[key] = resolved;
+        setResolvedReferenceUrl(resolved);
+      } else {
+        // API 返回无效 URL，使用 fallback 或 undefined
+        setResolvedReferenceUrl(fallback);
+      }
     } catch (e) {
       console.error('Failed to resolve reference image', e);
-      setResolvedReferenceUrl(fallback || undefined);
+      // API 调用失败，使用 fallback 或 undefined
+      setResolvedReferenceUrl(fallback);
     }
   }, []);
 
