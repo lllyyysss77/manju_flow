@@ -107,14 +107,16 @@ func (h *SceneHandler) Create(c *gin.Context) {
 	}
 
 	scene := models.Scene{
-		ChapterID:         uint(chapterIdUint),
-		Index:             *req.Index,
-		Status:            status,
-		Description:       req.Description,
-		CameraMovement:    req.CameraMovement,
-		Dialogue:          req.Dialogue,
-		ReferenceImageUrl: req.ReferenceImageUrl,
-		ThumbnailUrl:      req.ThumbnailUrl,
+		ChapterID:                 uint(chapterIdUint),
+		Index:                     *req.Index,
+		Status:                    status,
+		Description:               req.Description,
+		CameraMovement:            req.CameraMovement,
+		Dialogue:                  req.Dialogue,
+		TransitionEffect:          req.TransitionEffect,
+		ReferenceImageUrl:         req.ReferenceImageUrl,
+		ReferenceImageDescription: req.ReferenceImageDescription,
+		ThumbnailUrl:              req.ThumbnailUrl,
 	}
 
 	if err := db.Create(&scene).Error; err != nil {
@@ -228,8 +230,14 @@ func (h *SceneHandler) Update(c *gin.Context) {
 	if req.Dialogue != nil {
 		scene.Dialogue = *req.Dialogue
 	}
+	if req.TransitionEffect != nil {
+		scene.TransitionEffect = *req.TransitionEffect
+	}
 	if req.ReferenceImageUrl != nil {
 		scene.ReferenceImageUrl = *req.ReferenceImageUrl
+	}
+	if req.ReferenceImageDescription != nil {
+		scene.ReferenceImageDescription = *req.ReferenceImageDescription
 	}
 	if req.ThumbnailUrl != nil {
 		scene.ThumbnailUrl = *req.ThumbnailUrl

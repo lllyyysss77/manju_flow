@@ -345,6 +345,196 @@ const ReferenceSection: React.FC<{
   );
 };
 
+// 支持同时输入文字和图片的参考图组件（类似 Claude 输入框）
+const ReferenceWithDescriptionSection: React.FC<{
+  initialImage?: string;
+  description: string;
+  onUpload: (file: File) => Promise<void>;
+  onRemove: () => void;
+  onDescriptionChange: (desc: string) => void;
+  isUploading?: boolean;
+  onUploadError?: (msg: string) => void;
+}> = ({ initialImage, description, onUpload, onRemove, onDescriptionChange, isUploading = false, onUploadError }) => {
+  const [localUploading, setLocalUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const busy = isUploading || localUploading;
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      const msg = '只支持上传图片文件';
+      setError(msg);
+      onUploadError?.(msg);
+      return;
+    }
+    setError(null);
+    setLocalUploading(true);
+    try {
+      await onUpload(file);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传失败，请重试';
+      setError(msg);
+      onUploadError?.(msg);
+    } finally {
+      setLocalUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUpload(file);
+    }
+    // 重置 input 以允许重复选择相同文件
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUpload(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          handleUpload(file);
+        }
+        return;
+      }
+    }
+    // 如果不是图片，允许正常粘贴文本
+  };
+
+  return (
+    <div
+      className={`relative bg-[#1a1a1a] border rounded-2xl overflow-hidden transition-all ${
+        isDragOver ? 'border-blue-500 bg-blue-900/10' : 'border-white/10'
+      }`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+    >
+      {/* 图片预览区域 */}
+      {initialImage && (
+        <div className="relative group border-b border-white/10">
+          <div className="flex items-center justify-center p-4 bg-black/20 min-h-[200px]">
+            <img
+              src={initialImage}
+              className="max-w-full max-h-[400px] object-contain rounded-lg shadow-lg"
+              alt="参考图"
+            />
+          </div>
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-zinc-200 transition-all disabled:opacity-60"
+            >
+              <Upload size={14} /> 更换图片
+            </button>
+            <button
+              onClick={onRemove}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-500 transition-all"
+            >
+              <X size={14} /> 移除图片
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 文字输入区域 */}
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          className="w-full bg-transparent p-4 text-white focus:outline-none min-h-[100px] resize-none leading-relaxed placeholder:text-white/30"
+          value={description}
+          onChange={(e) => onDescriptionChange(e.target.value)}
+          onPaste={handlePaste}
+          placeholder={initialImage ? "添加参考图说明..." : "输入参考图说明，或拖拽/粘贴图片到此处..."}
+        />
+
+        {/* 工具栏 */}
+        <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all disabled:opacity-60"
+            >
+              {busy ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>上传中...</span>
+                </>
+              ) : (
+                <>
+                  <ImageIcon size={14} />
+                  <span>{initialImage ? '更换图片' : '添加图片'}</span>
+                </>
+              )}
+            </button>
+            <span className="text-[10px] text-white/30">支持拖拽或 Ctrl+V 粘贴</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 拖拽提示遮罩 */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-900/30 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-blue-200">
+            <Upload size={32} />
+            <span className="text-sm font-bold">释放以上传图片</span>
+          </div>
+        </div>
+      )}
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="px-4 pb-3">
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        </div>
+      )}
+
+      {/* 隐藏的文件输入 */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept="image/*"
+      />
+    </div>
+  );
+};
+
 export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   bookId,
   episodes = [],
@@ -463,9 +653,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       description: scene.description,
       cameraMovement: scene.cameraMovement,
       dialogue: scene.dialogue,
+      transitionEffect: scene.transitionEffect,
       status: scene.status,
       index: scene.index,
       referenceImageUrl: scene.referenceImageUrl,
+      referenceImageDescription: scene.referenceImageDescription,
     });
 
   const getSynopsisSignature = (synopsis?: string) => synopsis || '';
@@ -494,9 +686,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             description: s.description || '',
             cameraMovement: s.cameraMovement || '',
             dialogue: s.dialogue || '',
+            transitionEffect: (s as any).transitionEffect || '',
             status: s.status as Status,
             comments: [],
             referenceImageUrl: s.referenceImageUrl,
+            referenceImageDescription: (s as any).referenceImageDescription || '',
             thumbnailUrl: (s as any).thumbnailUrl,
             frameSets: (s as any).frameSets,
             animations: (s as any).animations,
@@ -752,7 +946,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
         description: scene.description,
         cameraMovement: scene.cameraMovement,
         dialogue: scene.dialogue,
+        transitionEffect: scene.transitionEffect,
         referenceImageUrl: scene.referenceImageUrl,
+        referenceImageDescription: scene.referenceImageDescription,
       });
       savedSignaturesRef.current[scene.id] = getSignature(updated);
       setIsDirty(false);
@@ -1205,44 +1401,56 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                 <div className="max-w-4xl mx-auto space-y-12">
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
-                  <textarea 
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
-                    value={activeScene.description}
-                    onChange={(e) => updateActiveScene(scene => ({ ...scene, description: e.target.value }))}
-                    placeholder="详细描述画面内容，包括角色动作、环境变化等..."
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-10">
-                  <div className="space-y-4">
-                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头/运镜 (Camera Movement)</label>
-                    <textarea 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
-                      value={activeScene.cameraMovement}
-                      onChange={(e) => updateActiveScene(scene => ({ ...scene, cameraMovement: e.target.value }))}
-                      placeholder="特写 / 全景 / 俯视... "
+                    <textarea
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
+                      value={activeScene.description}
+                      onChange={(e) => updateActiveScene(scene => ({ ...scene, description: e.target.value }))}
+                      placeholder="详细描述画面内容，包括角色动作、环境变化等..."
                     />
                   </div>
+
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
-                    <textarea 
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
+                    <textarea
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[80px] resize-none leading-relaxed"
                       value={activeScene.dialogue}
                       onChange={(e) => updateActiveScene(scene => ({ ...scene, dialogue: e.target.value }))}
                       placeholder="角色的台词或剧情叙述..."
                     />
                   </div>
+
+                  <div className="grid grid-cols-2 gap-10">
+                    <div className="space-y-4">
+                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头/运镜 (Camera Movement)</label>
+                      <textarea
+                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
+                        value={activeScene.cameraMovement}
+                        onChange={(e) => updateActiveScene(scene => ({ ...scene, cameraMovement: e.target.value }))}
+                        placeholder="特写 / 全景 / 俯视..."
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">转场/剪辑手法 (Transition)</label>
+                      <textarea
+                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
+                        value={activeScene.transitionEffect || ''}
+                        onChange={(e) => updateActiveScene(scene => ({ ...scene, transitionEffect: e.target.value }))}
+                        placeholder="淡入淡出 / 硬切 / 叠化..."
+                      />
+                    </div>
                   </div>
 
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3">
-                        <ImageIcon size={14} className="text-blue-500" />
-                        <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">分镜火柴人参考图</label>
-                      </div>
-                    <ReferenceSection
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                      <ImageIcon size={14} className="text-blue-500" />
+                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">参考图及说明</label>
+                    </div>
+                    <ReferenceWithDescriptionSection
                       initialImage={resolvedReferenceUrl || (isValidMediaUrl(activeScene.referenceImageUrl) ? activeScene.referenceImageUrl : undefined)}
+                      description={activeScene.referenceImageDescription || ''}
                       onUpload={handleSaveReference}
                       onRemove={handleRemoveReference}
+                      onDescriptionChange={(desc) => updateActiveScene(scene => ({ ...scene, referenceImageDescription: desc }))}
                       isUploading={isUploadingReference}
                     />
                   </div>

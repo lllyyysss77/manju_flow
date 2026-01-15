@@ -48,9 +48,11 @@ export interface Scene {
   description: string;
   cameraMovement: string;
   dialogue: string;
+  transitionEffect?: string; // 转场或剪辑手法
   status: Status;
   comments?: Comment[];
   referenceImageUrl?: string; // 剧本阶段的视觉参考图
+  referenceImageDescription?: string; // 参考图说明
   thumbnailUrl?: string; // 场景预览缩略图（首帧）
   audios?: SceneAudioTrack[]; // 多音轨
   frameSets?: SceneFrameSet[];

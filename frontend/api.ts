@@ -282,7 +282,9 @@ export interface ScenePayload {
   description: string;
   cameraMovement: string;
   dialogue: string;
+  transitionEffect?: string; // 转场或剪辑手法
   referenceImageUrl?: string;
+  referenceImageDescription?: string; // 参考图说明
   thumbnailUrl?: string;
 }
 
