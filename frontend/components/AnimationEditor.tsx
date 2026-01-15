@@ -25,6 +25,11 @@ import { useSceneComments } from './useSceneComments';
 interface AnimationEditorProps {
   episode?: Episode;
   episodes?: Episode[];
+  // 跨模块状态同步
+  initialChapterId?: number | null;
+  initialSceneId?: number | null;
+  onActiveChapterChange?: (chapterId: number | null) => void;
+  onActiveSceneChange?: (sceneId: number | null) => void;
 }
 
 const STATUS_MAP: Record<Status, string> = {
@@ -33,7 +38,14 @@ const STATUS_MAP: Record<Status, string> = {
   COMPLETED: '已完成'
 };
 
-export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episodes }) => {
+export const AnimationEditor: React.FC<AnimationEditorProps> = ({
+  episode,
+  episodes,
+  initialChapterId,
+  initialSceneId,
+  onActiveChapterChange,
+  onActiveSceneChange,
+}) => {
   const sourceChapters = useMemo(() => {
     if (episodes && episodes.length) return episodes;
     if (episode) return [episode];
@@ -60,26 +72,65 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({ episode, episo
   }, [episode, sourceChapters]);
 
   const hasChapters = normalizedChapters.length > 0;
-  const [activeChapterId, setActiveChapterId] = useState<number | null>(normalizedChapters[0]?.id || null);
+
+  // 计算初始章节ID
+  const computeInitialChapterId = useCallback(() => {
+    if (initialChapterId != null) {
+      const exists = normalizedChapters.some(ch => ch.id === initialChapterId);
+      if (exists) return initialChapterId;
+    }
+    return normalizedChapters[0]?.id || null;
+  }, [normalizedChapters, initialChapterId]);
+
+  const [activeChapterId, setActiveChapterIdInternal] = useState<number | null>(() => computeInitialChapterId());
   const activeChapter = useMemo(
     () => normalizedChapters.find(c => c.id === activeChapterId) || normalizedChapters[0],
     [activeChapterId, normalizedChapters]
   );
-  useEffect(() => {
-    setActiveChapterId(normalizedChapters[0]?.id || null);
-  }, [normalizedChapters]);
 
   const sortedScenes = useMemo(
     () => (activeChapter ? [...(activeChapter.scenes || [])].sort((a, b) => a.index - b.index) : []),
     [activeChapter]
   );
-  const [activeSceneIndex, setActiveSceneIndex] = useState(0);
-  useEffect(() => {
-    setActiveSceneIndex(0);
-  }, [activeChapterId]);
+
+  // 计算初始场景索引
+  const computeInitialSceneIndex = useCallback(() => {
+    if (initialSceneId != null) {
+      const idx = sortedScenes.findIndex(s => s.id === initialSceneId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }, [sortedScenes, initialSceneId]);
+
+  const [activeSceneIndex, setActiveSceneIndexInternal] = useState(() => {
+    // 初始化时使用 props 中的值
+    if (initialSceneId != null && activeChapter) {
+      const scenes = [...(activeChapter.scenes || [])].sort((a, b) => a.index - b.index);
+      const idx = scenes.findIndex(s => s.id === initialSceneId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  });
+
+  // 包装 setActiveChapterId 以同步到父组件
+  const setActiveChapterId = useCallback((id: number | null) => {
+    setActiveChapterIdInternal(id);
+    onActiveChapterChange?.(id);
+  }, [onActiveChapterChange]);
+
+  // 包装 setActiveSceneIndex 以同步到父组件
+  const setActiveSceneIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
+    setActiveSceneIndexInternal(prev => {
+      const newIndex = typeof indexOrFn === 'function' ? indexOrFn(prev) : indexOrFn;
+      const scene = sortedScenes[newIndex];
+      onActiveSceneChange?.(scene?.id ?? null);
+      return newIndex;
+    });
+  }, [sortedScenes, onActiveSceneChange]);
+
   useEffect(() => {
     if (activeSceneIndex >= sortedScenes.length) {
-      setActiveSceneIndex(Math.max(0, sortedScenes.length - 1));
+      setActiveSceneIndexInternal(Math.max(0, sortedScenes.length - 1));
     }
   }, [activeSceneIndex, sortedScenes.length]);
   const [isPlaying, setIsPlaying] = useState(false);

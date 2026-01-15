@@ -26,6 +26,11 @@ interface StoryboardEditorProps {
   bookId?: number;
   episodes?: Episode[];
   episode?: Episode; // backward compatibility
+  // 跨模块状态同步
+  initialChapterId?: number | null;
+  initialSceneId?: number | null;
+  onActiveChapterChange?: (chapterId: number | null) => void;
+  onActiveSceneChange?: (sceneId: number | null) => void;
 }
 
 const STATUS_MAP: Record<Status, string> = {
@@ -33,14 +38,31 @@ const STATUS_MAP: Record<Status, string> = {
   IN_PROGRESS: '进行中',
   COMPLETED: '已完成'
 };
-export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ bookId, episodes = [], episode }) => {
+export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
+  bookId,
+  episodes = [],
+  episode,
+  initialChapterId,
+  initialSceneId,
+  onActiveChapterChange,
+  onActiveSceneChange,
+}) => {
   const chapterList = useMemo(() => {
     if (episodes.length > 0) return episodes;
     return episode ? [episode] : [];
   }, [episodes, episode]);
   const hasChapters = chapterList.length > 0;
 
-  const [activeChapterIndex, setActiveChapterIndex] = useState(0);
+  // 计算初始章节索引
+  const computeInitialChapterIndex = useCallback(() => {
+    if (initialChapterId != null) {
+      const idx = chapterList.findIndex(ch => ch.id === initialChapterId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }, [chapterList, initialChapterId]);
+
+  const [activeChapterIndex, setActiveChapterIndexInternal] = useState(() => computeInitialChapterIndex());
   const activeEpisode = chapterList[activeChapterIndex];
   const normalizedScenes = useMemo(
     () => (activeEpisode?.scenes || []).map(scene => ({ ...scene, comments: scene.comments || [] })),
@@ -51,10 +73,48 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({ bookId, epis
     [normalizedScenes]
   );
 
-  const [activeSceneIndex, setActiveSceneIndex] = useState(0);
+  // 计算初始场景索引
+  const computeInitialSceneIndex = useCallback(() => {
+    if (initialSceneId != null) {
+      const idx = sortedScenes.findIndex(s => s.id === initialSceneId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }, [sortedScenes, initialSceneId]);
+
+  const [activeSceneIndex, setActiveSceneIndexInternal] = useState(() => {
+    // 初始化时使用 props 中的值
+    if (initialSceneId != null && activeEpisode) {
+      const scenes = [...(activeEpisode.scenes || [])].sort((a, b) => a.index - b.index);
+      const idx = scenes.findIndex(s => s.id === initialSceneId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  });
+
+  // 包装 setActiveChapterIndex 以同步到父组件
+  const setActiveChapterIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
+    setActiveChapterIndexInternal(prev => {
+      const newIndex = typeof indexOrFn === 'function' ? indexOrFn(prev) : indexOrFn;
+      const chapter = chapterList[newIndex];
+      onActiveChapterChange?.(chapter?.id ?? null);
+      return newIndex;
+    });
+  }, [chapterList, onActiveChapterChange]);
+
+  // 包装 setActiveSceneIndex 以同步到父组件
+  const setActiveSceneIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
+    setActiveSceneIndexInternal(prev => {
+      const newIndex = typeof indexOrFn === 'function' ? indexOrFn(prev) : indexOrFn;
+      const scene = sortedScenes[newIndex];
+      onActiveSceneChange?.(scene?.id ?? null);
+      return newIndex;
+    });
+  }, [sortedScenes, onActiveSceneChange]);
+
   useEffect(() => {
     if (activeSceneIndex >= sortedScenes.length) {
-      setActiveSceneIndex(Math.max(0, sortedScenes.length - 1));
+      setActiveSceneIndexInternal(Math.max(0, sortedScenes.length - 1));
     }
   }, [activeSceneIndex, sortedScenes.length]);
 
