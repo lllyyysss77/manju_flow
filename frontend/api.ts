@@ -316,6 +316,11 @@ export interface FileUploadResponse {
   createdAt: string;
 }
 
+// 全局 URL 缓存 - 跨组件共享，避免模块切换时重复请求
+const globalSignedUrlCache: Map<string, string> = new Map();
+// 进行中的请求 - 用于请求去重，避免并发重复请求
+const pendingSignedUrlRequests: Map<string, Promise<{ url: string }>> = new Map();
+
 export const fileApi = {
   upload: (file: File, visibility: 'public' | 'private' = 'private') => {
     const formData = new FormData();
@@ -384,11 +389,50 @@ export const fileApi = {
     if (!key) {
       return Promise.resolve({ url: ensureHttpsUrl(externalUrl || '') });
     }
+
+    // 1. 检查全局缓存
+    const cached = globalSignedUrlCache.get(key);
+    if (cached) {
+      return Promise.resolve({ url: cached });
+    }
+
+    // 2. 检查是否有进行中的相同请求（请求去重）
+    const pending = pendingSignedUrlRequests.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    // 3. 发起新请求
     const encodedKey = encodeURIComponent(key);
-    return request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`).then(res => ({
-      ...res,
-      url: ensureHttpsUrl(res.url),
-    }));
+    const requestPromise = request<{ url: string }>(`/api/files/${encodedKey}?redirect=false`)
+      .then(res => {
+        const url = ensureHttpsUrl(res.url);
+        // 缓存结果
+        globalSignedUrlCache.set(key, url);
+        return { url };
+      })
+      .finally(() => {
+        // 请求完成后移除 pending 状态
+        pendingSignedUrlRequests.delete(key);
+      });
+
+    // 记录进行中的请求
+    pendingSignedUrlRequests.set(key, requestPromise);
+
+    return requestPromise;
+  },
+
+  // 清除指定 key 的缓存（用于文件更新后强制刷新）
+  invalidateCache: (keyOrUrl: string) => {
+    const { key } = normalizeFileKey(keyOrUrl);
+    if (key) {
+      globalSignedUrlCache.delete(key);
+    }
+  },
+
+  // 清除所有缓存
+  clearCache: () => {
+    globalSignedUrlCache.clear();
   },
 };
 
