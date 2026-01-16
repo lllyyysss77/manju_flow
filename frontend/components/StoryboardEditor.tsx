@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Comment, Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
+import { Episode, SceneFrameSet, SceneFrameSetVersion, Status } from '../types';
 import { ensureHttpsUrl, fileApi, sceneApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
+import { CommentItem } from './CommentItem';
 
 const computeFrameSetReorder = (
   list: SceneFrameSet[],
@@ -151,6 +152,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     posting: postingComment,
     error: commentError,
     addComment,
+    updateComment,
+    deleteComment,
   } = useSceneComments(activeScene?.id, 'storyboard');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
 
@@ -683,9 +686,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const currentVersions = selectedFrameSet ? versionsMap[selectedFrameSet.id] || { start: [], end: [] } : { start: [], end: [] };
   const startDisplayUrl = historySelection.start || currentFramePreview?.start || '';
   const endDisplayUrl = historySelection.end || currentFramePreview?.end || '';
-  const formatCommentTime = (value?: string) =>
-    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   if (!hasChapters) {
     return (
@@ -1366,13 +1366,16 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
             ) : activeScene ? (
               activeSceneComments.length ? (
                 activeSceneComments.map(c => (
-                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-[10px] font-bold text-blue-400 uppercase">{getCommentAuthor(c)}</span>
-                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
-                    </div>
-                    <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
-                  </div>
+                  <CommentItem
+                    key={c.id}
+                    comment={c}
+                    onUpdate={async (id, content) => {
+                      await updateComment(id, content);
+                    }}
+                    onDelete={async (id) => {
+                      await deleteComment(id);
+                    }}
+                  />
                 ))
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-3 opacity-30 italic">

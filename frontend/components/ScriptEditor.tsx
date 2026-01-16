@@ -1,16 +1,16 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Comment, Episode, Scene, Status } from '../types';
+import { Episode, Scene, Status } from '../types';
 import {
-  Plus, 
-  MessageSquare, 
-  Save, 
-  AlertCircle, 
-  Pencil, 
-  Upload, 
-  X, 
-  RotateCcw, 
-  Maximize2, 
+  Plus,
+  MessageSquare,
+  Save,
+  AlertCircle,
+  Pencil,
+  Upload,
+  X,
+  RotateCcw,
+  Maximize2,
   Smartphone,
   Check,
   Image as ImageIcon,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { useSceneComments } from './useSceneComments';
+import { CommentItem } from './CommentItem';
 
 interface ScriptEditorProps {
   bookId: number;
@@ -624,6 +625,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     loading: loadingComments,
     posting: postingComment,
     addComment,
+    updateComment,
+    deleteComment,
     error: commentError,
   } = useSceneComments(activeScene?.id, 'script');
   const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
@@ -667,11 +670,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     });
 
   const getSynopsisSignature = (synopsis?: string) => synopsis || '';
-
-  const formatCommentTime = (value?: string) =>
-    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-
-  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   const loadChapters = useCallback(async () => {
     // 防止重复加载
@@ -1589,15 +1587,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             ) : activeScene ? (
               activeSceneComments.length ? (
                 activeSceneComments.map(c => (
-                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter">
-                        {getCommentAuthor(c)}
-                      </span>
-                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
-                    </div>
-                    <p className="text-sm text-white/70 leading-relaxed font-medium whitespace-pre-line">{c.content}</p>
-                  </div>
+                  <CommentItem
+                    key={c.id}
+                    comment={c}
+                    onUpdate={async (id, content) => {
+                      await updateComment(id, content);
+                    }}
+                    onDelete={async (id) => {
+                      await deleteComment(id);
+                    }}
+                  />
                 ))
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-4 opacity-10">

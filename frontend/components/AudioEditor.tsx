@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Comment, Episode, Scene, Status } from '../types';
+import { Episode, Scene, Status } from '../types';
 import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
-import { 
-  MessageSquare, 
-  CheckCircle2, 
-  ChevronLeft, 
+import {
+  MessageSquare,
+  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Info,
   Play,
@@ -24,6 +24,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
+import { CommentItem } from './CommentItem';
 
 interface AudioEditorProps {
   episode?: Episode;
@@ -262,10 +263,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     [resolveFileUrl]
   );
 
-  const formatCommentTime = (value?: string) =>
-    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
-
   const activeScene = sortedScenes[activeSceneIndex];
   const {
     comments: sceneCommentList,
@@ -273,6 +270,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     posting: postingComment,
     error: commentError,
     addComment,
+    updateComment,
+    deleteComment,
   } = useSceneComments(activeScene?.id, 'audio');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
@@ -1427,13 +1426,16 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
               ) : activeScene ? (
                 activeSceneComments.length ? (
                   activeSceneComments.map(c => (
-                    <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5">
-                      <div className="flex justify-between mb-2">
-                        <span className="text-[10px] font-bold text-blue-400 uppercase">{getCommentAuthor(c)}</span>
-                        <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
-                      </div>
-                      <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
-                    </div>
+                    <CommentItem
+                      key={c.id}
+                      comment={c}
+                      onUpdate={async (id, content) => {
+                        await updateComment(id, content);
+                      }}
+                      onDelete={async (id) => {
+                        await deleteComment(id);
+                      }}
+                    />
                   ))
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
