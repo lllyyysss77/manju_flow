@@ -50,6 +50,23 @@ export function useSceneComments(sceneId?: number | null, module?: SceneCommentM
     [module, sceneId]
   );
 
+  const updateComment = useCallback(
+    async (commentId: number, content: string, meta?: string) => {
+      const updated = await commentApi.update(commentId, { content, meta });
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+      return updated;
+    },
+    []
+  );
+
+  const deleteComment = useCallback(
+    async (commentId: number) => {
+      await commentApi.delete(commentId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    },
+    []
+  );
+
   return {
     comments,
     loading,
@@ -57,5 +74,7 @@ export function useSceneComments(sceneId?: number | null, module?: SceneCommentM
     error,
     refresh,
     addComment,
+    updateComment,
+    deleteComment,
   };
 }

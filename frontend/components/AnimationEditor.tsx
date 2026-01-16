@@ -1,12 +1,12 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Comment, Episode, Scene, SceneAnimation, SceneAnimationVersion, Status } from '../types';
+import { Episode, Scene, SceneAnimation, SceneAnimationVersion, Status } from '../types';
 import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
-import { 
-  MessageSquare, 
-  CheckCircle2, 
-  AlertCircle, 
-  ChevronLeft, 
+import {
+  MessageSquare,
+  CheckCircle2,
+  AlertCircle,
+  ChevronLeft,
   ChevronRight,
   Info,
   Play,
@@ -21,6 +21,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
+import { CommentItem } from './CommentItem';
 
 interface AnimationEditorProps {
   episode?: Episode;
@@ -182,6 +183,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     posting: postingComment,
     error: commentError,
     addComment,
+    updateComment,
+    deleteComment,
   } = useSceneComments(activeScene?.id, 'animation');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
@@ -457,10 +460,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     videoRef.current.load();
     setIsPlaying(false);
   }, [playbackUrl]);
-
-  const formatCommentTime = (value?: string) =>
-    value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
 
   useEffect(() => {
     setCommentDraft('');
@@ -1280,13 +1279,17 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             ) : activeScene ? (
               activeSceneComments.length ? (
                 activeSceneComments.map(c => (
-                  <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 border-l-4 border-l-red-500/50">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-[10px] font-bold text-red-400 uppercase">{getCommentAuthor(c)}</span>
-                      <span className="text-[9px] text-white/30">{formatCommentTime(c.createdAt)}</span>
-                    </div>
-                    <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">{c.content}</p>
-                  </div>
+                  <CommentItem
+                    key={c.id}
+                    comment={c}
+                    authorColorClass="text-red-400"
+                    onUpdate={async (id, content) => {
+                      await updateComment(id, content);
+                    }}
+                    onDelete={async (id) => {
+                      await deleteComment(id);
+                    }}
+                  />
                 ))
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">

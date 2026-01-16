@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
 import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { CommentItem } from './CommentItem';
 
 type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
@@ -268,8 +269,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     return { content: trimmed, meta: undefined as string | undefined };
   };
 
-  const getCommentAuthor = (c: Comment) => c.user?.nickname || c.user?.username || '匿名用户';
-
   type ReviewCommentView = Comment & { timeSeconds?: number; timeLabel?: string };
   const reviewComments = useMemo<ReviewCommentView[]>(
     () =>
@@ -300,6 +299,28 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       setToast({ message: msg, tone: 'error' });
     } finally {
       setPostingComment(false);
+    }
+  };
+
+  const handleUpdateComment = async (commentId: number, content: string) => {
+    try {
+      const updated = await commentApi.update(commentId, { content });
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '更新评论失败';
+      setToast({ message: msg, tone: 'error' });
+      throw err;
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    try {
+      await commentApi.delete(commentId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '删除评论失败';
+      setToast({ message: msg, tone: 'error' });
+      throw err;
     }
   };
 
@@ -895,19 +916,19 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   </div>
                 ) : reviewComments.length ? (
                   reviewComments.map((c) => (
-                    <div
+                    <CommentItem
                       key={c.id}
-                      className="bg-[#1a1a1a] p-3 rounded-lg border border-white/5 cursor-pointer hover:border-blue-500/50 transition-all group"
-                      onClick={() => typeof c.timeSeconds === 'number' && handleSeek(c.timeSeconds)}
-                    >
-                  <div className="flex justify-between mb-1">
+                      comment={c}
+                      onUpdate={handleUpdateComment}
+                      onDelete={handleDeleteComment}
+                      authorColorClass="text-white/60"
+                      extraBadge={
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-mono border border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]">
                           @{c.timeLabel || '—'}
                         </span>
-                        <span className="text-[10px] font-bold text-white/60 uppercase">{getCommentAuthor(c)}</span>
-                      </div>
-                      <p className="text-sm text-white/80 leading-snug whitespace-pre-line">{c.content}</p>
-                    </div>
+                      }
+                      onClick={typeof c.timeSeconds === 'number' ? () => handleSeek(c.timeSeconds!) : undefined}
+                    />
                   ))
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center gap-3 opacity-40 italic">
