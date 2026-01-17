@@ -18,12 +18,13 @@ import {
   Pencil,
   Trash2,
   X,
+  CheckCircle2,
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { useFileUrl } from './useFileUrl';
 import { usePanelResize } from './usePanelResize';
-import { DEFAULT_SCENE_THUMB } from '../constants';
+import { DEFAULT_SCENE_THUMB, STATUS_MAP } from '../constants';
 import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
 import { SceneThumbnailStrip } from './SceneThumbnailStrip';
