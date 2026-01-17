@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ProductionStage, Status, Project, Episode } from './types';
 import { STAGE_CONFIG } from './constants';
 import { StageWrapper } from './components/StageWrapper';
+import { OutlineEditor } from './components/OutlineEditor';
 import { ScriptEditor } from './components/ScriptEditor';
 import { DeliverReview } from './components/DeliverReview';
 import { StoryboardEditor } from './components/StoryboardEditor';
@@ -50,7 +51,7 @@ const BUILD_TIME = (() => {
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'PRODUCTION'>('DASHBOARD');
-  const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.SCRIPT);
+  const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.OUTLINE);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthResponse['user'] | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(() => authStorage.getToken());
@@ -163,7 +164,7 @@ const App: React.FC = () => {
   const enterProject = (project: Project) => {
     setSelectedProject({ ...project, episodes: project.episodes || [] });
     setViewMode('PRODUCTION');
-    setCurrentStage(ProductionStage.SCRIPT);
+    setCurrentStage(ProductionStage.OUTLINE);
     // 重置跨模块的场景状态
     setActiveChapterId(null);
     setActiveSceneId(null);
@@ -466,6 +467,14 @@ const App: React.FC = () => {
     const renderContent = () => {
       const episode = selectedProject.episodes[0];
       switch (currentStage) {
+        case ProductionStage.OUTLINE:
+          return (
+            <OutlineEditor
+              bookId={selectedProject.id}
+              initialOutline={selectedProject.outline}
+              initialCharacters={selectedProject.characters}
+            />
+          );
         case ProductionStage.SCRIPT:
           return (
             <ScriptEditor

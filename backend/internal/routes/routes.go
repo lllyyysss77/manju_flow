@@ -67,6 +67,17 @@ func Setup(r *gin.Engine) {
 				books.DELETE("/:bookId", bookHandler.Delete) // 删除书籍
 			}
 
+			// 角色人设路由
+			characterHandler := handlers.NewCharacterHandler()
+			characters := authorized.Group("/books/:bookId/characters")
+			{
+				characters.GET("", characterHandler.List)                     // 获取角色列表
+				characters.POST("", characterHandler.Create)                  // 创建角色
+				characters.GET("/:characterId", characterHandler.GetByID)     // 获取角色详情
+				characters.PUT("/:characterId", characterHandler.Update)      // 更新角色
+				characters.DELETE("/:characterId", characterHandler.Delete)   // 删除角色
+			}
+
 			// 章节路由
 			chapterHandler := handlers.NewChapterHandler()
 			chapters := authorized.Group("/books/:bookId/chapters")
