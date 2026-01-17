@@ -64,7 +64,8 @@ func Setup(r *gin.Engine) {
 				books.POST("", bookHandler.Create)           // 创建书籍
 				books.GET("/:bookId", bookHandler.GetByID)   // 获取书籍详情
 				books.PUT("/:bookId", bookHandler.Update)    // 更新书籍
-				books.DELETE("/:bookId", bookHandler.Delete) // 删除书籍
+				books.DELETE("/:bookId", bookHandler.Delete)         // 删除书籍
+				books.PUT("/:bookId/outline", bookHandler.UpdateOutline) // 更新大纲
 			}
 
 			// 角色人设路由

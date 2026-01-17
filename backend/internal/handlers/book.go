@@ -231,3 +231,47 @@ func (h *BookHandler) Delete(c *gin.Context) {
 		"message": "Book deleted successfully",
 	})
 }
+
+// UpdateOutline 更新书籍大纲
+// @Summary 更新书籍大纲
+// @Description 单独更新书籍的故事大纲
+// @Tags books
+// @Accept json
+// @Produce json
+// @Param id path int true "书籍ID"
+// @Param outline body models.UpdateOutlineRequest true "大纲内容"
+// @Success 200 {object} models.Book
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/books/{id}/outline [put]
+func (h *BookHandler) UpdateOutline(c *gin.Context) {
+	id := c.Param("bookId")
+
+	var book models.Book
+	db := database.GetDB()
+	if err := db.First(&book, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	var req models.UpdateOutlineRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	book.Outline = req.Outline
+
+	if err := db.Save(&book).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update outline",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, book)
+}

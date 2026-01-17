@@ -225,6 +225,14 @@ export const bookApi = {
       method: 'DELETE',
     });
   },
+
+  // 更新大纲
+  updateOutline: async (id: number, outline: string): Promise<Book> => {
+    return request<Book>(`/api/books/${id}/outline`, {
+      method: 'PUT',
+      body: JSON.stringify({ outline }),
+    });
+  },
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式

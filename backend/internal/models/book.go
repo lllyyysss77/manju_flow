@@ -62,3 +62,8 @@ type CreateBookRequest struct {
 	Description string   `json:"description"`
 	Outline     string   `json:"outline"`
 }
+
+// UpdateOutlineRequest 更新大纲请求
+type UpdateOutlineRequest struct {
+	Outline string `json:"outline"`
+}

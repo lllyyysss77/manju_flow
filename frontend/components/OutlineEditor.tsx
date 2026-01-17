@@ -320,7 +320,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     }
     setIsSavingOutline(true);
     try {
-      await bookApi.update(bookId, { outline } as any);
+      await bookApi.updateOutline(bookId, outline);
       savedOutlineRef.current = outline;
       setIsOutlineDirty(false);
       setToast({ message: '大纲已保存', tone: 'success' });
