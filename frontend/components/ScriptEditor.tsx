@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Episode, Scene } from '../types';
 import {
   Plus,
@@ -18,10 +18,12 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { chapterApi, sceneApi, fileApi, isValidMediaUrl } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { STATUS_MAP } from '../constants';
+import { useScriptEditorReducer } from './useScriptEditorReducer';
+import { usePanelResize } from './usePanelResize';
 
 interface ScriptEditorProps {
   bookId: number;
@@ -540,67 +542,56 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   onActiveChapterChange,
   onActiveSceneChange,
 }) => {
-  const [chapters, setChapters] = useState<Episode[]>(episodes || []);
+  // ============ 使用 Reducer 管理核心状态 ============
+  const {
+    state,
+    dispatch,
+    activeChapter,
+    loadChapters,
+    resolveReferenceImage,
+    persistScene,
+    persistChapterSynopsis,
+    updateActiveScene,
+    commitChapters,
+    checkSceneDirty,
+    checkSynopsisDirty,
+    storeSceneSignature,
+    cleanupChapterSignatures,
+    referenceUrlCache,
+  } = useScriptEditorReducer({
+    bookId,
+    episodes,
+    initialChapterId,
+    initialSceneId,
+    onEpisodesChange,
+    onActiveChapterChange,
+    onActiveSceneChange,
+  });
 
-  // 使用 ref 存储回调，避免作为依赖
-  const onActiveChapterChangeRef = useRef(onActiveChapterChange);
-  const onActiveSceneChangeRef = useRef(onActiveSceneChange);
-  useEffect(() => {
-    onActiveChapterChangeRef.current = onActiveChapterChange;
-    onActiveSceneChangeRef.current = onActiveSceneChange;
-  }, [onActiveChapterChange, onActiveSceneChange]);
+  // 从 state 解构常用值
+  const {
+    chapters,
+    activeChapterId,
+    activeScene,
+    isDirty,
+    isSynopsisDirty,
+    isLoading,
+    loadError,
+    isSaving,
+    saveError,
+    lastSavedAt,
+    isSavingSynopsis,
+    isUploadingReference,
+    resolvedReferenceUrl,
+  } = state;
 
-  // 使用 ref 存储初始值，避免 loadChapters 依赖循环
-  const initialChapterIdRef = useRef(initialChapterId);
-  const initialSceneIdRef = useRef(initialSceneId);
-  // 只在首次挂载时更新 ref（后续父组件传入的值不再影响 loadChapters）
-  const hasInitializedRef = useRef(false);
+  // ============ 面板拖拽使用 Hook ============
+  const leftPanel = usePanelResize({ initialWidth: 256, minWidth: 200, maxWidth: 360, side: 'left' });
+  const rightPanel = usePanelResize({ initialWidth: 320, minWidth: 260, maxWidth: 520, side: 'right' });
 
-  // 计算初始章节ID：优先使用外部传入的，否则使用第一个章节
-  const computeInitialChapterId = () => {
-    if (initialChapterId != null) {
-      // 验证章节是否存在
-      const exists = (episodes || []).some(ep => ep.id === initialChapterId);
-      if (exists) return initialChapterId;
-    }
-    return episodes?.[0]?.id ?? null;
-  };
-
-  // 计算初始场景：优先使用外部传入的，否则使用对应章节的第一个场景
-  const computeInitialScene = (chapterId: number | null): Scene | null => {
-    if (!chapterId) return null;
-    const chapter = (episodes || []).find(ep => ep.id === chapterId);
-    if (!chapter?.scenes?.length) return null;
-
-    if (initialSceneId != null) {
-      const scene = chapter.scenes.find(s => s.id === initialSceneId);
-      if (scene) return scene;
-    }
-    return chapter.scenes[0] || null;
-  };
-
-  const [activeChapterId, setActiveChapterId] = useState<number | null>(() => computeInitialChapterId());
-  const [activeScene, setActiveScene] = useState<Scene | null>(() => computeInitialScene(computeInitialChapterId()));
-
-  // 同步章节变化到父组件
-  useEffect(() => {
-    onActiveChapterChangeRef.current?.(activeChapterId);
-  }, [activeChapterId]);
-
-  // 同步场景变化到父组件
-  useEffect(() => {
-    onActiveSceneChangeRef.current?.(activeScene?.id ?? null);
-  }, [activeScene?.id]);
+  // ============ 保留的独立 useState (表单输入 + UI 状态) ============
   const [commentDraft, setCommentDraft] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
-  const [isUploadingReference, setIsUploadingReference] = useState(false);
-  const [resolvedReferenceUrl, setResolvedReferenceUrl] = useState<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState<{
     type: 'chapter' | 'scene';
     chapterId: number;
@@ -609,12 +600,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [synopsisDraft, setSynopsisDraft] = useState('');
-  const [isSavingSynopsis, setIsSavingSynopsis] = useState(false);
-  const [isSynopsisDirty, setIsSynopsisDirty] = useState(false);
-  const onEpisodesChangeRef = useRef(onEpisodesChange);
-  const savedSignaturesRef = useRef<Record<number, string>>({});
-  const savedChapterSynopsisRef = useRef<Record<number, string>>({});
-  const referenceUrlCache = useRef<Record<string, string>>({});
+  const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+
+  // ============ Hooks ============
   const {
     comments: sceneComments,
     loading: loadingComments,
@@ -624,24 +613,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     deleteComment,
     error: commentError,
   } = useSceneComments(activeScene?.id, 'script');
-  const activeChapter = chapters.find(c => c.id === activeChapterId) || null;
+
   const activeSceneComments = activeScene?.id ? sceneComments : [];
 
-  useEffect(() => {
-    onEpisodesChangeRef.current = onEpisodesChange;
-  }, [onEpisodesChange]);
-  const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [leftPanelWidth, setLeftPanelWidth] = useState(256);
-  const [isResizingLeft, setIsResizingLeft] = useState(false);
-  const [rightPanelWidth, setRightPanelWidth] = useState(320);
-  const [isResizingRight, setIsResizingRight] = useState(false);
-
-  const MIN_LEFT = 200;
-  const MAX_LEFT = 360;
-  const MIN_RIGHT = 260;
-  const MAX_RIGHT = 520;
-
+  // ============ 辅助函数 ============
   const computeInsertIndex = (items: { index?: number }[], insertIndex: number) => {
     if (items.length === 0) return 1;
     const normalized = items.map(it => it.index ?? 0);
@@ -652,139 +627,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     return (prev + next) / 2;
   };
 
-  const getSignature = (scene: Scene) =>
-    JSON.stringify({
-      description: scene.description,
-      cameraMovement: scene.cameraMovement,
-      dialogue: scene.dialogue,
-      transitionEffect: scene.transitionEffect,
-      status: scene.status,
-      index: scene.index,
-      referenceImageUrl: scene.referenceImageUrl,
-      referenceImageDescription: scene.referenceImageDescription,
-    });
-
-  const getSynopsisSignature = (synopsis?: string) => synopsis || '';
-
-  const loadChapters = useCallback(async () => {
-    // 防止重复加载
-    if (hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
-
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const res = await chapterApi.list(bookId, true);
-      const data = (res.data || []).map(ch => ({
-        id: ch.id,
-        title: ch.title,
-        index: ch.index,
-        synopsis: ch.synopsis || '',
-        status: ch.status as Status,
-        scenes: (ch.scenes || [])
-          .map(s => ({
-            id: s.id,
-            chapterId: s.chapterId ?? ch.id,
-            index: s.index,
-            description: s.description || '',
-            cameraMovement: s.cameraMovement || '',
-            dialogue: s.dialogue || '',
-            transitionEffect: s.transitionEffect || '',
-            status: s.status as Status,
-            comments: [],
-            referenceImageUrl: s.referenceImageUrl,
-            referenceImageDescription: s.referenceImageDescription || '',
-            thumbnailUrl: s.thumbnailUrl,
-            frameSets: s.frameSets,
-            animations: s.animations,
-            audios: s.audios,
-          }) as Scene)
-          .sort((a, b) => a.index - b.index),
-      })) as Episode[];
-      const savedSig: Record<number, string> = {};
-      data.forEach(ch => (ch.scenes || []).forEach(sc => { savedSig[sc.id] = getSignature(sc); }));
-      savedSignaturesRef.current = savedSig;
-      const savedChapterSig: Record<number, string> = {};
-      data.forEach(ch => { savedChapterSig[ch.id] = getSynopsisSignature(ch.synopsis); });
-      savedChapterSynopsisRef.current = savedChapterSig;
-      setChapters(data);
-
-      // 保持跨模块的选中状态：使用 ref 中的初始值，避免依赖循环
-      let targetChapterId: number | null = null;
-      let targetScene: Scene | null = null;
-      const initChapterId = initialChapterIdRef.current;
-      const initSceneId = initialSceneIdRef.current;
-
-      if (initChapterId != null) {
-        const chapter = data.find(ch => ch.id === initChapterId);
-        if (chapter) {
-          targetChapterId = chapter.id;
-          if (initSceneId != null) {
-            const scene = chapter.scenes?.find(s => s.id === initSceneId);
-            if (scene) targetScene = scene;
-          }
-        }
-      }
-
-      // 如果初始值无效，回退到第一个章节
-      if (targetChapterId == null) {
-        targetChapterId = data[0]?.id ?? null;
-      }
-
-      setActiveChapterId(targetChapterId);
-      setActiveScene(targetScene);
-      // 不在这里清除 resolvedReferenceUrl，让 useEffect 根据 activeScene?.referenceImageUrl 自然处理
-      // 这样可以避免在 resolve 完成前图片闪烁消失
-      setIsDirty(false);
-      setIsSynopsisDirty(false);
-      onEpisodesChangeRef.current?.(data);
-    } catch (err) {
-      console.error('Failed to load chapters', err);
-      setLoadError(err instanceof Error ? err.message : '加载失败');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [bookId]);  // 移除 initialChapterId 和 initialSceneId 依赖
-
-  const resolveReferenceImage = useCallback(async (raw?: string | null) => {
-    if (!raw) {
-      setResolvedReferenceUrl(undefined);
-      return;
-    }
-    const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
-    if (ref.startsWith('data:') || ref.startsWith('blob:')) {
-      setResolvedReferenceUrl(ref);
-      return;
-    }
-    const { key, externalUrl } = normalizeFileKey(ref);
-    // 只有当 externalUrl 是有效的媒体 URL 时才使用，否则不作为 fallback
-    const fallback = externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : undefined;
-    if (!key) {
-      setResolvedReferenceUrl(fallback);
-      return;
-    }
-    if (referenceUrlCache.current[key]) {
-      setResolvedReferenceUrl(referenceUrlCache.current[key]);
-      return;
-    }
-    try {
-      const signed = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(signed.url);
-      // 只有当 resolved 是有效的媒体 URL 时才缓存和设置
-      if (resolved && isValidMediaUrl(resolved)) {
-        referenceUrlCache.current[key] = resolved;
-        setResolvedReferenceUrl(resolved);
-      } else {
-        // API 返回无效 URL，使用 fallback 或 undefined
-        setResolvedReferenceUrl(fallback);
-      }
-    } catch (e) {
-      console.error('Failed to resolve reference image', e);
-      // API 调用失败，使用 fallback 或 undefined
-      setResolvedReferenceUrl(fallback);
-    }
-  }, []);
-
   useEffect(() => {
     loadChapters();
   }, [loadChapters]);
@@ -793,42 +635,31 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     resolveReferenceImage(activeScene?.referenceImageUrl);
   }, [activeScene?.referenceImageUrl, resolveReferenceImage]);
 
+  // 同步 synopsisDraft 与 activeChapter
   useEffect(() => {
     setSynopsisDraft(activeChapter?.synopsis || '');
-    if (activeChapter?.id != null) {
-      const sig = getSynopsisSignature(activeChapter.synopsis);
-      setIsSynopsisDirty(savedChapterSynopsisRef.current[activeChapter.id] !== sig);
-    } else {
-      setIsSynopsisDirty(false);
-    }
   }, [activeChapter?.id, activeChapter?.synopsis]);
 
+  // 切换场景时清空评论草稿
   useEffect(() => {
     setCommentDraft('');
   }, [activeScene?.id]);
 
-  const commitChapters = (next: Episode[]) => {
-    setChapters(next);
-    onEpisodesChange?.(next);
-  };
-
+  // ============ 事件处理函数 ============
   const handleAddChapterAt = (insertIndex: number) => {
     const index = computeInsertIndex(chapters, insertIndex);
     chapterApi.create(bookId, { title: `新章节(点我修改章节名)`, index, status: 'DRAFT' }).then(res => {
-      const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as Status, scenes: [] };
-      const next = [...chapters];
-      next.splice(insertIndex, 0, newChapter);
-      commitChapters(next);
-      setActiveChapterId(newChapter.id);
-      setActiveScene(null);
+      const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED', scenes: [] };
+      dispatch({ type: 'ADD_CHAPTER', payload: { chapter: newChapter, insertIndex } });
+      dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: newChapter.id, scene: null } });
     }).catch(err => {
       console.error('Failed to create chapter', err);
-      alert('创建章节失败，请稍后再试');
+      setToast({ message: '创建章节失败，请稍后再试', tone: 'error' });
     });
   };
 
   const handleAddSceneAt = (chapterId: number, insertIndex: number) => {
-    setActiveChapterId(chapterId);
+    dispatch({ type: 'SET_ACTIVE_CHAPTER', payload: chapterId });
     const chapter = chapters.find(c => c.id === chapterId);
     const index = computeInsertIndex(chapter?.scenes || [], insertIndex);
     sceneApi.create(bookId, chapterId, {
@@ -839,161 +670,72 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       status: 'DRAFT',
     }).then(newScene => {
       const created: Scene = { ...newScene, chapterId, comments: newScene.comments || [] };
-      savedSignaturesRef.current[created.id] = getSignature(created);
-      const next = chapters.map(ch => {
-        if (ch.id !== chapterId) return ch;
-        const scenes = [...(ch.scenes || []), created].sort((a, b) => a.index - b.index);
-        const inserted = scenes.find(s => s.id === created.id) || created;
-        setActiveScene(inserted);
-        return { ...ch, scenes };
-      });
-      commitChapters(next);
+      storeSceneSignature(created);
+      dispatch({ type: 'ADD_SCENE', payload: { chapterId, scene: created } });
     }).catch(err => {
       console.error('Failed to create scene', err);
-      alert('创建场景失败，请稍后再试');
+      setToast({ message: '创建场景失败，请稍后再试', tone: 'error' });
     });
   };
 
   const handleDeleteScene = (chapterId: number, sceneId: number, label: string) => {
-    setConfirmDelete({
-      type: 'scene',
-      chapterId,
-      sceneId,
-      label,
-    });
+    setConfirmDelete({ type: 'scene', chapterId, sceneId, label });
   };
 
   const handleSelectScene = async (chapterId: number, scene: Scene) => {
+    // 自动保存当前编辑
     if (activeChapterId && isSynopsisDirty && activeChapter) {
-      await persistChapterSynopsis(activeChapterId, synopsisDraft);
+      const ok = await persistChapterSynopsis(activeChapterId, synopsisDraft);
+      if (ok) setToast({ message: '章节梗概已保存', tone: 'success' });
     }
     if (activeScene && activeChapterId && isDirty) {
       await persistScene(activeChapterId, activeScene);
     }
-    setActiveChapterId(chapterId);
-    setActiveScene(scene);
-    const sig = getSignature(scene);
-    setIsDirty(savedSignaturesRef.current[scene.id] !== sig);
-    setSaveError(null);
+    dispatch({ type: 'SELECT_SCENE', payload: { chapterId, scene } });
+    dispatch({ type: 'SET_DIRTY', payload: checkSceneDirty(scene) });
   };
 
   const handleToggleChapter = (chapterId: number) => {
     if (activeChapterId && isSynopsisDirty && activeChapter) {
-      persistChapterSynopsis(activeChapterId, synopsisDraft);
+      persistChapterSynopsis(activeChapterId, synopsisDraft).then(ok => {
+        if (ok) setToast({ message: '章节梗概已保存', tone: 'success' });
+      });
     }
     if (activeChapterId === chapterId) {
-      setActiveChapterId(null);
-      setActiveScene(null);
+      dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: null, scene: null } });
       return;
     }
-    setActiveChapterId(chapterId);
-    setActiveScene(null); // 选中章节但不自动选场景，便于展示/编辑梗概
+    dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId, scene: null } });
   };
 
   const handleUpdateChapterTitle = (chapterId: number, title: string) => {
-    const next = chapters.map(ch => (ch.id === chapterId ? { ...ch, title } : ch));
-    commitChapters(next);
+    dispatch({ type: 'UPDATE_CHAPTER', payload: { chapterId, updates: { title } } });
     chapterApi.update(bookId, chapterId, { title }).catch(err => {
       console.error('Failed to update chapter title', err);
     });
   };
 
-  const persistChapterSynopsis = async (chapterId: number, synopsis: string): Promise<boolean> => {
-    const currentSig = getSynopsisSignature(synopsis);
-    if (savedChapterSynopsisRef.current[chapterId] === currentSig) {
-      setIsSynopsisDirty(false);
-      return false;
-    }
-    setIsSavingSynopsis(true);
-    try {
-      await chapterApi.update(bookId, chapterId, { synopsis });
-      savedChapterSynopsisRef.current[chapterId] = currentSig;
-      setIsSynopsisDirty(false);
-      setToast({ message: '章节梗概已保存', tone: 'success' });
-      return true;
-    } catch (err) {
-      console.error('Failed to update chapter synopsis', err);
-      setToast({ message: '保存梗概失败，请重试', tone: 'error' });
-      return false;
-    } finally {
-      setIsSavingSynopsis(false);
-    }
-  };
-
   const handleSaveChapterSynopsis = async () => {
     if (!activeChapter) return;
-    const next = chapters.map(ch => (ch.id === activeChapter.id ? { ...ch, synopsis: synopsisDraft } : ch));
-    commitChapters(next);
-    await persistChapterSynopsis(activeChapter.id, synopsisDraft);
+    dispatch({ type: 'UPDATE_CHAPTER', payload: { chapterId: activeChapter.id, updates: { synopsis: synopsisDraft } } });
+    const ok = await persistChapterSynopsis(activeChapter.id, synopsisDraft);
+    if (ok) setToast({ message: '章节梗概已保存', tone: 'success' });
+    else if (!checkSynopsisDirty(activeChapter.id, synopsisDraft)) setToast({ message: '无改动', tone: 'info' });
   };
 
   const handleDeleteChapter = (chapterId: number) => {
     const target = chapters.find(ch => ch.id === chapterId);
-    delete savedChapterSynopsisRef.current[chapterId];
-    setConfirmDelete({
-      type: 'chapter',
-      chapterId,
-      label: target?.title || '未命名章节',
-    });
-  };
-
-  const persistScene = async (chapterId: number, scene: Scene): Promise<boolean> => {
-    const currentSig = getSignature(scene);
-    if (savedSignaturesRef.current[scene.id] === currentSig) {
-      setIsDirty(false);
-      return false;
-    }
-    setIsSaving(true);
-    try {
-      const updated = await sceneApi.update(bookId, chapterId, scene.id, {
-        index: scene.index,
-        status: scene.status,
-        description: scene.description,
-        cameraMovement: scene.cameraMovement,
-        dialogue: scene.dialogue,
-        transitionEffect: scene.transitionEffect,
-        referenceImageUrl: scene.referenceImageUrl,
-        referenceImageDescription: scene.referenceImageDescription,
-      });
-      savedSignaturesRef.current[scene.id] = getSignature(updated);
-      setIsDirty(false);
-      setLastSavedAt(new Date());
-      setSaveError(null);
-      // 仅手动保存会触发 toast，自动保存不设置
-      return true;
-    } catch (err) {
-      console.error('Failed to save scene', err);
-      setSaveError('保存失败，请重试');
-      setToast({ message: '保存失败，请重试', tone: 'error' });
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const updateActiveScene = (updater: (scene: Scene) => Scene) => {
-    if (!activeScene || !activeChapterId) return;
-    const nextScene = updater(activeScene);
-    const next = chapters.map(ch => {
-      if (ch.id !== activeChapterId) return ch;
-      const scenes = (ch.scenes || []).map(s => (s.id === activeScene.id ? nextScene : s));
-      return { ...ch, scenes };
-    });
-    setActiveScene(nextScene);
-    commitChapters(next);
-    const sig = getSignature(nextScene);
-    setIsDirty(savedSignaturesRef.current[nextScene.id] !== sig);
-    setSaveError(null);
+    setConfirmDelete({ type: 'chapter', chapterId, label: target?.title || '未命名章节' });
   };
 
   const handleSaveReference = async (file: File) => {
-    setIsUploadingReference(true);
+    dispatch({ type: 'SET_UPLOADING_REFERENCE', payload: true });
     try {
       const res = await fileApi.upload(file, 'private');
       const signed = await fileApi.getSignedUrl(res.key);
       referenceUrlCache.current[res.key] = signed.url;
       updateActiveScene(scene => ({ ...scene, referenceImageUrl: res.key }));
-      setResolvedReferenceUrl(signed.url);
+      dispatch({ type: 'SET_RESOLVED_REFERENCE_URL', payload: signed.url });
       setToast({ message: '参考图已上传', tone: 'success' });
     } catch (err) {
       console.error('Failed to upload reference image', err);
@@ -1001,13 +743,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       setToast({ message: msg, tone: 'error' });
       throw err instanceof Error ? err : new Error(msg);
     } finally {
-      setIsUploadingReference(false);
+      dispatch({ type: 'SET_UPLOADING_REFERENCE', payload: false });
     }
   };
 
   const handleRemoveReference = () => {
     updateActiveScene(scene => ({ ...scene, referenceImageUrl: undefined }));
-    setResolvedReferenceUrl(undefined);
+    dispatch({ type: 'SET_RESOLVED_REFERENCE_URL', payload: undefined });
   };
 
   const handleSubmitComment = async () => {
@@ -1033,37 +775,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       if (confirmDelete.type === 'chapter') {
         const chapterId = confirmDelete.chapterId;
         await chapterApi.delete(bookId, chapterId);
-        const next = chapters.filter(ch => ch.id !== chapterId);
-        commitChapters(next);
-        const remainingScenes = next.flatMap(ch => ch.scenes || []);
-        const newSignatures: Record<number, string> = {};
-        remainingScenes.forEach(s => { newSignatures[s.id] = savedSignaturesRef.current[s.id]; });
-        savedSignaturesRef.current = newSignatures;
-        if (activeChapterId === chapterId) {
-          const fallback = next[0];
-          setActiveChapterId(fallback?.id || null);
-          setActiveScene(fallback?.scenes?.[0] || null);
-        } else if (activeScene) {
-          const stillExists = next.some(ch => (ch.scenes || []).some(s => s.id === activeScene.id));
-          if (!stillExists) {
-            setActiveScene(null);
-          }
-        }
+        const remainingChapters = chapters.filter(ch => ch.id !== chapterId);
+        cleanupChapterSignatures(chapterId, remainingChapters);
+        dispatch({ type: 'REMOVE_CHAPTER', payload: chapterId });
       } else {
         const { chapterId, sceneId } = confirmDelete;
         if (!sceneId) return;
         await sceneApi.delete(bookId, chapterId, sceneId);
-        const next = chapters.map(ch => {
-          if (ch.id !== chapterId) return ch;
-          const scenes = (ch.scenes || []).filter(s => s.id !== sceneId);
-          return { ...ch, scenes };
-        });
-        commitChapters(next);
-        if (activeScene?.id === sceneId) {
-          const targetChapter = next.find(c => c.id === chapterId);
-          const sortedScenes = [...(targetChapter?.scenes || [])].sort((a, b) => a.index - b.index);
-          setActiveScene(sortedScenes[0] || null);
-        }
+        dispatch({ type: 'REMOVE_SCENE', payload: { chapterId, sceneId } });
       }
       setToast({ message: '删除成功', tone: 'success' });
     } catch (err) {
@@ -1075,36 +794,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (!isResizingLeft) return;
-    const handleMove = (e: MouseEvent) => {
-      const newWidth = Math.min(MAX_LEFT, Math.max(MIN_LEFT, e.clientX));
-      setLeftPanelWidth(newWidth);
-    };
-    const handleUp = () => setIsResizingLeft(false);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
-    };
-  }, [isResizingLeft]);
-
-  useEffect(() => {
-    if (!isResizingRight) return;
-    const handleMove = (e: MouseEvent) => {
-      const newWidth = Math.min(MAX_RIGHT, Math.max(MIN_RIGHT, window.innerWidth - e.clientX));
-      setRightPanelWidth(newWidth);
-    };
-    const handleUp = () => setIsResizingRight(false);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
-    };
-  }, [isResizingRight]);
-
   // Toast 自动隐藏
   useEffect(() => {
     if (!toast) return;
@@ -1112,16 +801,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // 定时保存
+  // 场景定时自动保存
   useEffect(() => {
     if (!isDirty || !activeScene || !activeChapterId) return;
     const timer = setTimeout(() => {
       persistScene(activeChapterId, activeScene);
     }, 5000);
     return () => clearTimeout(timer);
-  }, [isDirty, activeScene, activeChapterId]);
+  }, [isDirty, activeScene, activeChapterId, persistScene]);
 
-  // 梗概定时保存
+  // 梗概定时自动保存
   useEffect(() => {
     if (!isSynopsisDirty || !activeChapterId) return;
     const timer = setTimeout(() => {
@@ -1194,7 +883,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
         </div>
       )}
       {/* 1. 左侧：章节/场景导航 */}
-      <div style={{ width: leftPanelWidth }} className="border-r border-white/5 flex flex-col bg-[#161616]">
+      <div style={{ width: leftPanel.width }} className="border-r border-white/5 flex flex-col bg-[#161616]">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">章节 / 场景</span>
           <button
@@ -1389,11 +1078,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
       {/* 左侧与中间的分隔线 */}
       <div
-        className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingLeft ? 'bg-white/20' : ''}`}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          setIsResizingLeft(true);
-        }}
+        className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${leftPanel.isResizing ? 'bg-white/20' : ''}`}
+        onMouseDown={leftPanel.startResizing}
       />
 
       {/* 2 & 3. 中间区域 + 右侧反馈，可拖拽分隔 */}
@@ -1556,15 +1242,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
         {/* 可拖拽分隔线 */}
         <div
-          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            setIsResizingRight(true);
-          }}
+          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${rightPanel.isResizing ? 'bg-white/20' : ''}`}
+          onMouseDown={rightPanel.startResizing}
         />
 
         {/* 右侧：反馈侧边栏 */}
-        <div style={{ width: rightPanelWidth }} className="border-l border-white/5 bg-[#121212] flex flex-col">
+        <div style={{ width: rightPanel.width }} className="border-l border-white/5 bg-[#121212] flex flex-col">
           <div className="p-4 border-b border-white/5 flex items-center justify-between">
             <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">审核反馈</span>
             <MessageSquare size={16} className="text-white/20" />
