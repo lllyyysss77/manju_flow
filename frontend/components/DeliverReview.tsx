@@ -14,6 +14,8 @@ import {
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
 import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { CommentItem } from './CommentItem';
+import { Toast, useToast } from './Toast';
+import { ChapterTabBar } from './ChapterTabBar';
 
 type ChapterVideoDetail = ChapterVideo & { versionCount?: number };
 
@@ -49,7 +51,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [loadError, setLoadError] = useState(false);
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const { toast, showToast, hideToast } = useToast();
   const [approving, setApproving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [originalProgress, setOriginalProgress] = useState<number | null>(null);
@@ -116,7 +118,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         setResolvedPreviewUrl(resolvedPreview || undefined);
       } catch (err) {
         console.error('Failed to load chapter video', err);
-        setToast({ message: '章节交付视频加载失败', tone: 'error' });
+        showToast('章节交付视频加载失败', 'error');
       } finally {
         setLoadingVideo(false);
         setLoadError(false);
@@ -183,12 +185,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       videoRef.current.load();
     }
   }, [playbackSource]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const handleSeek = (time: number) => {
     const duration = videoRef.current?.duration;
@@ -285,7 +281,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     if (!activeChapter?.id) return;
     const { content, meta } = extractCommentPayload(commentDraft);
     if (!content) {
-      setToast({ message: '请输入评论内容', tone: 'error' });
+      showToast('请输入评论内容', 'error');
       return;
     }
     setPostingComment(true);
@@ -296,7 +292,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       commentDraftRef.current = '';
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
     } finally {
       setPostingComment(false);
     }
@@ -308,7 +304,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '更新评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
       throw err;
     }
   };
@@ -319,7 +315,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       setComments(prev => prev.filter(c => c.id !== commentId));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '删除评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
       throw err;
     }
   };
@@ -394,11 +390,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         bitrate,
       }));
       setResolvedVideoUrl(resolved || key);
-      setToast({ message: `原始视频已上传 · 新版本 #${version.version}`, tone: 'success' });
+      showToast(`原始视频已上传 · 新版本 #${version.version}`, 'success');
       fetchVideoData(activeChapter.id);
     } catch (err) {
       console.error('Upload original video failed', err);
-      setToast({ message: '上传原始视频失败，请重试', tone: 'error' });
+      showToast('上传原始视频失败，请重试', 'error');
     } finally {
       setUploadingOriginal(false);
       setOriginalProgress(null);
@@ -425,11 +421,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     setLoadingVideo(true);
     try {
       await videoApi.revert(activeChapter.id, version);
-      setToast({ message: `已切换到版本 #${version}`, tone: 'success' });
+      showToast(`已切换到版本 #${version}`, 'success');
       await fetchVideoData(activeChapter.id);
     } catch (err) {
       console.error('Revert video failed', err);
-      setToast({ message: '回滚失败，请重试', tone: 'error' });
+      showToast('回滚失败，请重试', 'error');
     } finally {
       setLoadingVideo(false);
       setVersionMenuOpen(false);
@@ -439,7 +435,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const handleDownloadOriginal = async () => {
     const raw = videoDetail?.videoUrl || resolvedVideoUrl || videoUrl;
     if (!raw) {
-      setToast({ message: '暂无可下载的原始视频', tone: 'error' });
+      showToast('暂无可下载的原始视频', 'error');
       return;
     }
     setDownloading(true);
@@ -448,7 +444,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       // 只使用已 resolve 的 URL 或有效的原始 URL
       const downloadUrl = resolved || (isValidMediaUrl(raw) ? raw : '');
       if (!downloadUrl) {
-        setToast({ message: '无法解析视频地址', tone: 'error' });
+        showToast('无法解析视频地址', 'error');
         return;
       }
       const link = document.createElement('a');
@@ -460,7 +456,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       document.body.removeChild(link);
     } catch (err) {
       console.error('Download original failed', err);
-      setToast({ message: '下载失败，请稍后重试', tone: 'error' });
+      showToast('下载失败，请稍后重试', 'error');
     } finally {
       setDownloading(false);
     }
@@ -468,22 +464,22 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const handleApprove = async () => {
     if (!bookId || !activeChapter?.id) {
-      setToast({ message: '缺少书籍或章节信息，无法批准定稿', tone: 'error' });
+      showToast('缺少书籍或章节信息，无法批准定稿', 'error');
       return;
     }
     if (activeChapter.status === 'COMPLETED') {
-      setToast({ message: '该章节已定稿，无需重复操作', tone: 'success' });
+      showToast('该章节已定稿，无需重复操作', 'success');
       return;
     }
     setApproving(true);
     try {
       await videoApi.updateStatus(activeChapter.id, { status: 'READY' });
       await chapterApi.update(bookId, activeChapter.id, { status: 'COMPLETED' });
-      setToast({ message: '章节已批准定稿', tone: 'success' });
+      showToast('章节已批准定稿', 'success');
       await fetchVideoData(activeChapter.id);
     } catch (err) {
       console.error('Approve final failed', err);
-      setToast({ message: '批准失败，请重试', tone: 'error' });
+      showToast('批准失败，请重试', 'error');
     } finally {
       setApproving(false);
     }
@@ -506,42 +502,18 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         className="hidden"
         onChange={(e) => handleUploadOriginal(e.target.files?.[0])}
       />
-      {toast && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <div
-            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
-              toast.tone === 'success'
-                ? 'bg-green-500/20 border-green-500/40 text-green-100'
-                : 'bg-red-500/20 border-red-500/40 text-red-100'
-            }`}
-          >
-            {toast.message}
-          </div>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
       {/* 顶部章节切换，与其他模块保持一致 */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
-          {chapterList.map((ch, cIdx) => (
-            <button
-              key={ch.id}
-              onClick={() => {
-                setActiveChapterIndex(cIdx);
-                setIsPlaying(false);
-                setCurrentTime(0);
-              }}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl border transition-all text-left min-w-[180px] ${
-                activeChapterIndex === cIdx
-                  ? 'bg-blue-600/20 border-blue-500/40 text-white shadow-[0_0_20px_rgba(59,130,246,0.35)]'
-                  : 'bg-[#0f0f0f] border-white/10 text-white/60 hover:border-white/30 hover:text-white'
-              }`}
-            >
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">章节 {cIdx + 1}</div>
-              <div className="text-sm font-semibold line-clamp-1">{ch.title || '未命名章节'}</div>
-              <div className="text-[11px] text-white/40 mt-1">场景 {ch.scenes?.length || 0} 个</div>
-            </button>
-          ))}
-        </div>
+        <ChapterTabBar
+          chapters={chapterList}
+          activeChapterId={activeChapter?.id ?? null}
+          onSelectChapter={(_, idx) => {
+            setActiveChapterIndex(idx);
+            setIsPlaying(false);
+            setCurrentTime(0);
+          }}
+        />
       </div>
 
       <div className="flex-1 flex overflow-hidden">
