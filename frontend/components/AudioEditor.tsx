@@ -20,11 +20,12 @@ import {
   Camera,
   Plus,
   Pencil,
-  Trash2
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
-import { DEFAULT_SCENE_THUMB } from '../constants';
+import { DEFAULT_SCENE_THUMB, STATUS_MAP } from '../constants';
 import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
