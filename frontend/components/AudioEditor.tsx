@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Scene } from '../types';
-import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { ensureHttpsUrl, fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
   ChevronLeft,
@@ -30,6 +30,7 @@ import { ChapterTabBar } from './ChapterTabBar';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface AudioEditorProps {
+  bookId?: number;
   episode?: Episode;
   episodes?: Episode[];
   // 跨模块状态同步
@@ -43,6 +44,7 @@ type AudioVersion = ApiAudioVersion;
 type SceneAudioTrack = ApiSceneAudio;
 
 export const AudioEditor: React.FC<AudioEditorProps> = ({
+  bookId,
   episode,
   episodes,
   initialChapterId,
@@ -176,6 +178,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  // 场景评论数映射 (sceneId -> count)
+  const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -428,6 +432,16 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       });
     });
   }, [sortedScenes, resolveFileUrl]);
+
+  // 获取场景评论数
+  useEffect(() => {
+    if (!bookId) return;
+    commentApi.getSceneCommentCounts(bookId, 'audio').then(res => {
+      setSceneCommentCounts(res.data || {});
+    }).catch(err => {
+      console.error('Failed to fetch comment counts', err);
+    });
+  }, [bookId]);
 
   useEffect(() => {
     const current = audioTracks.find(t => t.id === selectedAudioId);
@@ -772,6 +786,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     try {
       await addComment(content);
       setCommentDraft('');
+      // 更新评论数
+      setSceneCommentCounts(prev => ({
+        ...prev,
+        [activeScene.id]: (prev[activeScene.id] || 0) + 1
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
       showToast(msg, 'error');
@@ -837,14 +856,15 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
-                  #{displayNumber}
+                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono flex items-center justify-between">
+                  <span>#{displayNumber}</span>
+                  {sceneCommentCounts[scene.id] > 0 && (
+                    <span className="flex items-center gap-0.5 text-yellow-300/90" title={`${sceneCommentCounts[scene.id]} 条评论`}>
+                      <MessageSquare size={8} />
+                      <span>{sceneCommentCounts[scene.id]}</span>
+                    </span>
+                  )}
                 </div>
-                {scene.status === 'COMPLETED' && (
-                  <div className="absolute top-1 right-1">
-                    <CheckCircle2 size={10} className="text-green-500 shadow-sm" />
-                  </div>
-                )}
               </button>
             );
             })

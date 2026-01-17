@@ -76,6 +76,8 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [postingComment, setPostingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
   const commentDraftRef = useRef('');
+  // 章节评论数映射 (chapterId -> count)
+  const [chapterCommentCounts, setChapterCommentCounts] = useState<Record<number, number>>({});
 
   const resolveFileUrl = useCallback(
     async (raw?: string | null) => {
@@ -174,6 +176,16 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       cancelled = true;
     };
   }, [activeChapter?.id]);
+
+  // 获取章节评论数
+  useEffect(() => {
+    if (!bookId) return;
+    commentApi.getChapterCommentCounts(bookId).then(res => {
+      setChapterCommentCounts(res.data || {});
+    }).catch(err => {
+      console.error('Failed to fetch chapter comment counts', err);
+    });
+  }, [bookId]);
 
   useEffect(() => {
     setLoadError(false);
@@ -290,6 +302,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       setComments(prev => [created, ...prev]);
       setCommentDraft('');
       commentDraftRef.current = '';
+      // 更新评论数
+      setChapterCommentCounts(prev => ({
+        ...prev,
+        [activeChapter.id]: (prev[activeChapter.id] || 0) + 1
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
       showToast(msg, 'error');
@@ -513,6 +530,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
             setIsPlaying(false);
             setCurrentTime(0);
           }}
+          commentCounts={chapterCommentCounts}
         />
       </div>
 

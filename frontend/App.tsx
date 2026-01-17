@@ -488,6 +488,7 @@ const App: React.FC = () => {
         case ProductionStage.ANIMATE:
           return selectedProject.episodes.length > 0 ? (
             <AnimationEditor
+              bookId={selectedProject.id}
               episodes={selectedProject.episodes}
               initialChapterId={activeChapterId}
               initialSceneId={activeSceneId}
@@ -500,6 +501,7 @@ const App: React.FC = () => {
         case ProductionStage.AUDIO:
           return selectedProject.episodes.length > 0 ? (
             <AudioEditor
+              bookId={selectedProject.id}
               episodes={selectedProject.episodes}
               initialChapterId={activeChapterId}
               initialSceneId={activeSceneId}

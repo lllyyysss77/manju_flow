@@ -161,6 +161,9 @@ func Setup(r *gin.Engine) {
 
 			// 评论路由
 			commentHandler := handlers.NewCommentHandler()
+			// 评论数统计（用于显示徽章）
+			authorized.GET("/books/:bookId/scenes/comment-counts", commentHandler.GetSceneCommentCounts)     // 场景评论数
+			authorized.GET("/books/:bookId/chapters/comment-counts", commentHandler.GetChapterCommentCounts) // 章节评论数
 			// 场景评论（剧本创作、分镜绘制、动画制作、音频后期）
 			sceneComments := authorized.Group("/scenes/:sceneId/comments")
 			{

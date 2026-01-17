@@ -18,7 +18,7 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi, isValidMediaUrl } from '../api';
+import { chapterApi, sceneApi, fileApi, commentApi, isValidMediaUrl } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { STATUS_MAP } from '../constants';
@@ -592,6 +592,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // ============ 保留的独立 useState (表单输入 + UI 状态) ============
   const [commentDraft, setCommentDraft] = useState('');
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  // 场景评论数映射 (sceneId -> count)
+  const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
   const [confirmDelete, setConfirmDelete] = useState<{
     type: 'chapter' | 'scene';
     chapterId: number;
@@ -630,6 +632,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   useEffect(() => {
     loadChapters();
   }, [loadChapters]);
+
+  // 获取场景评论数
+  useEffect(() => {
+    if (!bookId) return;
+    commentApi.getSceneCommentCounts(bookId, 'script').then(res => {
+      setSceneCommentCounts(res.data || {});
+    }).catch(err => {
+      console.error('Failed to fetch comment counts', err);
+    });
+  }, [bookId]);
 
   useEffect(() => {
     resolveReferenceImage(activeScene?.referenceImageUrl);
@@ -762,6 +774,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     try {
       await addComment(content);
       setCommentDraft('');
+      // 更新评论数
+      if (activeScene?.id) {
+        setSceneCommentCounts(prev => ({
+          ...prev,
+          [activeScene.id]: (prev[activeScene.id] || 0) + 1
+        }));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
       setToast({ message: msg, tone: 'error' });
@@ -1023,6 +1042,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                     场景 {sceneIdx + 1}
                                   </span>
                                   <div className="flex items-center gap-2">
+                                    {sceneCommentCounts[scene.id] > 0 && (
+                                      <span className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded ${
+                                        activeScene?.id === scene.id ? 'bg-yellow-500/30 text-yellow-200' : 'bg-yellow-500/20 text-yellow-300/80'
+                                      }`} title={`${sceneCommentCounts[scene.id]} 条评论`}>
+                                        <MessageSquare size={10} />
+                                        {sceneCommentCounts[scene.id]}
+                                      </span>
+                                    )}
                                     <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
                                       activeScene?.id === scene.id ? 'bg-white/20 border-white/20 text-white' : 'bg-white/5 border-white/10 text-white/20'
                                     }`}>
