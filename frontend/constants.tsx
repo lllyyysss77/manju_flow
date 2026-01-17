@@ -8,7 +8,7 @@ import {
   CheckSquare,
   BookOpen
 } from 'lucide-react';
-import { ProductionStage } from './types';
+import { ProductionStage, Status } from './types';
 
 export const STAGE_CONFIG = [
   { stage: ProductionStage.OUTLINE, label: '大纲人设', icon: <BookOpen size={20} /> },
@@ -19,66 +19,13 @@ export const STAGE_CONFIG = [
   { stage: ProductionStage.REVIEW, label: '审核交付', icon: <CheckSquare size={20} /> },
 ];
 
-export const MOCK_PROJECTS = [
-  {
-    id: 1,
-    title: '仙剑遗志',
-    author: '林枫',
-    cover: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop',
-    originalWorkType: 'NOVEL' as const,
-    productionStatus: 'IN_PROGRESS' as const,
-    assignedWriter: '陈艾利克斯',
-    assignedArtist: '老王',
-    episodes: [
-      {
-        id: 1,
-        title: '第一话：觉醒',
-        status: 'IN_PROGRESS' as const,
-        scenes: [
-          {
-            id: 1,
-            index: 1,
-            description: '主角眼睛睁开的特写。蓝色灵力流动。',
-            cameraMovement: '大特写',
-            dialogue: '我... 我回来了？',
-            status: 'COMPLETED' as const,
-            comments: [],
-            startFrameUrl: 'https://picsum.photos/seed/sc1s/800/450',
-            clipUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-          },
-          {
-            id: 2,
-            index: 2,
-            description: '镜头拉远，展示古老尘封的寺庙全景。',
-            cameraMovement: '全景',
-            dialogue: '',
-            status: 'IN_PROGRESS' as const,
-            comments: [
-              { id: 'c1', author: '主编', text: '寺庙应该看起来更破败一些。', timestamp: '2024-05-20' }
-            ],
-            startFrameUrl: 'https://picsum.photos/seed/temple/800/450',
-            endFrameUrl: 'https://picsum.photos/seed/temple2/800/450'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 2,
-    title: '攻壳机动',
-    author: '田中',
-    cover: 'https://images.unsplash.com/photo-1614728263952-84ea256f9679?q=80&w=1000&auto=format&fit=crop',
-    originalWorkType: 'COMIC' as const,
-    productionStatus: 'DRAFT' as const,
-    episodes: []
-  },
-  {
-    id: 3,
-    title: '龙族之怒',
-    author: '江南',
-    cover: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1000&auto=format&fit=crop',
-    originalWorkType: 'NOVEL' as const,
-    productionStatus: 'COMPLETED' as const,
-    episodes: []
-  }
-];
+/** 状态中文映射 */
+export const STATUS_MAP: Record<Status, string> = {
+  DRAFT: '草稿',
+  IN_PROGRESS: '进行中',
+  COMPLETED: '已完成'
+};
+
+/** 默认场景占位图 (SVG data URL) */
+export const DEFAULT_SCENE_THUMB =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="%23212121" offset="0%"/><stop stop-color="%230d0d0d" offset="100%"/></linearGradient></defs><rect width="320" height="180" fill="url(%23g)"/><rect x="18" y="18" width="284" height="144" rx="18" ry="18" stroke="%23333333" stroke-width="4" fill="none"/><path d="M70 120h180M140 76l-26 44m96-44l26 44" stroke="%23555555" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="118" cy="84" r="12" fill="none" stroke="%23707070" stroke-width="4"/><text x="160" y="152" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="%23666666">SCENE PREVIEW</text></svg>';
