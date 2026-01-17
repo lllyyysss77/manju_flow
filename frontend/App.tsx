@@ -1,14 +1,8 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, Suspense, lazy } from 'react';
 import { ProductionStage, Project, Episode } from './types';
 import { STAGE_CONFIG, STATUS_MAP } from './constants';
 import { StageWrapper } from './components/StageWrapper';
-import { OutlineEditor } from './components/OutlineEditor';
-import { ScriptEditor } from './components/ScriptEditor';
-import { DeliverReview } from './components/DeliverReview';
-import { StoryboardEditor } from './components/StoryboardEditor';
-import { AnimationEditor } from './components/AnimationEditor';
-import { AudioEditor } from './components/AudioEditor';
 import { ImportBookModal } from './components/ImportBookModal';
 import { authApi, authStorage, bookApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
@@ -27,6 +21,24 @@ import {
   Pencil,
   Trash2
 } from 'lucide-react';
+
+// 懒加载编辑器组件 - 按需加载减少首屏体积
+const OutlineEditor = lazy(() => import('./components/OutlineEditor').then(m => ({ default: m.OutlineEditor })));
+const ScriptEditor = lazy(() => import('./components/ScriptEditor').then(m => ({ default: m.ScriptEditor })));
+const StoryboardEditor = lazy(() => import('./components/StoryboardEditor').then(m => ({ default: m.StoryboardEditor })));
+const AnimationEditor = lazy(() => import('./components/AnimationEditor').then(m => ({ default: m.AnimationEditor })));
+const AudioEditor = lazy(() => import('./components/AudioEditor').then(m => ({ default: m.AudioEditor })));
+const DeliverReview = lazy(() => import('./components/DeliverReview').then(m => ({ default: m.DeliverReview })));
+
+// 编辑器加载占位组件
+const EditorLoading: React.FC = () => (
+  <div className="flex items-center justify-center h-full bg-[#0f0f0f]">
+    <div className="flex flex-col items-center gap-4">
+      <Loader2 size={32} className="text-blue-500 animate-spin" />
+      <span className="text-white/40 text-sm font-medium">加载编辑器...</span>
+    </div>
+  </div>
+);
 
 const BUILD_VERSION = __APP_VERSION__ || 'dev';
 const BUILD_TIME = (() => {
@@ -557,7 +569,9 @@ const App: React.FC = () => {
         {/* 模块主视图 */}
         <div className="flex-1 overflow-hidden">
           <StageWrapper title={`${STAGE_CONFIG.find(s => s.stage === currentStage)?.label}`}>
-            {renderContent()}
+            <Suspense fallback={<EditorLoading />}>
+              {renderContent()}
+            </Suspense>
           </StageWrapper>
         </div>
 
