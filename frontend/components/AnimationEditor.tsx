@@ -18,7 +18,8 @@ import {
   Plus,
   Pencil,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -1131,7 +1132,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
                       {displayClipUrl ? (
                         <>
-                          <video 
+                          <video
                             ref={videoRef}
                             src={playbackUrl}
                             className="w-full h-full object-contain"
@@ -1139,6 +1140,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             onPause={() => setIsPlaying(false)}
                             onClick={togglePlay}
                           />
+                          {/* 下载按钮 - 右上角 */}
+                          {playbackUrl && (
+                            <a
+                              href={playbackUrl}
+                              download
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white border border-white/10 transition-all opacity-0 group-hover:opacity-100"
+                              title="下载视频"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <Download size={18} />
+                            </a>
+                          )}
                           {!isPlaying && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={togglePlay}>
                               <div className="p-5 rounded-full bg-blue-600 text-white shadow-xl scale-100 group-hover:scale-110 transition-transform">

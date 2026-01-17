@@ -19,6 +19,7 @@ import {
   Trash2,
   X,
   CheckCircle2,
+  Download,
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -1103,14 +1104,27 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 onClick={() => openImagePreview(startDisplayUrl, '起始帧预览')}
                                 alt="起始帧预览"
                               />
-                              <button
-                                type="button"
-                                onClick={() => startInputRef.current?.click()}
-                                className="absolute top-2 right-2 px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
-                                disabled={uploading.start}
-                              >
-                                {uploading.start ? '上传中...' : '重新上传'}
-                              </button>
+                              <div className="absolute top-2 right-2 flex items-center gap-2">
+                                <a
+                                  href={startDisplayUrl}
+                                  download
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
+                                  title="下载起始帧"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <Download size={14} />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => startInputRef.current?.click()}
+                                  className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                                  disabled={uploading.start}
+                                >
+                                  {uploading.start ? '上传中...' : '重新上传'}
+                                </button>
+                              </div>
                               {selectedFrameSet?.startFrameVersion ? (
                                 <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
                                   版本 #{selectedFrameSet.startFrameVersion}
@@ -1176,14 +1190,27 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 onClick={() => openImagePreview(endDisplayUrl, '结束帧预览')}
                                 alt="结束帧预览"
                               />
-                              <button
-                                type="button"
-                                onClick={() => endInputRef.current?.click()}
-                                className="absolute top-2 right-2 px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
-                                disabled={uploading.end}
-                              >
-                                {uploading.end ? '上传中...' : '重新上传'}
-                              </button>
+                              <div className="absolute top-2 right-2 flex items-center gap-2">
+                                <a
+                                  href={endDisplayUrl}
+                                  download
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
+                                  title="下载结束帧"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <Download size={14} />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => endInputRef.current?.click()}
+                                  className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                                  disabled={uploading.end}
+                                >
+                                  {uploading.end ? '上传中...' : '重新上传'}
+                                </button>
+                              </div>
                               {selectedFrameSet?.endFrameVersion ? (
                                 <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
                                   版本 #{selectedFrameSet.endFrameVersion}

@@ -21,6 +21,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Download,
   CheckCircle2
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
@@ -1272,6 +1273,19 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                             </div>
                             <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
                           </div>
+                          {/* 下载按钮 */}
+                          {playbackAudioUrl && (
+                            <a
+                              href={playbackAudioUrl}
+                              download
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
+                              title="下载音频"
+                            >
+                              <Download size={16} />
+                            </a>
+                          )}
                         </div>
                         <audio
                           ref={audioRef}
