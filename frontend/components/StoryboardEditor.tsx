@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, SceneFrameSet, SceneFrameSetVersion } from '../types';
-import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl } from '../api';
+import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey } from '../api';
 import {
   MessageSquare,
   Upload,
