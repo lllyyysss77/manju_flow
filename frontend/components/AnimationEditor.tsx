@@ -389,6 +389,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setResolvedVideoUrl(undefined);
       return;
     }
+    // 确保 selectedAnimationId 属于当前场景的 animations 列表
+    // 避免场景切换时使用旧场景的 animation ID 调用新场景的 API
+    const isValidAnimation = animations.some(a => a.id === selectedAnimationId);
+    if (!isValidAnimation) {
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       setAnimationError(null);
@@ -407,7 +413,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, selectedAnimationId, resolveVersions]);
+  }, [activeScene?.id, selectedAnimationId, animations, resolveVersions]);
 
   useEffect(() => {
     const current = animations.find(a => a.id === selectedAnimationId);

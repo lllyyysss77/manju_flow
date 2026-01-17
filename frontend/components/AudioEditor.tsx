@@ -384,10 +384,15 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setVersionMenuOpen(false);
       return;
     }
+    // 确保 selectedAudioId 属于当前场景的 audioTracks 列表
+    // 避免场景切换时使用旧场景的 audio ID 调用新场景的 API
+    const currentTrack = audioTracks.find(t => t.id === selectedAudioId);
+    if (!currentTrack) {
+      return;
+    }
     let cancelled = false;
     setAudioError(null);
     setPreviewPlayingVersion(null);
-    const currentTrack = audioTracks.find(t => t.id === selectedAudioId);
     const loadVersions = async () => {
       setResolvingVersion(true);
       try {
