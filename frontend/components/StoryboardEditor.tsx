@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, SceneFrameSet, SceneFrameSetVersion } from '../types';
-import { fileApi, sceneApi, storyboardApi, isValidMediaUrl } from '../api';
+import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -197,6 +197,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
+  // 场景评论数映射 (sceneId -> count)
+  const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -282,6 +284,16 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       });
     });
   }, [sortedScenes, resolveFileUrl]);
+
+  // 获取场景评论数
+  useEffect(() => {
+    if (!bookId) return;
+    commentApi.getSceneCommentCounts(bookId, 'storyboard').then(res => {
+      setSceneCommentCounts(res.data || {});
+    }).catch(err => {
+      console.error('Failed to fetch comment counts', err);
+    });
+  }, [bookId]);
 
   const primeVersionCache = useCallback(async (items: SceneFrameSetVersion[]) => {
     const entries = await Promise.all(
@@ -546,6 +558,11 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     try {
       await addComment(content);
       setCommentDraft('');
+      // 更新评论数
+      setSceneCommentCounts(prev => ({
+        ...prev,
+        [activeScene.id]: (prev[activeScene.id] || 0) + 1
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
       showToast(msg, 'error');
@@ -724,8 +741,14 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                   SCENE {displayNumber}
                 </div>
               )}
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono">
-                #{displayNumber}
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono flex items-center justify-between">
+                <span>#{displayNumber}</span>
+                {sceneCommentCounts[scene.id] > 0 && (
+                  <span className="flex items-center gap-0.5 text-yellow-300/90" title={`${sceneCommentCounts[scene.id]} 条评论`}>
+                    <MessageSquare size={8} />
+                    <span>{sceneCommentCounts[scene.id]}</span>
+                  </span>
+                )}
               </div>
               {scene.status === 'COMPLETED' && (
                 <div className="absolute top-1 right-1">

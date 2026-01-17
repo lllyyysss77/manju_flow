@@ -717,6 +717,10 @@ export interface UpdateCommentPayload {
   meta?: string;
 }
 
+export interface CommentCountsResponse {
+  data: Record<number, number>;
+}
+
 export const commentApi = {
   listScene: (sceneId: number, module: SceneCommentModule) =>
     request<CommentListResponse>(`/api/scenes/${sceneId}/comments?module=${module}`),
@@ -740,6 +744,11 @@ export const commentApi = {
     request(`/api/comments/${id}`, {
       method: 'DELETE',
     }),
+  // 评论数统计（用于显示徽章）
+  getSceneCommentCounts: (bookId: number, module: SceneCommentModule) =>
+    request<CommentCountsResponse>(`/api/books/${bookId}/scenes/comment-counts?module=${module}`),
+  getChapterCommentCounts: (bookId: number) =>
+    request<CommentCountsResponse>(`/api/books/${bookId}/chapters/comment-counts`),
 };
 
 // 角色人设 API

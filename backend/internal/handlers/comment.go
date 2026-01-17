@@ -382,6 +382,139 @@ func (h *CommentHandler) GetByID(c *gin.Context) {
 	c.JSON(http.StatusOK, comment)
 }
 
+// GetSceneCommentCounts 批量获取书籍下所有场景的评论数
+// @Summary 获取场景评论数
+// @Description 批量获取指定书籍下所有场景在指定模块的评论数量
+// @Tags comments
+// @Accept json
+// @Produce json
+// @Param bookId path int true "书籍ID"
+// @Param module query string true "模块" Enums(script, storyboard, animation, audio)
+// @Success 200 {object} map[string]interface{}
+// @Router /api/books/{bookId}/scenes/comment-counts [get]
+func (h *CommentHandler) GetSceneCommentCounts(c *gin.Context) {
+	bookId := c.Param("bookId")
+	module := c.Query("module")
+
+	// 验证模块参数
+	if !isValidSceneModule(module) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid module, must be one of: script, storyboard, animation, audio",
+		})
+		return
+	}
+
+	db := database.GetDB()
+
+	// 验证书籍存在
+	var book models.Book
+	if err := db.First(&book, bookId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	// 获取该书籍下所有场景的评论数
+	// 使用子查询获取场景ID，然后统计评论数
+	type CountResult struct {
+		TargetID uint  `json:"targetId"`
+		Count    int64 `json:"count"`
+	}
+
+	var results []CountResult
+	err := db.Model(&models.Comment{}).
+		Select("target_id, COUNT(*) as count").
+		Where("target_type = ? AND module = ?", models.CommentTargetScene, module).
+		Where("target_id IN (?)",
+			db.Model(&models.Scene{}).
+				Select("scenes.id").
+				Joins("JOIN chapters ON chapters.id = scenes.chapter_id").
+				Where("chapters.book_id = ?", bookId).
+				Where("chapters.deleted_at IS NULL").
+				Where("scenes.deleted_at IS NULL"),
+		).
+		Group("target_id").
+		Find(&results).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch comment counts",
+		})
+		return
+	}
+
+	// 转换为 map 格式
+	counts := make(map[uint]int64)
+	for _, r := range results {
+		counts[r.TargetID] = r.Count
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": counts,
+	})
+}
+
+// GetChapterCommentCounts 批量获取书籍下所有章节的评论数（审核交付）
+// @Summary 获取章节评论数
+// @Description 批量获取指定书籍下所有章节在审核交付模块的评论数量
+// @Tags comments
+// @Accept json
+// @Produce json
+// @Param bookId path int true "书籍ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/books/{bookId}/chapters/comment-counts [get]
+func (h *CommentHandler) GetChapterCommentCounts(c *gin.Context) {
+	bookId := c.Param("bookId")
+
+	db := database.GetDB()
+
+	// 验证书籍存在
+	var book models.Book
+	if err := db.First(&book, bookId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	// 获取该书籍下所有章节的评论数
+	type CountResult struct {
+		TargetID uint  `json:"targetId"`
+		Count    int64 `json:"count"`
+	}
+
+	var results []CountResult
+	err := db.Model(&models.Comment{}).
+		Select("target_id, COUNT(*) as count").
+		Where("target_type = ? AND module = ?", models.CommentTargetChapter, models.CommentModuleReview).
+		Where("target_id IN (?)",
+			db.Model(&models.Chapter{}).
+				Select("id").
+				Where("book_id = ?", bookId).
+				Where("deleted_at IS NULL"),
+		).
+		Group("target_id").
+		Find(&results).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch comment counts",
+		})
+		return
+	}
+
+	// 转换为 map 格式
+	counts := make(map[uint]int64)
+	for _, r := range results {
+		counts[r.TargetID] = r.Count
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": counts,
+	})
+}
+
 // isValidSceneModule 验证场景评论模块是否有效
 func isValidSceneModule(module string) bool {
 	switch models.CommentModule(module) {
