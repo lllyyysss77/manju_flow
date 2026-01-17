@@ -5,7 +5,6 @@ import { fileApi, sceneApi, storyboardApi, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
   Upload,
-  CheckCircle2,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -24,7 +23,11 @@ import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { useFileUrl } from './useFileUrl';
 import { usePanelResize } from './usePanelResize';
-import { STATUS_MAP, DEFAULT_SCENE_THUMB } from '../constants';
+import { DEFAULT_SCENE_THUMB } from '../constants';
+import { Toast, useToast } from './Toast';
+import { ChapterTabBar } from './ChapterTabBar';
+import { SceneThumbnailStrip } from './SceneThumbnailStrip';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 const computeFrameSetReorder = (
   list: SceneFrameSet[],
@@ -177,7 +180,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [draggingFrameSetId, setDraggingFrameSetId] = useState<number | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
   const [savingFrameSetOrder, setSavingFrameSetOrder] = useState(false);
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
+  const { toast, showToast, hideToast } = useToast();
   const [historyPanel, setHistoryPanel] = useState<{ type: 'start' | 'end'; open: boolean }>({ type: 'start', open: false });
   const [historySelection, setHistorySelection] = useState<{ start?: string; end?: string }>({});
   const [resolvedReference, setResolvedReference] = useState<string | undefined>();
@@ -197,12 +200,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
   const MAX_RIGHT = 520;
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     if (!isResizingLeft) return;
@@ -478,10 +475,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       if (type === 'start' && resolved) {
         setScenePreviewCache(prev => ({ ...prev, [activeScene.id]: resolved }));
       }
-      setToast({ message: `${type === 'start' ? '起始帧' : '结束帧'}已保存`, tone: 'success' });
+      showToast(`${type === 'start' ? '起始帧' : '结束帧'}已保存`, 'success');
     } catch (err) {
       console.error('Upload frame failed', err);
-      setToast({ message: '保存失败，请重试', tone: 'error' });
+      showToast('保存失败，请重试', 'error');
     } finally {
       setUploading(prev => ({ ...prev, [type]: false }));
       if (type === 'start' && startInputRef.current) startInputRef.current.value = '';
@@ -529,10 +526,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       }
       await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
       setHistorySelection({});
-      setToast({ message: '已切换到该版本', tone: 'success' });
+      showToast('已切换到该版本', 'success');
     } catch (err) {
       console.error('Failed to apply version', err);
-      setToast({ message: '切换失败，请重试', tone: 'error' });
+      showToast('切换失败，请重试', 'error');
     } finally {
       setUploading(prev => ({ ...prev, [type]: false }));
     }
@@ -542,7 +539,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     const content = commentDraft.trim();
     if (!activeScene?.id) return;
     if (!content) {
-      setToast({ message: '请输入评论内容', tone: 'info' });
+      showToast('请输入评论内容', 'info');
       return;
     }
     try {
@@ -550,7 +547,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       setCommentDraft('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
     }
   };
 
@@ -569,10 +566,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       setNewSetName('');
       setCreatingSet(false);
       await resolveFrameSetPreview(created, activeScene.id);
-      setToast({ message: '新帧集已创建', tone: 'success' });
+      showToast('新帧集已创建', 'success');
     } catch (err) {
       console.error('Create frame set failed', err);
-      setToast({ message: '创建帧集失败，请重试', tone: 'error' });
+      showToast('创建帧集失败，请重试', 'error');
       setStoryboardError(err instanceof Error ? err.message : '创建帧集失败');
     } finally {
       setLoadingStoryboard(false);
@@ -583,16 +580,16 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     if (!activeScene?.id || !selectedFrameSetId) return;
     const name = renameDraft.trim();
     if (!name) {
-      setToast({ message: '请输入帧集名称', tone: 'error' });
+      showToast('请输入帧集名称', 'error');
       return;
     }
     try {
       const updated = await storyboardApi.update(activeScene.id, selectedFrameSetId, { name });
       setFrameSets(prev => prev.map(fs => (fs.id === selectedFrameSetId ? { ...fs, ...updated } : fs)));
-      setToast({ message: '名称已更新', tone: 'success' });
+      showToast('名称已更新', 'success');
     } catch (err) {
       console.error('Rename frame set failed', err);
-      setToast({ message: '更新失败，请重试', tone: 'error' });
+      showToast('更新失败，请重试', 'error');
     }
   };
 
@@ -622,10 +619,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         const nextSet = nextList.find(fs => fs.id === nextActive);
         setRenameDraft(nextSet?.name || '');
       }
-      setToast({ message: '帧集已删除', tone: 'success' });
+      showToast('帧集已删除', 'success');
     } catch (err) {
       console.error('Delete frame set failed', err);
-      setToast({ message: '删除失败，请重试', tone: 'error' });
+      showToast('删除失败，请重试', 'error');
     } finally {
       setLoadingStoryboard(false);
     }
@@ -664,11 +661,11 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         );
         return [...merged].sort((a, b) => a.index - b.index);
       });
-      setToast({ message: '帧集顺序已更新', tone: 'success' });
+      showToast('帧集顺序已更新', 'success');
     } catch (err) {
       console.error('Reorder frame sets failed', err);
       setFrameSets(previous);
-      setToast({ message: '调整顺序失败，请重试', tone: 'error' });
+      showToast('调整顺序失败，请重试', 'error');
     } finally {
       setSavingFrameSetOrder(false);
       setDraggingFrameSetId(null);
@@ -692,43 +689,17 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#0f0f0f] relative">
-      {toast && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <div
-            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
-              toast.tone === 'success'
-                ? 'bg-green-500/20 border-green-500/40 text-green-100'
-                : toast.tone === 'error'
-                  ? 'bg-red-500/20 border-red-500/40 text-red-100'
-                  : 'bg-blue-500/20 border-blue-500/40 text-blue-100'
-            }`}
-          >
-            {toast.message}
-          </div>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
       {/* 顶部章节/场景切换条 */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
-          {chapterList.map((ch, cIdx) => (
-            <button
-              key={ch.id}
-              onClick={() => {
-                setActiveChapterIndex(cIdx);
-                setActiveSceneIndex(0);
-              }}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl border transition-all text-left min-w-[180px] ${
-                activeChapterIndex === cIdx
-                  ? 'bg-blue-600/20 border-blue-500/40 text-white shadow-[0_0_20px_rgba(59,130,246,0.35)]'
-                  : 'bg-[#0f0f0f] border-white/10 text-white/60 hover:border-white/30 hover:text-white'
-              }`}
-            >
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">章节 {cIdx + 1}</div>
-              <div className="text-sm font-semibold line-clamp-1">{ch.title || '未命名章节'}</div>
-              <div className="text-[11px] text-white/40 mt-1">场景 {ch.scenes?.length || 0} 个</div>
-            </button>
-          ))}
-        </div>
+        <ChapterTabBar
+          chapters={chapterList}
+          activeChapterId={activeEpisode?.id ?? null}
+          onSelectChapter={(_, idx) => {
+            setActiveChapterIndex(idx);
+            setActiveSceneIndex(0);
+          }}
+        />
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
@@ -773,35 +744,14 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
           </div>
         ) : (
         <>
-        {deleteTarget && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-[360px] rounded-2xl border border-white/10 bg-[#111111] shadow-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-white">
-                <div className="p-2 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
-                  <Trash2 size={16} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold">删除帧集</p>
-                  <p className="text-xs text-white/50">帧集「{deleteTarget.name || '未命名'}」的所有版本都会被清空，确认继续？</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => handleDeleteFrameSet(deleteTarget.id)}
-                  className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold border border-red-500/60 shadow-md"
-                >
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DeleteConfirmDialog
+          isOpen={!!deleteTarget}
+          title="删除帧集"
+          message="帧集「{name}」的所有版本都会被清空，确认继续？"
+          itemName={deleteTarget?.name || '未命名'}
+          onConfirm={() => deleteTarget && handleDeleteFrameSet(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+        />
         {storyboardError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
             <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">

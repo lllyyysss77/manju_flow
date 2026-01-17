@@ -4,7 +4,6 @@ import { Episode, Scene, SceneAnimation, SceneAnimationVersion } from '../types'
 import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
-  CheckCircle2,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -22,7 +21,10 @@ import {
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
-import { STATUS_MAP, DEFAULT_SCENE_THUMB } from '../constants';
+import { DEFAULT_SCENE_THUMB } from '../constants';
+import { Toast, useToast } from './Toast';
+import { ChapterTabBar } from './ChapterTabBar';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface AnimationEditorProps {
   episode?: Episode;
@@ -139,7 +141,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [animationError, setAnimationError] = useState<string | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoDragOver, setVideoDragOver] = useState(false);
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
+  const { toast, showToast, hideToast } = useToast();
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const urlCacheRef = useRef<Record<string, string>>({});
   useEffect(() => {
@@ -180,12 +182,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   } = useSceneComments(activeScene?.id, 'animation');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     if (!isResizingLeft) return;
@@ -388,7 +384,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         if (cancelled) return;
         console.error('Failed to load animation versions', err);
         setAnimationError(err instanceof Error ? err.message : '加载动画信息失败');
-        setToast({ message: '动画数据加载失败', tone: 'error' });
+        showToast('动画数据加载失败', 'error');
       }
     };
     load();
@@ -477,12 +473,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setResolvedVideoUrl(resolvedVersionUrl || resolvedUploadUrl || undefined);
       const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
       await resolveVersions(selectedAnimationId, versionsRes.data || []);
-      setToast({ message: '新动画版本已上传', tone: 'success' });
+      showToast('新动画版本已上传', 'success');
       setPreviewSource(null);
     } catch (err) {
       console.error('Upload animation failed', err);
       setAnimationError(err instanceof Error ? err.message : '上传失败，请重试');
-      setToast({ message: '上传失败，请重试', tone: 'error' });
+      showToast('上传失败，请重试', 'error');
     } finally {
       setUploadingVideo(false);
       if (videoInputRef.current) videoInputRef.current.value = '';
@@ -507,7 +503,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     if (!selectedAnimationId) return;
     const versionData = currentVersions.find(v => v.version === version);
     if (!versionData?.videoUrl) {
-      setToast({ message: '该版本缺少视频链接，无法预览', tone: 'error' });
+      showToast('该版本缺少视频链接，无法预览', 'error');
       return;
     }
     setPreviewSource({ url: versionData.videoUrl, version: versionData.version });
@@ -527,12 +523,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setResolvedVideoUrl(resolvedSceneUrl || (isValidMediaUrl(animation.animationUrl) ? animation.animationUrl : undefined));
       const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
       await resolveVersions(selectedAnimationId, versionsRes.data || []);
-      setToast({ message: `已回滚到版本 #${version}`, tone: 'success' });
+      showToast(`已回滚到版本 #${version}`, 'success');
       setPreviewSource(null);
     } catch (err) {
       console.error('Revert animation failed', err);
       setAnimationError(err instanceof Error ? err.message : '回滚失败，请重试');
-      setToast({ message: '回滚失败，请重试', tone: 'error' });
+      showToast('回滚失败，请重试', 'error');
     } finally {
       setLoadingAnimation(false);
       setIsPlaying(false);
@@ -555,11 +551,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setCreatingClip(false);
       setVersionMenuOpen(false);
       setPreviewSource(null);
-      setToast({ message: '已创建动画片段，上传版本以开始', tone: 'success' });
+      showToast('已创建动画片段，上传版本以开始', 'success');
     } catch (err) {
       console.error('Create animation failed', err);
       setAnimationError(err instanceof Error ? err.message : '创建动画片段失败');
-      setToast({ message: '创建动画片段失败，请重试', tone: 'error' });
+      showToast('创建动画片段失败，请重试', 'error');
     } finally {
       setLoadingAnimation(false);
     }
@@ -569,16 +565,16 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     if (!activeScene?.id || !selectedAnimationId) return;
     const name = renameDraft.trim();
     if (!name) {
-      setToast({ message: '请输入动画名称', tone: 'error' });
+      showToast('请输入动画名称', 'error');
       return;
     }
     try {
       const updated = await animationApi.update(activeScene.id, selectedAnimationId, { name });
       setAnimations(prev => prev.map(a => (a.id === selectedAnimationId ? { ...a, ...updated } : a)));
-      setToast({ message: '名称已更新', tone: 'success' });
+      showToast('名称已更新', 'success');
     } catch (err) {
       console.error('Rename animation failed', err);
-      setToast({ message: '更新失败，请重试', tone: 'error' });
+      showToast('更新失败，请重试', 'error');
     }
   };
 
@@ -601,11 +597,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setVersionMenuOpen(false);
       setPreviewSource(null);
       setDeleteTarget(null);
-      setToast({ message: '动画片段已删除', tone: 'success' });
+      showToast('动画片段已删除', 'success');
     } catch (err) {
       console.error('Delete animation failed', err);
       setAnimationError(err instanceof Error ? err.message : '删除动画失败');
-      setToast({ message: '删除动画失败，请重试', tone: 'error' });
+      showToast('删除动画失败，请重试', 'error');
     } finally {
       setLoadingAnimation(false);
       setIsPlaying(false);
@@ -616,7 +612,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const content = commentDraft.trim();
     if (!activeScene?.id) return;
     if (!content) {
-      setToast({ message: '请输入评论内容', tone: 'info' });
+      showToast('请输入评论内容', 'info');
       return;
     }
     try {
@@ -624,7 +620,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setCommentDraft('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
     }
   };
 
@@ -635,7 +631,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     } else {
       videoRef.current.play().catch(err => {
         console.error('Video play failed', err);
-        setToast({ message: '无法播放该视频，请检查链接', tone: 'error' });
+        showToast('无法播放该视频，请检查链接', 'error');
       });
     }
     setIsPlaying(prev => !prev);
@@ -691,44 +687,18 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           </div>
         </div>
       )}
-      {toast && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <div
-            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
-              toast.tone === 'success'
-                ? 'bg-green-500/20 border-green-500/40 text-green-100'
-                : toast.tone === 'error'
-                  ? 'bg-red-500/20 border-red-500/40 text-red-100'
-                  : 'bg-blue-500/20 border-blue-500/40 text-blue-100'
-            }`}
-          >
-            {toast.message}
-          </div>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
       {/* 顶部：章节选择 + 场景切换（与分镜风格保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
-          {normalizedChapters.map((ch, cIdx) => (
-            <button
-              key={ch.id}
-              onClick={() => {
-                setActiveChapterId(ch.id);
-                setActiveSceneIndex(0);
-                setIsPlaying(false);
-              }}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl border transition-all text-left min-w-[180px] ${
-                activeChapterId === ch.id
-                  ? 'bg-blue-600/20 border-blue-500/40 text-white shadow-[0_0_20px_rgba(59,130,246,0.35)]'
-                  : 'bg-[#0f0f0f] border-white/10 text-white/60 hover:border-white/30 hover:text-white'
-              }`}
-            >
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">章节 {cIdx + 1}</div>
-              <div className="text-sm font-semibold line-clamp-1">{ch.title || '未命名章节'}</div>
-              <div className="text-[11px] text-white/40 mt-1">场景 {ch.scenes?.length || 0} 个</div>
-            </button>
-          ))}
-        </div>
+        <ChapterTabBar
+          chapters={normalizedChapters}
+          activeChapterId={activeChapterId}
+          onSelectChapter={(chapterId) => {
+            setActiveChapterId(chapterId);
+            setActiveSceneIndex(0);
+            setIsPlaying(false);
+          }}
+        />
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.length === 0 ? (
             <div className="text-white/30 text-xs px-2">该章节暂无场景</div>
@@ -800,35 +770,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           </div>
         ) : (
           <>
-        {deleteTarget && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-[360px] rounded-2xl border border-white/10 bg-[#111111] shadow-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-white">
-                <div className="p-2 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
-                  <Trash2 size={16} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold">删除动画片段</p>
-                  <p className="text-xs text-white/50">片段「{deleteTarget.name || '未命名'}」的所有版本将被清空，确认继续？</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => handleDeleteClip(deleteTarget.id)}
-                  className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold border border-red-500/60 shadow-md"
-                >
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DeleteConfirmDialog
+          isOpen={!!deleteTarget}
+          title="删除动画片段"
+          message="片段「{name}」的所有版本将被清空，确认继续？"
+          itemName={deleteTarget?.name || '未命名'}
+          onConfirm={() => deleteTarget && handleDeleteClip(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+        />
         {/* 左侧：剧本参考区（与分镜风格统一） */}
         <div
           style={{ width: leftPanelWidth }}

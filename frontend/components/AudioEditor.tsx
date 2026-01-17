@@ -3,7 +3,6 @@ import { Episode, Scene } from '../types';
 import { ensureHttpsUrl, fileApi, audioApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Info,
@@ -25,7 +24,10 @@ import {
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
-import { STATUS_MAP, DEFAULT_SCENE_THUMB } from '../constants';
+import { DEFAULT_SCENE_THUMB } from '../constants';
+import { Toast, useToast } from './Toast';
+import { ChapterTabBar } from './ChapterTabBar';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface AudioEditorProps {
   episode?: Episode;
@@ -143,7 +145,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const { toast, showToast, hideToast } = useToast();
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
@@ -178,12 +180,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
   const MAX_RIGHT = 520;
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     if (!isResizingLeft) return;
@@ -326,7 +322,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         if (cancelled) return;
         console.error('Failed to load audio tracks', err);
         setAudioError(err instanceof Error ? err.message : '加载音轨失败');
-        setToast({ message: '音频数据加载失败', tone: 'error' });
+        showToast('音频数据加载失败', 'error');
       } finally {
         if (!cancelled) setLoadingAudio(false);
       }
@@ -399,7 +395,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         if (cancelled) return;
         console.error('Failed to load audio versions', err);
         setAudioError(err instanceof Error ? err.message : '加载音频数据失败');
-        setToast({ message: '音频数据加载失败', tone: 'error' });
+        showToast('音频数据加载失败', 'error');
       } finally {
         if (!cancelled) setResolvingVersion(false);
       }
@@ -514,7 +510,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     if (!activeScene?.id || !selectedTrack) return;
     const versionData = currentVersions.find(v => v.version === version);
     if (!versionData?.audioUrl) {
-      setToast({ message: '该版本缺少音频链接，无法播放', tone: 'error' });
+      showToast('该版本缺少音频链接，无法播放', 'error');
       return;
     }
     try {
@@ -537,13 +533,13 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         playPromise.catch(err => {
           console.error('Preview play failed', err);
           setPreviewPlayingVersion(null);
-          setToast({ message: '无法播放该音频版本', tone: 'error' });
+          showToast('无法播放该音频版本', 'error');
         });
       }
     } catch (err) {
       console.error('Preview play failed', err);
       setPreviewPlayingVersion(null);
-      setToast({ message: '无法播放该音频版本', tone: 'error' });
+      showToast('无法播放该音频版本', 'error');
     }
   };
 
@@ -569,11 +565,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setPreviewPlayingVersion(null);
       const versionsRes = await audioApi.listVersions(activeScene.id, selectedTrack.id);
       await resolveVersions(selectedTrack.id, versionsRes.data || []);
-      setToast({ message: `版本 #${version} 已设为交付版本`, tone: 'success' });
+      showToast(`版本 #${version} 已设为交付版本`, 'success');
     } catch (err) {
       console.error('Revert audio failed', err);
       setAudioError(err instanceof Error ? err.message : '回滚失败，请重试');
-      setToast({ message: '回滚失败，请重试', tone: 'error' });
+      showToast('回滚失败，请重试', 'error');
     } finally {
       setLoadingAudio(false);
       if (audioRef.current) {
@@ -588,7 +584,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const handleUploadAudio = async (file?: File | null) => {
     if (!file || !activeScene?.id) return;
     if (!selectedTrack) {
-      setToast({ message: '请先创建并选择一个音轨', tone: 'error' });
+      showToast('请先创建并选择一个音轨', 'error');
       return;
     }
     setUploadingAudio(true);
@@ -614,11 +610,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setPreviewPlayingVersion(null);
       const versionsRes = await audioApi.listVersions(activeScene.id, selectedTrack.id);
       await resolveVersions(selectedTrack.id, versionsRes.data || []);
-      setToast({ message: '新音频版本已上传', tone: 'success' });
+      showToast('新音频版本已上传', 'success');
     } catch (err) {
       console.error('Upload audio failed', err);
       setAudioError(err instanceof Error ? err.message : '上传失败，请重试');
-      setToast({ message: '上传失败，请重试', tone: 'error' });
+      showToast('上传失败，请重试', 'error');
     } finally {
       setUploadingAudio(false);
       setVersionMenuOpen(false);
@@ -653,7 +649,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     } else {
       videoRef.current.play().then(() => setIsVideoPlaying(true)).catch(err => {
         console.error('Video play failed', err);
-        setToast({ message: '无法播放参考动画，请检查链接', tone: 'error' });
+        showToast('无法播放参考动画，请检查链接', 'error');
       });
     }
   };
@@ -671,7 +667,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       }
       audioRef.current.play().then(() => setIsAudioPlaying(true)).catch(err => {
         console.error('Audio play failed', err);
-        setToast({ message: '无法播放该音频版本', tone: 'error' });
+        showToast('无法播放该音频版本', 'error');
       });
     }
   };
@@ -694,11 +690,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setNewTrackRole('');
       setVersionMenuOpen(false);
       setResolvedAudioUrl(undefined);
-      setToast({ message: '已创建新音轨，上传音频以开始制作', tone: 'success' });
+      showToast('已创建新音轨，上传音频以开始制作', 'success');
     } catch (err) {
       console.error('Create audio track failed', err);
       setAudioError(err instanceof Error ? err.message : '创建音轨失败');
-      setToast({ message: '创建音轨失败，请重试', tone: 'error' });
+      showToast('创建音轨失败，请重试', 'error');
     } finally {
       setLoadingAudio(false);
     }
@@ -708,7 +704,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     if (!activeScene?.id || !selectedTrack) return;
     const role = roleDraft.trim();
     if (!role) {
-      setToast({ message: '请输入音轨名称', tone: 'error' });
+      showToast('请输入音轨名称', 'error');
       return;
     }
     if (role === selectedTrack.role) return;
@@ -719,11 +715,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setAudioTracks(prev =>
         prev.map(track => (track.id === selectedTrack.id ? { ...track, ...updated } : track))
       );
-      setToast({ message: '音轨名称已更新', tone: 'success' });
+      showToast('音轨名称已更新', 'success');
     } catch (err) {
       console.error('Update audio track failed', err);
       setAudioError(err instanceof Error ? err.message : '更新音轨失败');
-      setToast({ message: '更新音轨失败，请重试', tone: 'error' });
+      showToast('更新音轨失败，请重试', 'error');
     } finally {
       setLoadingAudio(false);
     }
@@ -750,11 +746,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setSelectedAudioId(nextId);
       setRoleDraft(nextTracks.find(t => t.id === nextId)?.role || '');
       setResolvedAudioUrl(undefined);
-      setToast({ message: '音轨已删除', tone: 'success' });
+      showToast('音轨已删除', 'success');
     } catch (err) {
       console.error('Delete audio track failed', err);
       setAudioError(err instanceof Error ? err.message : '删除音轨失败');
-      setToast({ message: '删除音轨失败，请重试', tone: 'error' });
+      showToast('删除音轨失败，请重试', 'error');
     } finally {
       setLoadingAudio(false);
       setDeleteTarget(null);
@@ -770,7 +766,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     const content = commentDraft.trim();
     if (!activeScene?.id) return;
     if (!content) {
-      setToast({ message: '请输入评论内容', tone: 'error' });
+      showToast('请输入评论内容', 'error');
       return;
     }
     try {
@@ -778,7 +774,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setCommentDraft('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发表评论失败';
-      setToast({ message: msg, tone: 'error' });
+      showToast(msg, 'error');
     }
   };
 
@@ -792,44 +788,20 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#0f0f0f] relative">
-      {toast && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-          <div
-            className={`px-5 py-2 rounded-lg border text-sm shadow-xl ${
-              toast.tone === 'success'
-                ? 'bg-green-500/20 border-green-500/40 text-green-100'
-                : 'bg-red-500/20 border-red-500/40 text-red-100'
-            }`}
-          >
-            {toast.message}
-          </div>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
 
       {/* 顶部：章节选择 + 场景切换（与动画保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
-        <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-white/10">
-          {normalizedChapters.map((ch, cIdx) => (
-            <button
-              key={ch.id}
-              onClick={() => {
-                setActiveChapterId(ch.id);
-                setActiveSceneIndex(0);
-                setIsVideoPlaying(false);
-                setIsAudioPlaying(false);
-              }}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl border transition-all text-left min-w-[180px] ${
-                activeChapterId === ch.id
-                  ? 'bg-blue-600/20 border-blue-500/40 text-white shadow-[0_0_20px_rgba(59,130,246,0.35)]'
-                  : 'bg-[#0f0f0f] border-white/10 text-white/60 hover:border-white/30 hover:text-white'
-              }`}
-            >
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1">章节 {cIdx + 1}</div>
-              <div className="text-sm font-semibold line-clamp-1">{ch.title || '未命名章节'}</div>
-              <div className="text-[11px] text-white/40 mt-1">场景 {ch.scenes?.length || 0} 个</div>
-            </button>
-          ))}
-        </div>
+        <ChapterTabBar
+          chapters={normalizedChapters}
+          activeChapterId={activeChapterId}
+          onSelectChapter={(chapterId) => {
+            setActiveChapterId(chapterId);
+            setActiveSceneIndex(0);
+            setIsVideoPlaying(false);
+            setIsAudioPlaying(false);
+          }}
+        />
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.length === 0 ? (
             <div className="text-white/30 text-xs px-2">该章节暂无场景</div>
@@ -881,35 +853,14 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {deleteTarget && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-[360px] rounded-2xl border border-white/10 bg-[#111111] shadow-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-white">
-                <div className="p-2 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">
-                  <Trash2 size={16} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold">删除音轨</p>
-                  <p className="text-xs text-white/50">音轨「{deleteTarget.role || '未命名音轨'}」的所有版本都会被清空，确认继续？</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => handleDeleteTrack(deleteTarget.id)}
-                  className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold border border-red-500/60 shadow-md"
-                >
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DeleteConfirmDialog
+          isOpen={!!deleteTarget}
+          title="删除音轨"
+          message="音轨「{name}」的所有版本都会被清空，确认继续？"
+          itemName={deleteTarget?.role || '未命名音轨'}
+          onConfirm={() => deleteTarget && handleDeleteTrack(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+        />
         {hasScene && audioError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
             <div className="px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-100 text-sm shadow-xl">
