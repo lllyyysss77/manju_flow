@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ProductionStage, Status, Project, Episode } from './types';
-import { STAGE_CONFIG } from './constants';
+import { ProductionStage, Project, Episode } from './types';
+import { STAGE_CONFIG, STATUS_MAP } from './constants';
 import { StageWrapper } from './components/StageWrapper';
 import { OutlineEditor } from './components/OutlineEditor';
 import { ScriptEditor } from './components/ScriptEditor';
@@ -13,20 +13,11 @@ import { ImportBookModal } from './components/ImportBookModal';
 import { authApi, authStorage, bookApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
 import {
-  Bell,
-  Settings,
-  LayoutGrid,
   Search,
   ChevronRight,
-  Monitor,
   Activity,
-  Filter,
   BookOpen,
-  Image as ImageIcon,
-  CheckCircle2,
-  Clock,
   ArrowLeft,
-  Grid,
   PlusCircle,
   MoreVertical,
   Play,
@@ -36,12 +27,6 @@ import {
   Pencil,
   Trash2
 } from 'lucide-react';
-
-const STATUS_MAP: Record<Status, string> = {
-  DRAFT: '草稿',
-  IN_PROGRESS: '进行中',
-  COMPLETED: '已完成'
-};
 
 const BUILD_VERSION = __APP_VERSION__ || 'dev';
 const BUILD_TIME = (() => {

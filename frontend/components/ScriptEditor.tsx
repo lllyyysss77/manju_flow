@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Episode, Scene, Status } from '../types';
+import { Episode, Scene } from '../types';
 import {
   Plus,
   MessageSquare,
@@ -21,6 +21,7 @@ import {
 import { chapterApi, ensureHttpsUrl, sceneApi, fileApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
+import { STATUS_MAP } from '../constants';
 
 interface ScriptEditorProps {
   bookId: number;
@@ -32,12 +33,6 @@ interface ScriptEditorProps {
   onActiveChapterChange?: (chapterId: number | null) => void;
   onActiveSceneChange?: (sceneId: number | null) => void;
 }
-
-const STATUS_MAP: Record<Status, string> = {
-  DRAFT: '草稿',
-  IN_PROGRESS: '进行中',
-  COMPLETED: '已完成'
-};
 
 const BRUSH_COLORS = [
   { name: '黑色', hex: '#000000' },
@@ -684,25 +679,25 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
         id: ch.id,
         title: ch.title,
         index: ch.index,
-        synopsis: (ch as any).synopsis || '',
+        synopsis: ch.synopsis || '',
         status: ch.status as Status,
         scenes: (ch.scenes || [])
           .map(s => ({
             id: s.id,
-            chapterId: (s as any).chapterId ?? ch.id,
+            chapterId: s.chapterId ?? ch.id,
             index: s.index,
             description: s.description || '',
             cameraMovement: s.cameraMovement || '',
             dialogue: s.dialogue || '',
-            transitionEffect: (s as any).transitionEffect || '',
+            transitionEffect: s.transitionEffect || '',
             status: s.status as Status,
             comments: [],
             referenceImageUrl: s.referenceImageUrl,
-            referenceImageDescription: (s as any).referenceImageDescription || '',
-            thumbnailUrl: (s as any).thumbnailUrl,
-            frameSets: (s as any).frameSets,
-            animations: (s as any).animations,
-            audios: (s as any).audios,
+            referenceImageDescription: s.referenceImageDescription || '',
+            thumbnailUrl: s.thumbnailUrl,
+            frameSets: s.frameSets,
+            animations: s.animations,
+            audios: s.audios,
           }) as Scene)
           .sort((a, b) => a.index - b.index),
       })) as Episode[];

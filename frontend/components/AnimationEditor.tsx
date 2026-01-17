@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Episode, Scene, SceneAnimation, SceneAnimationVersion, Status } from '../types';
+import { Episode, Scene, SceneAnimation, SceneAnimationVersion } from '../types';
 import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import {
   MessageSquare,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
+import { STATUS_MAP, DEFAULT_SCENE_THUMB } from '../constants';
 
 interface AnimationEditorProps {
   episode?: Episode;
@@ -32,15 +33,6 @@ interface AnimationEditorProps {
   onActiveChapterChange?: (chapterId: number | null) => void;
   onActiveSceneChange?: (sceneId: number | null) => void;
 }
-
-const STATUS_MAP: Record<Status, string> = {
-  DRAFT: '草稿',
-  IN_PROGRESS: '进行中',
-  COMPLETED: '已完成'
-};
-
-const DEFAULT_SCENE_THUMB =
-  'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"180\" viewBox=\"0 0 320 180\"><defs><linearGradient id=\"g\" x1=\"0\" x2=\"1\" y1=\"0\" y2=\"1\"><stop stop-color=\"%23212121\" offset=\"0%\"/><stop stop-color=\"%230d0d0d\" offset=\"100%\"/></linearGradient></defs><rect width=\"320\" height=\"180\" fill=\"url(%23g)\"/><rect x=\"18\" y=\"18\" width=\"284\" height=\"144\" rx=\"18\" ry=\"18\" stroke=\"%23333333\" stroke-width=\"4\" fill=\"none\"/><path d=\"M70 120h180M140 76l-26 44m96-44l26 44\" stroke=\"%23555555\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"118\" cy=\"84\" r=\"12\" fill=\"none\" stroke=\"%23707070\" stroke-width=\"4\"/><text x=\"160\" y=\"152\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"14\" fill=\"%23666666\">SCENE PREVIEW</text></svg>';
 
 export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   episode,
