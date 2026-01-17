@@ -1,5 +1,6 @@
 
 export enum ProductionStage {
+  OUTLINE = 'OUTLINE',
   SCRIPT = 'SCRIPT',
   ART = 'ART',
   ANIMATE = 'ANIMATE',
@@ -173,4 +174,17 @@ export interface Project {
   assignedWriter?: string;
   assignedArtist?: string;
   assignedEditor?: string;
+  outline?: string;
+  characters?: Character[];
+}
+
+export interface Character {
+  id: number;
+  bookId: number;
+  name: string;
+  description: string;
+  referenceImageUrl?: string;
+  index: number;
+  createdAt?: string;
+  updatedAt?: string;
 }

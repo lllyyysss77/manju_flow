@@ -80,6 +80,7 @@ export interface Book {
   cover: string;
   type: BookType;
   description: string;
+  outline: string;
   adaptationStatus: AdaptationStatus;
   adaptedBy: string;
   chapterCount: number;
@@ -100,6 +101,7 @@ export interface CreateBookRequest {
   cover?: string;
   type: BookType;
   description?: string;
+  outline?: string;
 }
 
 export interface BookListParams {
@@ -223,6 +225,14 @@ export const bookApi = {
       method: 'DELETE',
     });
   },
+
+  // 更新大纲
+  updateOutline: async (id: number, outline: string): Promise<Book> => {
+    return request<Book>(`/api/books/${id}/outline`, {
+      method: 'PUT',
+      body: JSON.stringify({ outline }),
+    });
+  },
 };
 
 // 工具函数：将后端 Book 转换为前端 Project 格式
@@ -241,6 +251,7 @@ import {
   SceneFrameSetVersion,
   SceneAnimation,
   SceneAnimationVersion,
+  Character,
 } from './types';
 
 export function bookToProject(book: Book): Project {
@@ -260,6 +271,7 @@ export function bookToProject(book: Book): Project {
     productionStatus: statusMap[book.adaptationStatus],
     episodes: [], // 初始化为空数组，后续可以从其他 API 获取
     assignedWriter: book.adaptedBy || undefined,
+    outline: book.outline || '',
   };
 }
 
@@ -726,6 +738,44 @@ export const commentApi = {
     }),
   delete: (id: number) =>
     request(`/api/comments/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+// 角色人设 API
+export interface CharacterListResponse {
+  total: number;
+  data: Character[];
+}
+
+export interface CreateCharacterPayload {
+  name: string;
+  description?: string;
+  referenceImageUrl?: string;
+  index: number;
+}
+
+export interface UpdateCharacterPayload {
+  name?: string;
+  description?: string;
+  referenceImageUrl?: string;
+  index?: number;
+}
+
+export const characterApi = {
+  list: (bookId: number) => request<CharacterListResponse>(`/api/books/${bookId}/characters`),
+  create: (bookId: number, payload: CreateCharacterPayload) =>
+    request<Character>(`/api/books/${bookId}/characters`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (bookId: number, characterId: number, payload: UpdateCharacterPayload) =>
+    request<Character>(`/api/books/${bookId}/characters/${characterId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (bookId: number, characterId: number) =>
+    request(`/api/books/${bookId}/characters/${characterId}`, {
       method: 'DELETE',
     }),
 };

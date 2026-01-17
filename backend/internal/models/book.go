@@ -34,6 +34,7 @@ type Book struct {
 	AdaptationStatus AdaptationStatus `gorm:"size:20;default:'NONE'" json:"adaptationStatus"`
 	AdaptedBy        string           `gorm:"size:100" json:"adaptedBy"` // 正在改编此作品的编剧
 	ChapterCount     int              `gorm:"default:0" json:"chapterCount"`
+	Outline          string           `gorm:"type:text" json:"outline"` // 大纲（纯文本）
 	CreatedAt        time.Time        `json:"createdAt"`
 	UpdatedAt        time.Time        `json:"updatedAt"`
 	DeletedAt        gorm.DeletedAt   `gorm:"index" json:"-"`
@@ -59,4 +60,10 @@ type CreateBookRequest struct {
 	Cover       string   `json:"cover"`
 	Type        BookType `json:"type" binding:"required,oneof=NOVEL COMIC"`
 	Description string   `json:"description"`
+	Outline     string   `json:"outline"`
+}
+
+// UpdateOutlineRequest 更新大纲请求
+type UpdateOutlineRequest struct {
+	Outline string `json:"outline"`
 }
