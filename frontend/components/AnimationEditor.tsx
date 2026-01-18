@@ -221,22 +221,22 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
-    if (raw.startsWith('blob:')) return raw;
+    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
     const normalized = ensureHttpsUrl(raw);
     const { key, externalUrl } = normalizeFileKey(normalized);
-    const fallback = externalUrl || normalized;
-    if (!key) return fallback;
-    const cacheKey = key || fallback;
-    const cached = urlCacheRef.current[cacheKey];
+    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
+    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
+    const cached = urlCacheRef.current[key];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(res.url || fallback);
-      setUrlCache(prev => ({ ...prev, [cacheKey]: resolved }));
+      if (!res.url) return '';
+      const resolved = ensureHttpsUrl(res.url);
+      urlCacheRef.current[key] = resolved;
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return fallback;
+      return '';
     }
   }, []);
 
@@ -454,7 +454,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     let cancelled = false;
     (async () => {
       const url = await resolveFileUrl(displayClipUrl);
-      if (!cancelled) setResolvedVideoUrl(url || displayClipUrl);
+      if (!cancelled) setResolvedVideoUrl(url || undefined);
     })();
     return () => {
       cancelled = true;
@@ -463,7 +463,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const startFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.start : undefined;
   const endFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.end : undefined;
-  const playbackUrl = resolvedVideoUrl || displayClipUrl;
+  // 只有当回退值是有效的媒体 URL 时才使用，避免将文件 key 直接作为 src
+  const playbackUrl = resolvedVideoUrl || (isValidMediaUrl(displayClipUrl) ? displayClipUrl : undefined);
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.pause();
@@ -521,14 +522,23 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setVideoDragOver(false);
   };
 
-  const handlePreviewVersion = (version: number) => {
+  const handlePreviewVersion = async (version: number) => {
     if (!selectedAnimationId) return;
     const versionData = currentVersions.find(v => v.version === version);
     if (!versionData?.videoUrl) {
       showToast('该版本缺少视频链接，无法预览', 'error');
       return;
     }
-    setPreviewSource({ url: versionData.videoUrl, version: versionData.version });
+    // 确保使用有效的媒体 URL，如果不是则尝试解析
+    let videoUrl = versionData.videoUrl;
+    if (!isValidMediaUrl(videoUrl)) {
+      videoUrl = await resolveFileUrl(videoUrl);
+      if (!isValidMediaUrl(videoUrl)) {
+        showToast('无法解析视频链接', 'error');
+        return;
+      }
+    }
+    setPreviewSource({ url: videoUrl, version: versionData.version });
     setVersionMenuOpen(false);
   };
 

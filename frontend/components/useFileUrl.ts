@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { ensureHttpsUrl, fileApi, normalizeFileKey } from '../api';
+import { ensureHttpsUrl, fileApi, isValidMediaUrl, normalizeFileKey } from '../api';
 
 /**
  * 文件 URL 解析 Hook
@@ -10,21 +10,23 @@ export function useFileUrl() {
 
   const resolveFileUrl = useCallback(async (raw?: string | null): Promise<string> => {
     if (!raw) return '';
+    // 支持 blob: 和 data: URL 直接返回
+    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
     const normalized = ensureHttpsUrl(raw);
     const { key, externalUrl } = normalizeFileKey(normalized);
-    const fallback = externalUrl || normalized;
-    if (!key) return fallback;
-    const cacheKey = key || fallback;
-    const cached = urlCache.current[cacheKey];
+    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
+    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
+    const cached = urlCache.current[key];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(res.url || fallback);
-      urlCache.current[cacheKey] = resolved;
+      if (!res.url) return '';
+      const resolved = ensureHttpsUrl(res.url);
+      urlCache.current[key] = resolved;
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return fallback;
+      return '';
     }
   }, []);
 

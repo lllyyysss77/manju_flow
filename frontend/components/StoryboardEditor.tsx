@@ -237,21 +237,22 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
+    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
     const normalized = ensureHttpsUrl(raw);
     const { key, externalUrl } = normalizeFileKey(normalized);
-    const fallback = externalUrl || normalized;
-    if (!key) return fallback;
-    const cacheKey = key || fallback;
-    const cached = urlCacheRef.current[cacheKey];
+    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
+    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
+    const cached = urlCacheRef.current[key];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(res.url || fallback);
-      urlCacheRef.current[cacheKey] = resolved;
+      if (!res.url) return '';
+      const resolved = ensureHttpsUrl(res.url);
+      urlCacheRef.current[key] = resolved;
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return fallback;
+      return '';
     }
   }, []);
 
@@ -481,7 +482,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         ...prev,
         [selectedFrameSetId]: {
           ...(prev[selectedFrameSetId] || {}),
-          [type === 'start' ? 'start' : 'end']: resolved || key,
+          [type === 'start' ? 'start' : 'end']: resolved || undefined,
         },
       }));
       await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
@@ -695,8 +696,11 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const selectedFrameSet = frameSets.find(fs => fs.id === selectedFrameSetId) || null;
   const currentFramePreview = selectedFrameSet ? framePreviewCache[selectedFrameSet.id] : undefined;
   const currentVersions = selectedFrameSet ? versionsMap[selectedFrameSet.id] || { start: [], end: [] } : { start: [], end: [] };
-  const startDisplayUrl = historySelection.start || currentFramePreview?.start || '';
-  const endDisplayUrl = historySelection.end || currentFramePreview?.end || '';
+  // 只有当 URL 是有效的媒体 URL 时才使用，避免将文件 key 直接作为 src
+  const rawStartUrl = historySelection.start || currentFramePreview?.start || '';
+  const rawEndUrl = historySelection.end || currentFramePreview?.end || '';
+  const startDisplayUrl = isValidMediaUrl(rawStartUrl) ? rawStartUrl : '';
+  const endDisplayUrl = isValidMediaUrl(rawEndUrl) ? rawEndUrl : '';
 
   if (!hasChapters) {
     return (

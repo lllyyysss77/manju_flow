@@ -82,21 +82,22 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const resolveFileUrl = useCallback(
     async (raw?: string | null) => {
       if (!raw) return '';
+      if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
       const normalized = ensureHttpsUrl(raw);
       const { key, externalUrl } = normalizeFileKey(normalized);
-      const fallback = externalUrl || normalized;
-      if (!key) return fallback;
-      const cacheKey = key || fallback;
-      const cached = urlCache.current[cacheKey];
+      // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
+      if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
+      const cached = urlCache.current[key];
       if (cached) return cached;
       try {
         const res = await fileApi.getSignedUrl(key);
-        const resolved = ensureHttpsUrl(res.url || fallback);
-        urlCache.current[cacheKey] = resolved;
+        if (!res.url) return '';
+        const resolved = ensureHttpsUrl(res.url);
+        urlCache.current[key] = resolved;
         return resolved;
       } catch (err) {
         console.error('Resolve video url failed', err);
-        return fallback;
+        return '';
       }
     },
     []
@@ -406,7 +407,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         height: meta.height,
         bitrate,
       }));
-      setResolvedVideoUrl(resolved || key);
+      setResolvedVideoUrl(resolved || undefined);
       showToast(`原始视频已上传 · 新版本 #${version.version}`, 'success');
       fetchVideoData(activeChapter.id);
     } catch (err) {

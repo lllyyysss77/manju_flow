@@ -256,6 +256,11 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         savedCharactersRef.current[c.id] = getCharacterSignature(c);
       });
 
+      // 默认选中第一个角色
+      if (sortedChars.length > 0) {
+        setActiveCharacterId(sortedChars[0].id);
+      }
+
       setIsOutlineDirty(false);
       setIsCharacterDirty(false);
       onOutlineChange?.(bookRes.outline || '');

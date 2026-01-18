@@ -219,22 +219,22 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
 
   const resolveFileUrl = useCallback(async (raw?: string | null) => {
     if (!raw) return '';
-    if (raw.startsWith('blob:')) return raw;
+    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
     const normalized = ensureHttpsUrl(raw);
     const { key, externalUrl } = normalizeFileKey(normalized);
-    const fallback = externalUrl || normalized;
-    if (!key) return fallback;
-    const cacheKey = key || fallback;
-    const cached = urlCacheRef.current[cacheKey];
+    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
+    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
+    const cached = urlCacheRef.current[key];
     if (cached) return cached;
     try {
       const res = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(res.url || fallback);
-      setUrlCache(prev => ({ ...prev, [cacheKey]: resolved }));
+      if (!res.url) return '';
+      const resolved = ensureHttpsUrl(res.url);
+      urlCacheRef.current[key] = resolved;
       return resolved;
     } catch (err) {
       console.error('Failed to resolve file url', err);
-      return fallback;
+      return '';
     }
   }, []);
 
@@ -401,7 +401,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         await resolveVersions(selectedAudioId, versionsRes.data || []);
         const rawUrl = currentTrack?.audioUrl;
         const resolved = rawUrl ? await resolveFileUrl(rawUrl) : '';
-        if (!cancelled) setResolvedAudioUrl(resolved || rawUrl || undefined);
+        if (!cancelled) setResolvedAudioUrl(resolved || undefined);
       } catch (err) {
         if (cancelled) return;
         console.error('Failed to load audio versions', err);
@@ -471,8 +471,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const displayVideoUrl = activeScene?.id ? animationPreviewMap[activeScene.id]?.url : undefined;
   const currentVersionLabel = currentVersionNumber ?? '—';
   const hasAudio = Boolean(selectedTrack && (displayAudioUrl || currentVersions.length > 0));
-  const playbackVideoUrl = resolvedVideoUrl || displayVideoUrl;
-  const playbackAudioUrl = resolvedAudioUrl || displayAudioUrl;
+  // 只有当回退值是有效的媒体 URL 时才使用，避免将文件 key 直接作为 src
+  const playbackVideoUrl = resolvedVideoUrl || (isValidMediaUrl(displayVideoUrl) ? displayVideoUrl : undefined);
+  const playbackAudioUrl = resolvedAudioUrl || (isValidMediaUrl(displayAudioUrl) ? displayAudioUrl : undefined);
 
   useEffect(() => {
     if (!displayVideoUrl) {
@@ -482,7 +483,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     let cancelled = false;
     (async () => {
       const resolved = await resolveFileUrl(displayVideoUrl);
-      if (!cancelled) setResolvedVideoUrl(resolved || displayVideoUrl);
+      if (!cancelled) setResolvedVideoUrl(resolved || undefined);
     })();
     return () => {
       cancelled = true;
@@ -497,7 +498,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     let cancelled = false;
     (async () => {
       const resolved = await resolveFileUrl(displayAudioUrl);
-      if (!cancelled) setResolvedAudioUrl(resolved || displayAudioUrl);
+      if (!cancelled) setResolvedAudioUrl(resolved || undefined);
     })();
     return () => {
       cancelled = true;
@@ -527,12 +528,21 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     setPreviewPlayingVersion(null);
   }, [hasAudio, activeScene?.id, selectedAudioId]);
 
-  const handlePlayVersion = (version: number) => {
+  const handlePlayVersion = async (version: number) => {
     if (!activeScene?.id || !selectedTrack) return;
     const versionData = currentVersions.find(v => v.version === version);
     if (!versionData?.audioUrl) {
       showToast('该版本缺少音频链接，无法播放', 'error');
       return;
+    }
+    // 确保使用有效的媒体 URL，如果不是则尝试解析
+    let audioUrl = versionData.audioUrl;
+    if (!isValidMediaUrl(audioUrl)) {
+      audioUrl = await resolveFileUrl(audioUrl);
+      if (!isValidMediaUrl(audioUrl)) {
+        showToast('无法解析音频链接', 'error');
+        return;
+      }
     }
     try {
       if (!previewAudioRef.current) {
@@ -547,7 +557,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       const player = previewAudioRef.current;
       player.pause();
       player.currentTime = 0;
-      player.src = versionData.audioUrl || '';
+      player.src = audioUrl;
       const playPromise = player.play();
       setPreviewPlayingVersion(version);
       if (playPromise?.catch) {

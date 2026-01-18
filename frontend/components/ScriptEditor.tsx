@@ -908,8 +908,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setActiveChapterId(null);
-              setActiveScene(null);
+              dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: null, scene: null } });
             }}
             className="px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
           >
@@ -1101,6 +1100,31 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             </>
           )}
         </div>
+
+        {/* 底部快捷添加栏 - 始终可见 */}
+        <div className="p-3 border-t border-white/5 bg-[#1a1a1a] space-y-2">
+          <button
+            onClick={() => handleAddChapterAt(chapters.length)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 rounded-xl text-xs font-bold transition-all hover:border-blue-500/50"
+          >
+            <Plus size={14} /> 添加章节
+          </button>
+          <button
+            onClick={() => {
+              if (activeChapterId) {
+                const chapter = chapters.find(c => c.id === activeChapterId);
+                handleAddSceneAt(activeChapterId, chapter?.scenes?.length || 0);
+              }
+            }}
+            disabled={!activeChapterId}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-white/60"
+          >
+            <Plus size={14} /> 添加场景
+          </button>
+          {!activeChapterId && chapters.length > 0 && (
+            <p className="text-[10px] text-white/30 text-center">选择章节后可添加场景</p>
+          )}
+        </div>
       </div>
 
       {/* 左侧与中间的分隔线 */}
@@ -1249,8 +1273,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       onChange={(e) => {
                         setSynopsisDraft(e.target.value);
                         if (activeChapter?.id != null) {
-                          const sig = getSynopsisSignature(e.target.value);
-                          setIsSynopsisDirty(savedChapterSynopsisRef.current[activeChapter.id] !== sig);
+                          dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: checkSynopsisDirty(activeChapter.id, e.target.value) });
                         }
                       }}
                       placeholder="填写章节的故事梗概，便于团队快速理解剧情走向"
