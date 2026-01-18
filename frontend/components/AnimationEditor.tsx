@@ -146,11 +146,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const { toast, showToast, hideToast } = useToast();
-  const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const urlCacheRef = useRef<Record<string, string>>({});
-  useEffect(() => {
-    urlCacheRef.current = urlCache;
-  }, [urlCache]);
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
   // 用于追踪已发起请求的 scene ID，避免重复请求

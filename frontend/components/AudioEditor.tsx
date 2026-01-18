@@ -153,11 +153,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
-  const [urlCache, setUrlCache] = useState<Record<string, string>>({});
   const urlCacheRef = useRef<Record<string, string>>({});
-  useEffect(() => {
-    urlCacheRef.current = urlCache;
-  }, [urlCache]);
   const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
   // 用于追踪已发起请求的 scene ID，避免重复请求
   const sceneThumbRequestedRef = useRef<Set<number>>(new Set());
