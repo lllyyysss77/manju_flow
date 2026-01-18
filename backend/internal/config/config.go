@@ -14,11 +14,17 @@ type Config struct {
 	OSS      OSSConfig
 	App      AppConfig
 	CORS     CORSConfig
+	Auth     AuthConfig
 }
 
 // CORSConfig 跨域配置
 type CORSConfig struct {
 	AllowOrigins []string
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	RegisterWhitelist map[string]bool
 }
 
 // AppConfig 应用程序配置
@@ -81,6 +87,9 @@ func Load() *Config {
 		CORS: CORSConfig{
 			AllowOrigins: parseOrigins(utils.GetEnv("CORS_ORIGINS", "*")),
 		},
+		Auth: AuthConfig{
+			RegisterWhitelist: parseWhitelist(utils.GetEnv("REGISTER_WHITELIST", "")),
+		},
 	}
 	return Cfg
 }
@@ -106,4 +115,19 @@ func parseOrigins(origins string) []string {
 	return result
 }
 
-
+// parseWhitelist 解析注册白名单
+// 支持逗号分隔: "user1@example.com,user2@example.com"
+func parseWhitelist(whitelist string) map[string]bool {
+	result := make(map[string]bool)
+	if whitelist == "" {
+		return result
+	}
+	parts := strings.Split(whitelist, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result[p] = true
+		}
+	}
+	return result
+}

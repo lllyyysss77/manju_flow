@@ -6,24 +6,12 @@ import (
 	"encoding/hex"
 	"net/http"
 
+	"manju-flow/internal/config"
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
 
 	"github.com/gin-gonic/gin"
 )
-
-// 注册白名单 - 只有这些用户名可以注册
-var registerWhitelist = map[string]bool{
-	"sfzman@hotmail.com":    true,
-	"83899474@qq.com":   true, // 牟宗明
-	"1164607971@qq.com":     true, // 金旺
-	"2937342868@qq.com": true, // 培瑶
-	"734231140@qq.com": true, // 王童童
-	"652207305@qq.com": true, // 琪媛
-	"liu584821258@gmail.com": true, // 小刘
-	"1334821692@qq.com": true, // 小圆
-	"w1818hanguahope@163.com": true, // 王紫荆
-}
 
 // AuthHandler 认证处理器
 type AuthHandler struct{}
@@ -67,7 +55,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 检查白名单
-	if !registerWhitelist[req.Username] {
+	if !config.Cfg.Auth.RegisterWhitelist[req.Username] {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "用户名不在注册白名单中",
 		})
