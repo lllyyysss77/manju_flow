@@ -387,8 +387,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }
     // 确保 selectedAnimationId 属于当前场景的 animations 列表
     // 避免场景切换时使用旧场景的 animation ID 调用新场景的 API
-    const isValidAnimation = animations.some(a => a.id === selectedAnimationId);
-    if (!isValidAnimation) {
+    // 额外检查 animation.sceneId 确保列表确实属于当前场景（防止状态异步更新问题）
+    const selectedAnim = animations.find(a => a.id === selectedAnimationId);
+    if (!selectedAnim || selectedAnim.sceneId !== activeScene.id) {
       return;
     }
     let cancelled = false;

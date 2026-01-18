@@ -382,8 +382,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     }
     // 确保 selectedAudioId 属于当前场景的 audioTracks 列表
     // 避免场景切换时使用旧场景的 audio ID 调用新场景的 API
+    // 额外检查 track.sceneId 确保列表确实属于当前场景（防止状态异步更新问题）
     const currentTrack = audioTracks.find(t => t.id === selectedAudioId);
-    if (!currentTrack) {
+    if (!currentTrack || currentTrack.sceneId !== activeScene.id) {
       return;
     }
     let cancelled = false;
