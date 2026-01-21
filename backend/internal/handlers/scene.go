@@ -110,6 +110,7 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		ChapterID:        uint(chapterIdUint),
 		Index:            *req.Index,
 		Status:           status,
+		Description:      req.Description,
 		CameraMovement:   req.CameraMovement,
 		Dialogue:         req.Dialogue,
 		TransitionEffect: req.TransitionEffect,
@@ -217,6 +218,9 @@ func (h *SceneHandler) Update(c *gin.Context) {
 	}
 	if req.Status != nil {
 		scene.Status = *req.Status
+	}
+	if req.Description != nil {
+		scene.Description = *req.Description
 	}
 	if req.CameraMovement != nil {
 		scene.CameraMovement = *req.CameraMovement

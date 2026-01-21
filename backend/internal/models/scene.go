@@ -17,15 +17,16 @@ const (
 
 // Scene 场景模型 - 每个章节包含多个场景
 type Scene struct {
-	ID                        uint        `gorm:"primaryKey" json:"id"`
-	ChapterID                 uint        `gorm:"not null;index" json:"chapterId"`
-	Index                     float64     `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
-	Status                    SceneStatus `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
-	CameraMovement   string `gorm:"type:text" json:"cameraMovement"`   // 运镜
-	Dialogue         string `gorm:"type:text" json:"dialogue"`         // 台词/旁白
-	TransitionEffect string `gorm:"type:text" json:"transitionEffect"` // 转场或剪辑手法
-	ThumbnailUrl     string `gorm:"type:text" json:"thumbnailUrl"`     // 缩略图 (首帧 URL)
-	// 参考资料（描述+参考图）已迁移到 SceneReference 表，支持一对多
+	ID               uint        `gorm:"primaryKey" json:"id"`
+	ChapterID        uint        `gorm:"not null;index" json:"chapterId"`
+	Index            float64     `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
+	Status           SceneStatus `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
+	Description      string      `gorm:"type:text" json:"description"`      // 场景描述
+	CameraMovement   string      `gorm:"type:text" json:"cameraMovement"`   // 运镜
+	Dialogue         string      `gorm:"type:text" json:"dialogue"`         // 台词/旁白
+	TransitionEffect string      `gorm:"type:text" json:"transitionEffect"` // 转场或剪辑手法
+	ThumbnailUrl     string      `gorm:"type:text" json:"thumbnailUrl"`     // 缩略图 (首帧 URL)
+	// 参考图已迁移到 SceneReference 表，支持一对多
 	// 分镜绘制 - 使用 SceneFrameSet 表存储多套首尾帧，不再在 Scene 表中存储
 	// 动画制作 - 使用 SceneAnimation 表存储多个动画，不再在 Scene 表中存储
 	// 音频后期 - 使用 SceneAudio 表存储多音频轨道，不再在 Scene 表中存储
@@ -52,6 +53,7 @@ type SceneListResponse struct {
 type CreateSceneRequest struct {
 	Index            *float64    `json:"index" binding:"required"` // 使用指针类型允许传递 0 值
 	Status           SceneStatus `json:"status"`
+	Description      string      `json:"description"`
 	CameraMovement   string      `json:"cameraMovement"`
 	Dialogue         string      `json:"dialogue"`
 	TransitionEffect string      `json:"transitionEffect"` // 转场或剪辑手法
@@ -62,6 +64,7 @@ type CreateSceneRequest struct {
 type UpdateSceneRequest struct {
 	Index            *float64     `json:"index"`
 	Status           *SceneStatus `json:"status"`
+	Description      *string      `json:"description"`
 	CameraMovement   *string      `json:"cameraMovement"`
 	Dialogue         *string      `json:"dialogue"`
 	TransitionEffect *string      `json:"transitionEffect"` // 转场或剪辑手法
