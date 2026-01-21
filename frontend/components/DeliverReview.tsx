@@ -318,7 +318,9 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const handleUpdateComment = async (commentId: number, content: string) => {
     try {
-      const updated = await commentApi.update(commentId, { content });
+      // 解析评论内容中的 @时间点，提取 meta 信息
+      const { content: cleanedContent, meta } = extractCommentPayload(content);
+      const updated = await commentApi.update(commentId, { content: cleanedContent, meta });
       setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '更新评论失败';
@@ -353,6 +355,21 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     setCommentDraft(value);
     commentDraftRef.current = value;
   };
+
+  // 编辑评论时处理 @ 自动补全
+  const handleEditContentChange = useCallback(
+    (prevContent: string, newContent: string): string => {
+      const isForwardTyping = newContent.length > prevContent.length;
+      const endsWithAt = newContent.endsWith('@');
+      const alreadyHasTimecode = /@\d{1,2}:\d{2}(?::\d{2})?/.test(newContent);
+      // 仅在用户新增 @ 且当前内容末尾没有时间码时自动补全
+      if (isForwardTyping && endsWithAt && !alreadyHasTimecode) {
+        return `${newContent}${formatTime(currentTime)} `;
+      }
+      return newContent;
+    },
+    [currentTime]
+  );
 
   const probeVideoMeta = (file: File) =>
     new Promise<{ duration: number; width: number; height: number }>((resolve) => {
@@ -919,6 +936,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                         </span>
                       }
                       onClick={typeof c.timeSeconds === 'number' ? () => handleSeek(c.timeSeconds!) : undefined}
+                      onEditContentChange={handleEditContentChange}
                     />
                   ))
                 ) : (

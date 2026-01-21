@@ -12,6 +12,8 @@ export interface CommentItemProps {
   extraBadge?: React.ReactNode;
   /** 点击评论时的回调 */
   onClick?: () => void;
+  /** 编辑内容变化时的回调，用于实现 @ 自动补全等功能，返回处理后的内容 */
+  onEditContentChange?: (prevContent: string, newContent: string) => string;
 }
 
 const formatCommentTime = (value?: string) =>
@@ -34,6 +36,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   authorColorClass = 'text-blue-400',
   extraBadge,
   onClick,
+  onEditContentChange,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
@@ -166,7 +169,14 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           <textarea
             className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
             value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              if (onEditContentChange) {
+                setEditContent(onEditContentChange(editContent, newValue));
+              } else {
+                setEditContent(newValue);
+              }
+            }}
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
