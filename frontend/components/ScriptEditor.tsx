@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Episode, Scene } from '../types';
+import { Episode, Scene, SceneReference } from '../types';
 import {
   Plus,
   MessageSquare,
@@ -18,7 +18,7 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi, commentApi, isValidMediaUrl } from '../api';
+import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { STATUS_MAP } from '../constants';
@@ -533,6 +533,365 @@ const ReferenceWithDescriptionSection: React.FC<{
   );
 };
 
+// 单个参考资料卡片组件
+const ReferenceCard: React.FC<{
+  reference: SceneReference;
+  index: number;
+  resolvedImageUrl?: string;
+  onUpdate: (ref: SceneReference) => Promise<void>;
+  onDelete: () => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
+  isUploading?: boolean;
+}> = ({ reference, index, resolvedImageUrl, onUpdate, onDelete, onUploadImage, isUploading = false }) => {
+  const [localUploading, setLocalUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [description, setDescription] = useState(reference.description || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const busy = isUploading || localUploading;
+
+  // 同步 description 状态
+  useEffect(() => {
+    setDescription(reference.description || '');
+  }, [reference.description]);
+
+  // 防抖保存描述
+  useEffect(() => {
+    if (description === (reference.description || '')) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      onUpdate({ ...reference, description });
+    }, 1000);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [description, reference, onUpdate]);
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('只支持上传图片文件');
+      return;
+    }
+    setError(null);
+    setLocalUploading(true);
+    try {
+      const imageUrl = await onUploadImage(file);
+      await onUpdate({ ...reference, imageUrl });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '上传失败，请重试');
+    } finally {
+      setLocalUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleUpload(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleUpload(file);
+        return;
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await onDelete();
+    } catch {
+      setError('删除失败');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className={`relative bg-[#1a1a1a] border rounded-2xl overflow-hidden transition-all ${
+        isDragOver ? 'border-blue-500 bg-blue-900/10' : 'border-white/10'
+      }`}
+      onDrop={handleDrop}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setIsDragOver(true); }}
+      onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+      onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+    >
+      {/* 顶部标题栏 */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/20">
+        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
+          参考 #{index + 1}
+        </span>
+        <button
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className="p-1.5 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-60"
+          title="删除此参考"
+        >
+          {isDeleting ? (
+            <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+          ) : (
+            <Trash2 size={14} />
+          )}
+        </button>
+      </div>
+
+      {/* 图片预览区域 */}
+      {resolvedImageUrl ? (
+        <div className="relative group border-b border-white/10">
+          <div className="flex items-center justify-center p-4 bg-black/20 min-h-[160px]">
+            <img
+              src={resolvedImageUrl}
+              className="max-w-full max-h-[300px] object-contain rounded-lg shadow-lg"
+              alt={`参考图 ${index + 1}`}
+            />
+          </div>
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white text-black text-xs font-bold rounded-lg hover:bg-zinc-200 transition-all disabled:opacity-60"
+            >
+              <Upload size={12} /> 更换
+            </button>
+            <button
+              onClick={() => onUpdate({ ...reference, imageUrl: undefined })}
+              className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-500 transition-all"
+            >
+              <X size={12} /> 移除图片
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => !busy && fileInputRef.current?.click()}
+          disabled={busy}
+          className="w-full flex flex-col items-center justify-center gap-2 p-6 min-h-[120px] border-b border-white/5 hover:bg-white/5 transition-colors disabled:opacity-60"
+        >
+          <div className="p-2 rounded-full bg-blue-500/10 text-blue-500">
+            {busy ? (
+              <div className="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+            ) : (
+              <Upload size={20} />
+            )}
+          </div>
+          <span className="text-xs text-white/40">{busy ? '上传中...' : '点击上传图片'}</span>
+        </button>
+      )}
+
+      {/* 描述输入区域 */}
+      <div className="p-3">
+        <textarea
+          className="w-full bg-transparent text-white text-sm focus:outline-none min-h-[60px] resize-none leading-relaxed placeholder:text-white/30"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onPaste={handlePaste}
+          placeholder="添加参考说明..."
+        />
+      </div>
+
+      {/* 拖拽提示遮罩 */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-900/30 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-blue-200">
+            <Upload size={24} />
+            <span className="text-xs font-bold">释放以上传图片</span>
+          </div>
+        </div>
+      )}
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="px-3 pb-3">
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-2 py-1">
+            {error}
+          </div>
+        </div>
+      )}
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept="image/*"
+      />
+    </div>
+  );
+};
+
+// 多参考资料管理组件
+const MultipleReferencesSection: React.FC<{
+  sceneId: number;
+  references: SceneReference[];
+  onReferencesChange: (refs: SceneReference[]) => void;
+}> = ({ sceneId, references, onReferencesChange }) => {
+  const [isAdding, setIsAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resolvedUrls, setResolvedUrls] = useState<Record<number, string>>({});
+  const resolvedUrlsCacheRef = useRef<Record<string, string>>({});
+
+  // 解析参考图的 URL
+  useEffect(() => {
+    const resolveUrls = async () => {
+      const newResolved: Record<number, string> = {};
+      for (const ref of references) {
+        if (!ref.imageUrl) continue;
+
+        const raw = ensureHttpsUrl(ref.imageUrl);
+        if (raw.startsWith('data:') || raw.startsWith('blob:')) {
+          newResolved[ref.id] = raw;
+          continue;
+        }
+
+        const { key, externalUrl } = normalizeFileKey(raw);
+        if (!key) {
+          if (externalUrl && isValidMediaUrl(externalUrl)) {
+            newResolved[ref.id] = externalUrl;
+          }
+          continue;
+        }
+
+        // 使用缓存
+        if (resolvedUrlsCacheRef.current[key]) {
+          newResolved[ref.id] = resolvedUrlsCacheRef.current[key];
+          continue;
+        }
+
+        try {
+          const signed = await fileApi.getSignedUrl(key);
+          const url = ensureHttpsUrl(signed.url);
+          if (url && isValidMediaUrl(url)) {
+            resolvedUrlsCacheRef.current[key] = url;
+            newResolved[ref.id] = url;
+          }
+        } catch (e) {
+          console.error('Failed to resolve reference image', e);
+          if (externalUrl && isValidMediaUrl(externalUrl)) {
+            newResolved[ref.id] = externalUrl;
+          }
+        }
+      }
+      setResolvedUrls(newResolved);
+    };
+
+    resolveUrls();
+  }, [references]);
+
+  const handleAddReference = async () => {
+    setIsAdding(true);
+    setError(null);
+    try {
+      const maxIndex = references.length > 0 ? Math.max(...references.map(r => r.index)) : 0;
+      const newRef = await sceneReferenceApi.create(sceneId, {
+        index: maxIndex + 1,
+        description: '',
+      });
+      onReferencesChange([...references, newRef]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '添加失败');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleUpdateReference = async (ref: SceneReference) => {
+    try {
+      const updated = await sceneReferenceApi.update(sceneId, ref.id, {
+        index: ref.index,
+        imageUrl: ref.imageUrl,
+        description: ref.description,
+      });
+      onReferencesChange(references.map(r => r.id === ref.id ? updated : r));
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  const handleDeleteReference = async (refId: number) => {
+    await sceneReferenceApi.delete(sceneId, refId);
+    onReferencesChange(references.filter(r => r.id !== refId));
+  };
+
+  const handleUploadImage = async (file: File): Promise<string> => {
+    const res = await fileApi.upload(file, 'private');
+    return res.key;
+  };
+
+  const sortedRefs = [...references].sort((a, b) => a.index - b.index);
+
+  return (
+    <div className="space-y-4">
+      {/* 参考资料列表 */}
+      {sortedRefs.length > 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {sortedRefs.map((ref, idx) => (
+            <ReferenceCard
+              key={ref.id}
+              reference={ref}
+              index={idx}
+              resolvedImageUrl={resolvedUrls[ref.id]}
+              onUpdate={handleUpdateReference}
+              onDelete={() => handleDeleteReference(ref.id)}
+              onUploadImage={handleUploadImage}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-3 p-8 bg-[#1a1a1a] border border-dashed border-white/10 rounded-2xl text-white/40">
+          <ImageIcon size={32} strokeWidth={1.5} />
+          <p className="text-sm">暂无参考资料</p>
+          <p className="text-xs text-white/20">点击下方按钮添加参考图及说明</p>
+        </div>
+      )}
+
+      {/* 添加按钮 */}
+      <button
+        onClick={handleAddReference}
+        disabled={isAdding}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 hover:border-blue-500/30 text-white/60 hover:text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60"
+      >
+        {isAdding ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <span>添加中...</span>
+          </>
+        ) : (
+          <>
+            <Plus size={16} />
+            <span>添加参考资料</span>
+          </>
+        )}
+      </button>
+
+      {error && (
+        <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   bookId,
   episodes = [],
@@ -548,16 +907,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     dispatch,
     activeChapter,
     loadChapters,
-    resolveReferenceImage,
     persistScene,
     persistChapterSynopsis,
     updateActiveScene,
-    commitChapters,
     checkSceneDirty,
     checkSynopsisDirty,
     storeSceneSignature,
     cleanupChapterSignatures,
-    referenceUrlCache,
   } = useScriptEditorReducer({
     bookId,
     episodes,
@@ -581,8 +937,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     saveError,
     lastSavedAt,
     isSavingSynopsis,
-    isUploadingReference,
-    resolvedReferenceUrl,
   } = state;
 
   // ============ 面板拖拽使用 Hook ============
@@ -604,6 +958,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const [synopsisDraft, setSynopsisDraft] = useState('');
   const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  // 场景参考资料
+  const [sceneReferences, setSceneReferences] = useState<SceneReference[]>([]);
+  const [loadingReferences, setLoadingReferences] = useState(false);
 
   // ============ Hooks ============
   const {
@@ -613,6 +970,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     addComment,
     updateComment,
     deleteComment,
+    resolveComment,
+    unresolveComment,
     error: commentError,
   } = useSceneComments(activeScene?.id, 'script');
 
@@ -643,10 +1002,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     });
   }, [bookId]);
 
-  useEffect(() => {
-    resolveReferenceImage(activeScene?.referenceImageUrl);
-  }, [activeScene?.referenceImageUrl, resolveReferenceImage]);
-
   // 同步 synopsisDraft 与 activeChapter
   useEffect(() => {
     setSynopsisDraft(activeChapter?.synopsis || '');
@@ -655,6 +1010,26 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // 切换场景时清空评论草稿
   useEffect(() => {
     setCommentDraft('');
+  }, [activeScene?.id]);
+
+  // 加载场景参考资料
+  useEffect(() => {
+    if (!activeScene?.id) {
+      setSceneReferences([]);
+      return;
+    }
+    setLoadingReferences(true);
+    sceneReferenceApi.list(activeScene.id)
+      .then(res => {
+        setSceneReferences(res.data || []);
+      })
+      .catch(err => {
+        console.error('Failed to load scene references', err);
+        setSceneReferences([]);
+      })
+      .finally(() => {
+        setLoadingReferences(false);
+      });
   }, [activeScene?.id]);
 
   // ============ 事件处理函数 ============
@@ -738,30 +1113,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const handleDeleteChapter = (chapterId: number) => {
     const target = chapters.find(ch => ch.id === chapterId);
     setConfirmDelete({ type: 'chapter', chapterId, label: target?.title || '未命名章节' });
-  };
-
-  const handleSaveReference = async (file: File) => {
-    dispatch({ type: 'SET_UPLOADING_REFERENCE', payload: true });
-    try {
-      const res = await fileApi.upload(file, 'private');
-      const signed = await fileApi.getSignedUrl(res.key);
-      referenceUrlCache.current[res.key] = signed.url;
-      updateActiveScene(scene => ({ ...scene, referenceImageUrl: res.key }));
-      dispatch({ type: 'SET_RESOLVED_REFERENCE_URL', payload: signed.url });
-      setToast({ message: '参考图已上传', tone: 'success' });
-    } catch (err) {
-      console.error('Failed to upload reference image', err);
-      const msg = err instanceof Error ? err.message : '参考图上传失败';
-      setToast({ message: msg, tone: 'error' });
-      throw err instanceof Error ? err : new Error(msg);
-    } finally {
-      dispatch({ type: 'SET_UPLOADING_REFERENCE', payload: false });
-    }
-  };
-
-  const handleRemoveReference = () => {
-    updateActiveScene(scene => ({ ...scene, referenceImageUrl: undefined }));
-    dispatch({ type: 'SET_RESOLVED_REFERENCE_URL', payload: undefined });
   };
 
   const handleSubmitComment = async () => {
@@ -1185,15 +1536,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   <div className="space-y-6">
                     <div className="flex items-center gap-3">
                       <ImageIcon size={14} className="text-blue-500" />
-                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">参考图及说明</label>
+                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">参考资料</label>
+                      {loadingReferences && (
+                        <div className="w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+                      )}
                     </div>
-                    <ReferenceWithDescriptionSection
-                      initialImage={resolvedReferenceUrl || (isValidMediaUrl(activeScene.referenceImageUrl) ? activeScene.referenceImageUrl : undefined)}
-                      description={activeScene.referenceImageDescription || ''}
-                      onUpload={handleSaveReference}
-                      onRemove={handleRemoveReference}
-                      onDescriptionChange={(desc) => updateActiveScene(scene => ({ ...scene, referenceImageDescription: desc }))}
-                      isUploading={isUploadingReference}
+                    <MultipleReferencesSection
+                      sceneId={activeScene.id}
+                      references={sceneReferences}
+                      onReferencesChange={setSceneReferences}
                     />
                   </div>
                 </div>
@@ -1323,6 +1674,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     }}
                     onDelete={async (id) => {
                       await deleteComment(id);
+                    }}
+                    onResolve={async (id) => {
+                      await resolveComment(id);
+                    }}
+                    onUnresolve={async (id) => {
+                      await unresolveComment(id);
                     }}
                   />
                 ))

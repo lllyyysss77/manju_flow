@@ -130,6 +130,7 @@ func (h *CommentHandler) CreateSceneComment(c *gin.Context) {
 		Module:     models.CommentModule(module),
 		UserID:     userID,
 		Meta:       req.Meta,
+		Status:     models.CommentStatusUnresolved,
 	}
 
 	if err := db.Create(&comment).Error; err != nil {
@@ -237,6 +238,7 @@ func (h *CommentHandler) CreateChapterComment(c *gin.Context) {
 		Module:     models.CommentModuleReview,
 		UserID:     userID,
 		Meta:       req.Meta, // 可包含 timecode 信息: {"timecode": "3:56", "seconds": 236}
+		Status:     models.CommentStatusUnresolved,
 	}
 
 	if err := db.Create(&comment).Error; err != nil {
@@ -298,6 +300,9 @@ func (h *CommentHandler) Update(c *gin.Context) {
 	}
 	if req.Meta != nil {
 		comment.Meta = *req.Meta
+	}
+	if req.Status != nil {
+		comment.Status = *req.Status
 	}
 
 	if err := db.Save(&comment).Error; err != nil {
@@ -513,6 +518,82 @@ func (h *CommentHandler) GetChapterCommentCounts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": counts,
 	})
+}
+
+// Resolve 标记评论为已解决
+// @Summary 标记评论为已解决
+// @Description 将评论状态标记为已解决（任何登录用户均可操作）
+// @Tags comments
+// @Accept json
+// @Produce json
+// @Param id path int true "评论ID"
+// @Success 200 {object} models.Comment
+// @Router /api/comments/{id}/resolve [put]
+func (h *CommentHandler) Resolve(c *gin.Context) {
+	id := c.Param("id")
+
+	db := database.GetDB()
+
+	var comment models.Comment
+	if err := db.First(&comment, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Comment not found",
+		})
+		return
+	}
+
+	// 更新状态为已解决
+	comment.Status = models.CommentStatusResolved
+
+	if err := db.Save(&comment).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to resolve comment",
+		})
+		return
+	}
+
+	// 重新加载以获取用户信息
+	db.Preload("User").First(&comment, comment.ID)
+
+	c.JSON(http.StatusOK, comment)
+}
+
+// Unresolve 标记评论为未解决
+// @Summary 标记评论为未解决
+// @Description 将评论状态标记为未解决（任何登录用户均可操作）
+// @Tags comments
+// @Accept json
+// @Produce json
+// @Param id path int true "评论ID"
+// @Success 200 {object} models.Comment
+// @Router /api/comments/{id}/unresolve [put]
+func (h *CommentHandler) Unresolve(c *gin.Context) {
+	id := c.Param("id")
+
+	db := database.GetDB()
+
+	var comment models.Comment
+	if err := db.First(&comment, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Comment not found",
+		})
+		return
+	}
+
+	// 更新状态为未解决
+	comment.Status = models.CommentStatusUnresolved
+
+	if err := db.Save(&comment).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to unresolve comment",
+		})
+		return
+	}
+
+	// 重新加载以获取用户信息
+	db.Preload("User").First(&comment, comment.ID)
+
+	c.JSON(http.StatusOK, comment)
 }
 
 // isValidSceneModule 验证场景评论模块是否有效

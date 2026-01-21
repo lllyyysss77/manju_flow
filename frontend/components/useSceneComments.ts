@@ -67,6 +67,24 @@ export function useSceneComments(sceneId?: number | null, module?: SceneCommentM
     []
   );
 
+  const resolveComment = useCallback(
+    async (commentId: number) => {
+      const updated = await commentApi.resolve(commentId);
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+      return updated;
+    },
+    []
+  );
+
+  const unresolveComment = useCallback(
+    async (commentId: number) => {
+      const updated = await commentApi.unresolve(commentId);
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+      return updated;
+    },
+    []
+  );
+
   return {
     comments,
     loading,
@@ -76,5 +94,7 @@ export function useSceneComments(sceneId?: number | null, module?: SceneCommentM
     addComment,
     updateComment,
     deleteComment,
+    resolveComment,
+    unresolveComment,
   };
 }

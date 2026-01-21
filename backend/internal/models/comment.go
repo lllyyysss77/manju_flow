@@ -25,6 +25,14 @@ const (
 	CommentTargetChapter CommentTargetType = "chapter" // 章节
 )
 
+// CommentStatus 评论状态
+type CommentStatus string
+
+const (
+	CommentStatusUnresolved CommentStatus = "unresolved" // 未解决
+	CommentStatusResolved   CommentStatus = "resolved"   // 已解决
+)
+
 // Comment 评论模型
 // 支持多种评论对象（场景、章节）和多种模块上下文
 type Comment struct {
@@ -50,6 +58,9 @@ type Comment struct {
 	// 元数据 - JSON 格式，存储特殊信息
 	// 审核交付模块的时间点: {"timecode": "3:56", "seconds": 236}
 	Meta string `gorm:"type:text" json:"meta,omitempty"`
+
+	// 状态 - 未解决/已解决
+	Status CommentStatus `gorm:"size:20;not null;default:unresolved" json:"status"`
 }
 
 // TableName 指定表名
@@ -71,6 +82,7 @@ type CreateCommentRequest struct {
 
 // UpdateCommentRequest 更新评论请求
 type UpdateCommentRequest struct {
-	Content *string `json:"content,omitempty"`
-	Meta    *string `json:"meta,omitempty"`
+	Content *string        `json:"content,omitempty"`
+	Meta    *string        `json:"meta,omitempty"`
+	Status  *CommentStatus `json:"status,omitempty"`
 }

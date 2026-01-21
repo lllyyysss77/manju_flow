@@ -159,6 +159,19 @@ func Setup(r *gin.Engine) {
 				video.PUT("/revert/:version", videoHandler.Revert) // 回滚版本
 			}
 
+			// 场景参考资料路由
+			sceneReferenceHandler := handlers.NewSceneReferenceHandler()
+			sceneReferences := authorized.Group("/scenes/:sceneId/references")
+			{
+				sceneReferences.GET("", sceneReferenceHandler.List)                       // 获取参考资料列表
+				sceneReferences.POST("", sceneReferenceHandler.Create)                    // 创建参考资料
+				sceneReferences.POST("/batch", sceneReferenceHandler.BatchCreate)         // 批量创建参考资料
+				sceneReferences.GET("/:referenceId", sceneReferenceHandler.GetByID)       // 获取参考资料详情
+				sceneReferences.PUT("/:referenceId", sceneReferenceHandler.Update)        // 更新参考资料
+				sceneReferences.DELETE("/:referenceId", sceneReferenceHandler.Delete)     // 删除参考资料
+				sceneReferences.DELETE("", sceneReferenceHandler.DeleteAll)               // 删除全部参考资料
+			}
+
 			// 评论路由
 			commentHandler := handlers.NewCommentHandler()
 			// 评论数统计（用于显示徽章）
@@ -179,9 +192,11 @@ func Setup(r *gin.Engine) {
 			// 评论通用操作
 			comments := authorized.Group("/comments")
 			{
-				comments.GET("/:id", commentHandler.GetByID)   // 获取评论详情
-				comments.PUT("/:id", commentHandler.Update)    // 更新评论
-				comments.DELETE("/:id", commentHandler.Delete) // 删除评论
+				comments.GET("/:id", commentHandler.GetByID)          // 获取评论详情
+				comments.PUT("/:id", commentHandler.Update)           // 更新评论
+				comments.DELETE("/:id", commentHandler.Delete)        // 删除评论
+				comments.PUT("/:id/resolve", commentHandler.Resolve)     // 标记为已解决
+				comments.PUT("/:id/unresolve", commentHandler.Unresolve) // 标记为未解决
 			}
 		}
 	}

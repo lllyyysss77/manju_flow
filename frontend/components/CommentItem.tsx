@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Pencil, Trash2, X, Check } from 'lucide-react';
+import { Pencil, Trash2, X, Check, CheckCircle, Circle } from 'lucide-react';
 import { Comment } from '../types';
 
 export interface CommentItemProps {
   comment: Comment;
   onUpdate?: (commentId: number, content: string) => Promise<void>;
   onDelete?: (commentId: number) => Promise<void>;
+  onResolve?: (commentId: number) => Promise<void>;
+  onUnresolve?: (commentId: number) => Promise<void>;
   /** 作者名字的颜色 class，默认 text-blue-400 */
   authorColorClass?: string;
   /** 额外显示在作者名旁边的内容，如时间码标签 */
@@ -33,6 +35,8 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   comment,
   onUpdate,
   onDelete,
+  onResolve,
+  onUnresolve,
   authorColorClass = 'text-blue-400',
   extraBadge,
   onClick,
@@ -43,6 +47,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
   const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,15 +86,36 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     }
   };
 
+  const handleToggleResolve = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isResolving) return;
+    setIsResolving(true);
+    try {
+      if (comment.status === 'resolved') {
+        if (onUnresolve) await onUnresolve(comment.id);
+      } else {
+        if (onResolve) await onResolve(comment.id);
+      }
+    } catch (err) {
+      console.error('Failed to toggle resolve status', err);
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
   const edited = isEdited(comment);
   const canEdit = !!onUpdate;
   const canDelete = !!onDelete;
+  const canResolve = !!onResolve || !!onUnresolve;
+  const isResolved = comment.status === 'resolved';
 
   return (
     <div
-      className={`bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 hover:border-blue-500/20 transition-all group relative ${
-        onClick ? 'cursor-pointer' : ''
-      }`}
+      className={`bg-[#1a1a1a] p-4 rounded-2xl border transition-all group relative ${
+        isResolved
+          ? 'border-green-500/20 opacity-60'
+          : 'border-white/5 hover:border-blue-500/20'
+      } ${onClick ? 'cursor-pointer' : ''}`}
       onClick={onClick}
     >
       {/* 删除确认弹窗 */}
@@ -129,6 +155,11 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           <span className={`text-[10px] font-bold uppercase tracking-tighter ${authorColorClass}`}>
             {getCommentAuthor(comment)}
           </span>
+          {isResolved && (
+            <span className="flex items-center gap-0.5 text-[9px] text-green-400">
+              <CheckCircle size={10} /> 已解决
+            </span>
+          )}
           {edited && (
             <span className="text-[9px] text-white/30 italic">已编辑</span>
           )}
@@ -136,8 +167,22 @@ export const CommentItem: React.FC<CommentItemProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-[9px] text-white/30">{formatCommentTime(comment.createdAt)}</span>
           {/* 操作按钮 - hover 时显示 */}
-          {(canEdit || canDelete) && !isEditing && (
+          {(canEdit || canDelete || canResolve) && !isEditing && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {canResolve && (
+                <button
+                  onClick={handleToggleResolve}
+                  className={`p-1 rounded transition-colors ${
+                    isResolved
+                      ? 'hover:bg-yellow-500/20 text-green-400 hover:text-yellow-400'
+                      : 'hover:bg-green-500/20 text-white/40 hover:text-green-400'
+                  }`}
+                  title={isResolved ? '标记为未解决' : '标记为已解决'}
+                  disabled={isResolving}
+                >
+                  {isResolved ? <CheckCircle size={12} /> : <Circle size={12} />}
+                </button>
+              )}
               {canEdit && (
                 <button
                   onClick={handleStartEdit}

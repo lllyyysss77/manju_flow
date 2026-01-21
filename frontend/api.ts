@@ -240,10 +240,12 @@ import {
   Comment,
   CommentListResponse,
   CommentModule,
+  CommentStatus,
   Project,
   Status,
   Episode,
   Scene,
+  SceneReference,
   ChapterVideo,
   ChapterVideoVersion,
   VideoStatus,
@@ -744,6 +746,14 @@ export const commentApi = {
     request(`/api/comments/${id}`, {
       method: 'DELETE',
     }),
+  resolve: (id: number) =>
+    request<Comment>(`/api/comments/${id}/resolve`, {
+      method: 'PUT',
+    }),
+  unresolve: (id: number) =>
+    request<Comment>(`/api/comments/${id}/unresolve`, {
+      method: 'PUT',
+    }),
   // 评论数统计（用于显示徽章）
   getSceneCommentCounts: (bookId: number, module: SceneCommentModule) =>
     request<CommentCountsResponse>(`/api/books/${bookId}/scenes/comment-counts?module=${module}`),
@@ -785,6 +795,47 @@ export const characterApi = {
     }),
   delete: (bookId: number, characterId: number) =>
     request(`/api/books/${bookId}/characters/${characterId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// 场景参考资料 API
+export interface SceneReferenceListResponse {
+  total: number;
+  data: SceneReference[];
+}
+
+export interface CreateSceneReferencePayload {
+  index: number;
+  imageUrl?: string;
+  description?: string;
+}
+
+export interface UpdateSceneReferencePayload {
+  index?: number;
+  imageUrl?: string;
+  description?: string;
+}
+
+export const sceneReferenceApi = {
+  list: (sceneId: number) =>
+    request<SceneReferenceListResponse>(`/api/scenes/${sceneId}/references`),
+  create: (sceneId: number, payload: CreateSceneReferencePayload) =>
+    request<SceneReference>(`/api/scenes/${sceneId}/references`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (sceneId: number, referenceId: number, payload: UpdateSceneReferencePayload) =>
+    request<SceneReference>(`/api/scenes/${sceneId}/references/${referenceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (sceneId: number, referenceId: number) =>
+    request(`/api/scenes/${sceneId}/references/${referenceId}`, {
+      method: 'DELETE',
+    }),
+  deleteAll: (sceneId: number) =>
+    request(`/api/scenes/${sceneId}/references`, {
       method: 'DELETE',
     }),
 };

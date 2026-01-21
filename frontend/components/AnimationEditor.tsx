@@ -181,6 +181,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     addComment,
     updateComment,
     deleteComment,
+    resolveComment,
+    unresolveComment,
   } = useSceneComments(activeScene?.id, 'animation');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
@@ -1278,6 +1280,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     }}
                     onDelete={async (id) => {
                       await deleteComment(id);
+                    }}
+                    onResolve={async (id) => {
+                      await resolveComment(id);
+                    }}
+                    onUnresolve={async (id) => {
+                      await unresolveComment(id);
                     }}
                   />
                 ))

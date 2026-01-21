@@ -340,6 +340,28 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     }
   };
 
+  const handleResolveComment = async (commentId: number) => {
+    try {
+      const updated = await commentApi.resolve(commentId);
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '标记为已解决失败';
+      showToast(msg, 'error');
+      throw err;
+    }
+  };
+
+  const handleUnresolveComment = async (commentId: number) => {
+    try {
+      const updated = await commentApi.unresolve(commentId);
+      setComments(prev => prev.map(c => (c.id === commentId ? updated : c)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '标记为未解决失败';
+      showToast(msg, 'error');
+      throw err;
+    }
+  };
+
   const handleCommentDraftChange = (value: string) => {
     const prev = commentDraftRef.current;
     const isForwardTyping = value.length > prev.length;
@@ -929,6 +951,8 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                       comment={c}
                       onUpdate={handleUpdateComment}
                       onDelete={handleDeleteComment}
+                      onResolve={handleResolveComment}
+                      onUnresolve={handleUnresolveComment}
                       authorColorClass="text-white/60"
                       extraBadge={
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-mono border border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]">

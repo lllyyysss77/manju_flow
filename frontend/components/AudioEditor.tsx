@@ -262,6 +262,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     addComment,
     updateComment,
     deleteComment,
+    resolveComment,
+    unresolveComment,
   } = useSceneComments(activeScene?.id, 'audio');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
@@ -1424,6 +1426,12 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                       }}
                       onDelete={async (id) => {
                         await deleteComment(id);
+                      }}
+                      onResolve={async (id) => {
+                        await resolveComment(id);
+                      }}
+                      onUnresolve={async (id) => {
+                        await unresolveComment(id);
                       }}
                     />
                   ))

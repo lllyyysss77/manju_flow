@@ -154,6 +154,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     addComment,
     updateComment,
     deleteComment,
+    resolveComment,
+    unresolveComment,
   } = useSceneComments(activeScene?.id, 'storyboard');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
 
@@ -1374,6 +1376,12 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                     }}
                     onDelete={async (id) => {
                       await deleteComment(id);
+                    }}
+                    onResolve={async (id) => {
+                      await resolveComment(id);
+                    }}
+                    onUnresolve={async (id) => {
+                      await unresolveComment(id);
                     }}
                   />
                 ))

@@ -12,6 +12,7 @@ export type Status = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
 
 export type CommentModule = 'script' | 'storyboard' | 'animation' | 'audio' | 'review';
 export type CommentTargetType = 'scene' | 'chapter';
+export type CommentStatus = 'unresolved' | 'resolved';
 
 export interface CommentUser {
   id: number;
@@ -28,6 +29,7 @@ export interface Comment {
   userId: number;
   user?: CommentUser;
   meta?: string;
+  status: CommentStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +44,17 @@ export interface ReviewCommentMeta {
   seconds?: number;
 }
 
+// 场景参考资料（支持多个）
+export interface SceneReference {
+  id: number;
+  sceneId: number;
+  index: number;
+  imageUrl?: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Scene {
   id: number;
   chapterId?: number;
@@ -52,8 +65,7 @@ export interface Scene {
   transitionEffect?: string; // 转场或剪辑手法
   status: Status;
   comments?: Comment[];
-  referenceImageUrl?: string; // 剧本阶段的视觉参考图
-  referenceImageDescription?: string; // 参考图说明
+  references?: SceneReference[]; // 多参考资料（一对多）
   thumbnailUrl?: string; // 场景预览缩略图（首帧）
   audios?: SceneAudioTrack[]; // 多音轨
   frameSets?: SceneFrameSet[];
