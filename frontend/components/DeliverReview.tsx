@@ -72,6 +72,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
+  const [commentFilter, setCommentFilter] = useState<'all' | 'unresolved'>('all');
   const [loadingComments, setLoadingComments] = useState(false);
   const [postingComment, setPostingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -289,6 +290,13 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
       }),
     [comments]
   );
+
+  const filteredComments = useMemo<ReviewCommentView[]>(
+    () => commentFilter === 'all' ? reviewComments : reviewComments.filter(c => c.status === 'unresolved'),
+    [reviewComments, commentFilter]
+  );
+
+  const unresolvedCount = useMemo(() => reviewComments.filter(c => c.status === 'unresolved').length, [reviewComments]);
 
   const handleSubmitComment = async () => {
     if (!activeChapter?.id) return;
@@ -932,7 +940,33 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
             <div className="w-80 border-l border-white/5 flex flex-col bg-[#111111]">
               <div className="p-4 border-b border-white/5 flex items-center justify-between">
                 <span className="text-xs font-bold text-white/40 uppercase tracking-widest">时间轴反馈</span>
-                <MessageSquare size={16} className="text-white/20" />
+                <div className="flex items-center gap-1 text-[11px] bg-white/5 border border-white/10 rounded-lg px-1">
+                  <button
+                    className={`px-2 py-1 rounded-md transition-all ${
+                      commentFilter === 'all'
+                        ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                    onClick={() => setCommentFilter('all')}
+                  >
+                    全部
+                  </button>
+                  <button
+                    className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                      commentFilter === 'unresolved'
+                        ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                    onClick={() => setCommentFilter('unresolved')}
+                  >
+                    未解决
+                    {unresolvedCount > 0 && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/30">
+                        {unresolvedCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -944,8 +978,8 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   <div className="h-full flex items-center justify-center text-white/40 text-sm">
                     评论加载中...
                   </div>
-                ) : reviewComments.length ? (
-                  reviewComments.map((c) => (
+                ) : filteredComments.length ? (
+                  filteredComments.map((c) => (
                     <CommentItem
                       key={c.id}
                       comment={c}
@@ -966,7 +1000,9 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center gap-3 opacity-40 italic">
                     <MessageSquare size={32} />
-                    <p className="text-xs">暂无时间轴反馈</p>
+                    <p className="text-xs">
+                      {commentFilter === 'unresolved' ? '暂无未解决的反馈' : '暂无时间轴反馈'}
+                    </p>
                   </div>
                 )}
               </div>
