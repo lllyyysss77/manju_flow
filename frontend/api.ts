@@ -721,6 +721,7 @@ export interface UpdateCommentPayload {
 
 export interface CommentCountsResponse {
   data: Record<number, number>;
+  unresolvedCounts: Record<number, number>;
 }
 
 export const commentApi = {

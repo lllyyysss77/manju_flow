@@ -389,7 +389,7 @@ func (h *CommentHandler) GetByID(c *gin.Context) {
 
 // GetSceneCommentCounts 批量获取书籍下所有场景的评论数
 // @Summary 获取场景评论数
-// @Description 批量获取指定书籍下所有场景在指定模块的评论数量
+// @Description 批量获取指定书籍下所有场景在指定模块的评论数量（包括总数和未解决数）
 // @Tags comments
 // @Accept json
 // @Produce json
@@ -427,18 +427,19 @@ func (h *CommentHandler) GetSceneCommentCounts(c *gin.Context) {
 		Count    int64 `json:"count"`
 	}
 
+	sceneSubQuery := db.Model(&models.Scene{}).
+		Select("scenes.id").
+		Joins("JOIN chapters ON chapters.id = scenes.chapter_id").
+		Where("chapters.book_id = ?", bookId).
+		Where("chapters.deleted_at IS NULL").
+		Where("scenes.deleted_at IS NULL")
+
+	// 获取总评论数
 	var results []CountResult
 	err := db.Model(&models.Comment{}).
 		Select("target_id, COUNT(*) as count").
 		Where("target_type = ? AND module = ?", models.CommentTargetScene, module).
-		Where("target_id IN (?)",
-			db.Model(&models.Scene{}).
-				Select("scenes.id").
-				Joins("JOIN chapters ON chapters.id = scenes.chapter_id").
-				Where("chapters.book_id = ?", bookId).
-				Where("chapters.deleted_at IS NULL").
-				Where("scenes.deleted_at IS NULL"),
-		).
+		Where("target_id IN (?)", sceneSubQuery).
 		Group("target_id").
 		Find(&results).Error
 
@@ -449,14 +450,36 @@ func (h *CommentHandler) GetSceneCommentCounts(c *gin.Context) {
 		return
 	}
 
+	// 获取未解决评论数
+	var unresolvedResults []CountResult
+	err = db.Model(&models.Comment{}).
+		Select("target_id, COUNT(*) as count").
+		Where("target_type = ? AND module = ? AND status = ?", models.CommentTargetScene, module, models.CommentStatusUnresolved).
+		Where("target_id IN (?)", sceneSubQuery).
+		Group("target_id").
+		Find(&unresolvedResults).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch unresolved comment counts",
+		})
+		return
+	}
+
 	// 转换为 map 格式
 	counts := make(map[uint]int64)
 	for _, r := range results {
 		counts[r.TargetID] = r.Count
 	}
 
+	unresolvedCounts := make(map[uint]int64)
+	for _, r := range unresolvedResults {
+		unresolvedCounts[r.TargetID] = r.Count
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"data": counts,
+		"data":             counts,
+		"unresolvedCounts": unresolvedCounts,
 	})
 }
 

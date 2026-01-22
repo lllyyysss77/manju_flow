@@ -202,6 +202,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   // 场景评论数映射 (sceneId -> count)
   const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
+  // 场景未解决评论数映射 (sceneId -> count)
+  const [sceneUnresolvedCounts, setSceneUnresolvedCounts] = useState<Record<number, number>>({});
   const MIN_LEFT = 220;
   const MAX_LEFT = 420;
   const MIN_RIGHT = 260;
@@ -294,6 +296,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     if (!bookId) return;
     commentApi.getSceneCommentCounts(bookId, 'storyboard').then(res => {
       setSceneCommentCounts(res.data || {});
+      setSceneUnresolvedCounts(res.unresolvedCounts || {});
     }).catch(err => {
       console.error('Failed to fetch comment counts', err);
     });
@@ -562,8 +565,12 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     try {
       await addComment(content);
       setCommentDraft('');
-      // 更新评论数
+      // 更新评论数（新评论默认是未解决状态）
       setSceneCommentCounts(prev => ({
+        ...prev,
+        [activeScene.id]: (prev[activeScene.id] || 0) + 1
+      }));
+      setSceneUnresolvedCounts(prev => ({
         ...prev,
         [activeScene.id]: (prev[activeScene.id] || 0) + 1
       }));
@@ -751,7 +758,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] py-0.5 px-1 text-white/70 font-mono flex items-center justify-between">
                 <span>#{displayNumber}</span>
                 {sceneCommentCounts[scene.id] > 0 && (
-                  <span className="flex items-center gap-0.5 text-yellow-300/90" title={`${sceneCommentCounts[scene.id]} 条评论`}>
+                  <span
+                    className={`flex items-center gap-0.5 ${sceneUnresolvedCounts[scene.id] > 0 ? 'text-red-400' : 'text-yellow-300/90'}`}
+                    title={`${sceneCommentCounts[scene.id]} 条评论${sceneUnresolvedCounts[scene.id] > 0 ? `（${sceneUnresolvedCounts[scene.id]} 条未解决）` : '（全部已解决）'}`}
+                  >
                     <MessageSquare size={8} />
                     <span>{sceneCommentCounts[scene.id]}</span>
                   </span>
@@ -1375,13 +1385,38 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                       await updateComment(id, content);
                     }}
                     onDelete={async (id) => {
+                      const target = activeSceneComments.find(cm => cm.id === id);
                       await deleteComment(id);
+                      if (activeScene?.id) {
+                        setSceneCommentCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                        }));
+                        if (target?.status === 'unresolved') {
+                          setSceneUnresolvedCounts(prev => ({
+                            ...prev,
+                            [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                          }));
+                        }
+                      }
                     }}
                     onResolve={async (id) => {
                       await resolveComment(id);
+                      if (activeScene?.id) {
+                        setSceneUnresolvedCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                        }));
+                      }
                     }}
                     onUnresolve={async (id) => {
                       await unresolveComment(id);
+                      if (activeScene?.id) {
+                        setSceneUnresolvedCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: (prev[activeScene.id] || 0) + 1
+                        }));
+                      }
                     }}
                   />
                 ))

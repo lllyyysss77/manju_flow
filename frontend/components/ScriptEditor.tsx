@@ -948,6 +948,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   // 场景评论数映射 (sceneId -> count)
   const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
+  // 场景未解决评论数映射 (sceneId -> count)
+  const [sceneUnresolvedCounts, setSceneUnresolvedCounts] = useState<Record<number, number>>({});
   const [confirmDelete, setConfirmDelete] = useState<{
     type: 'chapter' | 'scene';
     chapterId: number;
@@ -997,6 +999,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     if (!bookId) return;
     commentApi.getSceneCommentCounts(bookId, 'script').then(res => {
       setSceneCommentCounts(res.data || {});
+      setSceneUnresolvedCounts(res.unresolvedCounts || {});
     }).catch(err => {
       console.error('Failed to fetch comment counts', err);
     });
@@ -1125,9 +1128,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     try {
       await addComment(content);
       setCommentDraft('');
-      // 更新评论数
+      // 更新评论数（新评论默认是未解决状态）
       if (activeScene?.id) {
         setSceneCommentCounts(prev => ({
+          ...prev,
+          [activeScene.id]: (prev[activeScene.id] || 0) + 1
+        }));
+        setSceneUnresolvedCounts(prev => ({
           ...prev,
           [activeScene.id]: (prev[activeScene.id] || 0) + 1
         }));
@@ -1394,8 +1401,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                   <div className="flex items-center gap-2">
                                     {sceneCommentCounts[scene.id] > 0 && (
                                       <span className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded ${
-                                        activeScene?.id === scene.id ? 'bg-yellow-500/30 text-yellow-200' : 'bg-yellow-500/20 text-yellow-300/80'
-                                      }`} title={`${sceneCommentCounts[scene.id]} 条评论`}>
+                                        sceneUnresolvedCounts[scene.id] > 0
+                                          ? (activeScene?.id === scene.id ? 'bg-red-500/30 text-red-200' : 'bg-red-500/20 text-red-300/80')
+                                          : (activeScene?.id === scene.id ? 'bg-yellow-500/30 text-yellow-200' : 'bg-yellow-500/20 text-yellow-300/80')
+                                      }`} title={`${sceneCommentCounts[scene.id]} 条评论${sceneUnresolvedCounts[scene.id] > 0 ? `（${sceneUnresolvedCounts[scene.id]} 条未解决）` : '（全部已解决）'}`}>
                                         <MessageSquare size={10} />
                                         {sceneCommentCounts[scene.id]}
                                       </span>
@@ -1673,13 +1682,38 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       await updateComment(id, content);
                     }}
                     onDelete={async (id) => {
+                      const target = activeSceneComments.find(cm => cm.id === id);
                       await deleteComment(id);
+                      if (activeScene?.id) {
+                        setSceneCommentCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                        }));
+                        if (target?.status === 'unresolved') {
+                          setSceneUnresolvedCounts(prev => ({
+                            ...prev,
+                            [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                          }));
+                        }
+                      }
                     }}
                     onResolve={async (id) => {
                       await resolveComment(id);
+                      if (activeScene?.id) {
+                        setSceneUnresolvedCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                        }));
+                      }
                     }}
                     onUnresolve={async (id) => {
                       await unresolveComment(id);
+                      if (activeScene?.id) {
+                        setSceneUnresolvedCounts(prev => ({
+                          ...prev,
+                          [activeScene.id]: (prev[activeScene.id] || 0) + 1
+                        }));
+                      }
                     }}
                   />
                 ))
