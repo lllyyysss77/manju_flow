@@ -300,10 +300,65 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     onEpisodesChangeRef.current?.(chapters);
   }, []);
 
-  // Load chapters from API
+  // Ref for episodes prop to use in loadChapters
+  const episodesRef = useRef(episodes);
+  useEffect(() => {
+    episodesRef.current = episodes;
+  }, [episodes]);
+
+  // Helper to initialize state from episodes data
+  const initializeFromData = useCallback((data: Episode[]) => {
+    // Store initial signatures
+    const savedSig: Record<number, string> = {};
+    data.forEach(ch => (ch.scenes || []).forEach(sc => {
+      savedSig[sc.id] = getSignature(sc);
+    }));
+    savedSignaturesRef.current = savedSig;
+
+    const savedChapterSig: Record<number, string> = {};
+    data.forEach(ch => {
+      savedChapterSig[ch.id] = getSynopsisSignature(ch.synopsis);
+    });
+    savedChapterSynopsisRef.current = savedChapterSig;
+
+    // Determine initial selection
+    let targetChapterId: number | null = null;
+    let targetScene: Scene | null = null;
+    const initChapterId = initialChapterIdRef.current;
+    const initSceneId = initialSceneIdRef.current;
+
+    if (initChapterId != null) {
+      const chapter = data.find(ch => ch.id === initChapterId);
+      if (chapter) {
+        targetChapterId = chapter.id;
+        if (initSceneId != null) {
+          const scene = chapter.scenes?.find(s => s.id === initSceneId);
+          if (scene) targetScene = scene;
+        }
+      }
+    }
+
+    if (targetChapterId == null) {
+      targetChapterId = data[0]?.id ?? null;
+    }
+
+    dispatch({ type: 'SET_CHAPTERS', payload: data });
+    dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: targetChapterId, scene: targetScene } });
+    dispatch({ type: 'SET_DIRTY', payload: false });
+    dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
+    onEpisodesChangeRef.current?.(data);
+  }, [getSignature, getSynopsisSignature]);
+
+  // Load chapters from API or use preloaded episodes
   const loadChapters = useCallback(async () => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
+
+    // 如果 episodes prop 已有数据，直接使用，跳过 API 调用
+    if (episodesRef.current && episodesRef.current.length > 0) {
+      initializeFromData(episodesRef.current);
+      return;
+    }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_LOAD_ERROR', payload: null });
@@ -337,52 +392,14 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
           .sort((a, b) => a.index - b.index),
       })) as Episode[];
 
-      // Store initial signatures
-      const savedSig: Record<number, string> = {};
-      data.forEach(ch => (ch.scenes || []).forEach(sc => {
-        savedSig[sc.id] = getSignature(sc);
-      }));
-      savedSignaturesRef.current = savedSig;
-
-      const savedChapterSig: Record<number, string> = {};
-      data.forEach(ch => {
-        savedChapterSig[ch.id] = getSynopsisSignature(ch.synopsis);
-      });
-      savedChapterSynopsisRef.current = savedChapterSig;
-
-      // Determine initial selection
-      let targetChapterId: number | null = null;
-      let targetScene: Scene | null = null;
-      const initChapterId = initialChapterIdRef.current;
-      const initSceneId = initialSceneIdRef.current;
-
-      if (initChapterId != null) {
-        const chapter = data.find(ch => ch.id === initChapterId);
-        if (chapter) {
-          targetChapterId = chapter.id;
-          if (initSceneId != null) {
-            const scene = chapter.scenes?.find(s => s.id === initSceneId);
-            if (scene) targetScene = scene;
-          }
-        }
-      }
-
-      if (targetChapterId == null) {
-        targetChapterId = data[0]?.id ?? null;
-      }
-
-      dispatch({ type: 'SET_CHAPTERS', payload: data });
-      dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: targetChapterId, scene: targetScene } });
-      dispatch({ type: 'SET_DIRTY', payload: false });
-      dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
-      onEpisodesChangeRef.current?.(data);
+      initializeFromData(data);
     } catch (err) {
       console.error('Failed to load chapters', err);
       dispatch({ type: 'SET_LOAD_ERROR', payload: err instanceof Error ? err.message : '加载失败' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [bookId, getSignature, getSynopsisSignature]);
+  }, [bookId, initializeFromData]);
 
   // Resolve reference image URL
   const resolveReferenceImage = useCallback(async (raw?: string | null) => {

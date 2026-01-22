@@ -4,7 +4,7 @@ import { ProductionStage, Project, Episode } from './types';
 import { STAGE_CONFIG, STATUS_MAP } from './constants';
 import { StageWrapper } from './components/StageWrapper';
 import { ImportBookModal } from './components/ImportBookModal';
-import { authApi, authStorage, bookApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
+import { authApi, authStorage, bookApi, chapterApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
 import {
   Search,
@@ -74,6 +74,9 @@ const App: React.FC = () => {
 
   // 导入弹窗状态
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // 章节数据预加载状态
+  const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
 
   const handleAuthSuccess = (auth: AuthResponse) => {
     setAuthToken(auth.token);
@@ -157,14 +160,51 @@ const App: React.FC = () => {
     await loadProjects();
   };
 
-  // 进入项目
-  const enterProject = (project: Project) => {
-    setSelectedProject({ ...project, episodes: project.episodes || [] });
+  // 进入项目并预加载章节数据
+  const enterProject = async (project: Project) => {
+    // 先进入创作模式，显示加载状态
+    setSelectedProject({ ...project, episodes: [] });
     setViewMode('PRODUCTION');
     setCurrentStage(ProductionStage.OUTLINE);
     // 重置跨模块的场景状态
     setActiveChapterId(null);
     setActiveSceneId(null);
+
+    // 预加载章节和场景数据
+    setIsLoadingEpisodes(true);
+    try {
+      const res = await chapterApi.list(project.id, true);
+      const episodes: Episode[] = (res.data || []).map(ch => ({
+        id: ch.id,
+        title: ch.title,
+        index: ch.index,
+        synopsis: ch.synopsis || '',
+        status: ch.status as Episode['status'],
+        scenes: (ch.scenes || [])
+          .map(s => ({
+            id: s.id,
+            chapterId: s.chapterId ?? ch.id,
+            index: s.index,
+            description: s.description || '',
+            cameraMovement: s.cameraMovement || '',
+            dialogue: s.dialogue || '',
+            transitionEffect: s.transitionEffect || '',
+            status: s.status as Episode['status'],
+            comments: [],
+            references: s.references,
+            thumbnailUrl: s.thumbnailUrl,
+            frameSets: s.frameSets,
+            animations: s.animations,
+            audios: s.audios,
+          }))
+          .sort((a, b) => a.index - b.index),
+      }));
+      setSelectedProject(prev => prev ? { ...prev, episodes } : prev);
+    } catch (err) {
+      console.error('Failed to preload chapters:', err);
+    } finally {
+      setIsLoadingEpisodes(false);
+    }
   };
 
   const handleEpisodesChange = (episodes: Episode[]) => {
@@ -462,7 +502,6 @@ const App: React.FC = () => {
     if (!selectedProject) return null;
 
     const renderContent = () => {
-      const episode = selectedProject.episodes[0];
       switch (currentStage) {
         case ProductionStage.OUTLINE:
           return (
@@ -485,6 +524,9 @@ const App: React.FC = () => {
             />
           );
         case ProductionStage.ART:
+          if (isLoadingEpisodes) {
+            return <EditorLoading />;
+          }
           return selectedProject.episodes.length > 0 ? (
             <StoryboardEditor
               bookId={selectedProject.id}
@@ -498,6 +540,9 @@ const App: React.FC = () => {
             <div className="p-20 text-center text-white/20">暂无剧本</div>
           );
         case ProductionStage.ANIMATE:
+          if (isLoadingEpisodes) {
+            return <EditorLoading />;
+          }
           return selectedProject.episodes.length > 0 ? (
             <AnimationEditor
               bookId={selectedProject.id}
@@ -511,6 +556,9 @@ const App: React.FC = () => {
             <div className="p-20 text-center text-white/20">暂无分镜</div>
           );
         case ProductionStage.AUDIO:
+          if (isLoadingEpisodes) {
+            return <EditorLoading />;
+          }
           return selectedProject.episodes.length > 0 ? (
             <AudioEditor
               bookId={selectedProject.id}
@@ -524,6 +572,9 @@ const App: React.FC = () => {
             <div className="p-20 text-center text-white/20">暂无动画</div>
           );
         case ProductionStage.REVIEW:
+          if (isLoadingEpisodes) {
+            return <EditorLoading />;
+          }
           return (
             <DeliverReview
               episodes={selectedProject.episodes}
