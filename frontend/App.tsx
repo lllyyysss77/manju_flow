@@ -2,7 +2,6 @@
 import React, { useState, useMemo, useEffect, useCallback, Suspense, lazy } from 'react';
 import { ProductionStage, Project, Episode } from './types';
 import { STAGE_CONFIG, STATUS_MAP } from './constants';
-import { StageWrapper } from './components/StageWrapper';
 import { ImportBookModal } from './components/ImportBookModal';
 import { authApi, authStorage, bookApi, chapterApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
@@ -621,11 +620,9 @@ const App: React.FC = () => {
 
         {/* 模块主视图 */}
         <div className="flex-1 overflow-hidden">
-          <StageWrapper title={`${STAGE_CONFIG.find(s => s.stage === currentStage)?.label}`}>
-            <Suspense fallback={<EditorLoading />}>
-              {renderContent()}
-            </Suspense>
-          </StageWrapper>
+          <Suspense fallback={<EditorLoading />}>
+            {renderContent()}
+          </Suspense>
         </div>
 
         {/* DaVinci 风格底部导航 */}
