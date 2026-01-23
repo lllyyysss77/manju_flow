@@ -1085,17 +1085,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                     >
                       <Plus size={12} /> 新建音轨
                     </button>
-                    <button
-                      onClick={() => audioInputRef.current?.click()}
-                      disabled={uploadingAudio || !selectedTrack}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all disabled:opacity-50"
-                    >
-                      {uploadingAudio
-                        ? '上传中...'
-                        : selectedTrack
-                          ? hasAudio ? '上传新版本' : '上传第一版'
-                          : '先新建音轨'}
-                    </button>
                     <input
                       ref={audioInputRef}
                       type="file"
@@ -1103,9 +1092,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                       className="hidden"
                       onChange={e => handleUploadAudio(e.target.files?.[0])}
                     />
-                    <span className="text-[11px] text-white/40">
-                      {audioDragOver ? '释放即可上传音频' : '可拖拽音频到此上传'}
-                    </span>
                   </div>
                 </div>
 
@@ -1297,19 +1283,29 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                             </div>
                             <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
                           </div>
-                          {/* 下载按钮 */}
-                          {playbackAudioUrl && (
-                            <a
-                              href={playbackAudioUrl}
-                              download
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
-                              title="下载音频"
+                          {/* 下载和重新上传按钮 */}
+                          <div className="flex items-center gap-2">
+                            {playbackAudioUrl && (
+                              <a
+                                href={playbackAudioUrl}
+                                download
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
+                                title="下载音频"
+                              >
+                                <Download size={16} />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => audioInputRef.current?.click()}
+                              disabled={uploadingAudio}
+                              className="px-3 py-1.5 text-[11px] rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/10 transition-all disabled:opacity-60"
                             >
-                              <Download size={16} />
-                            </a>
-                          )}
+                              {uploadingAudio ? '上传中...' : '重新上传'}
+                            </button>
+                          </div>
                         </div>
                         <audio
                           ref={audioRef}

@@ -969,17 +969,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     >
                       <Plus size={12} /> 新建片段
                     </button>
-                    <button
-                      onClick={() => videoInputRef.current?.click()}
-                      disabled={uploadingVideo || !selectedAnimation}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg border border-blue-500/60 transition-all disabled:opacity-50"
-                    >
-                      {uploadingVideo
-                        ? '上传中...'
-                        : selectedAnimation
-                          ? displayClipUrl ? '上传新版本' : '上传第一版'
-                          : '先新建片段'}
-                    </button>
                     <input
                       ref={videoInputRef}
                       type="file"
@@ -987,9 +976,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                       className="hidden"
                       onChange={e => handleUploadVideo(e.target.files?.[0])}
                     />
-                    <span className="text-[11px] text-white/40">
-                      {videoDragOver ? '释放即可上传视频' : '可拖拽视频到此上传'}
-                    </span>
                   </div>
                 </div>
 
@@ -1165,20 +1151,33 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             onPause={() => setIsPlaying(false)}
                             onClick={togglePlay}
                           />
-                          {/* 下载按钮 - 右上角 */}
-                          {playbackUrl && (
-                            <a
-                              href={playbackUrl}
-                              download
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white border border-white/10 transition-all opacity-0 group-hover:opacity-100"
-                              title="下载视频"
-                              onClick={e => e.stopPropagation()}
+                          {/* 右上角工具栏 */}
+                          <div className="absolute top-3 right-3 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {playbackUrl && (
+                              <a
+                                href={playbackUrl}
+                                download
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
+                                title="下载视频"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <Download size={14} />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                videoInputRef.current?.click();
+                              }}
+                              disabled={uploadingVideo}
+                              className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
                             >
-                              <Download size={18} />
-                            </a>
-                          )}
+                              {uploadingVideo ? '上传中...' : '重新上传'}
+                            </button>
+                          </div>
                           {!isPlaying && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={togglePlay}>
                               <div className="p-5 rounded-full bg-blue-600 text-white shadow-xl scale-100 group-hover:scale-110 transition-transform">

@@ -82,9 +82,9 @@ type UpdateSceneFrameSetRequest struct {
 	Index *float64 `json:"index"` // 排序索引
 }
 
-// UpdateFrameRequest 更新帧请求
+// UpdateFrameRequest 更新帧请求（空字符串表示删除帧）
 type UpdateFrameRequest struct {
-	ImageUrl string `json:"imageUrl" binding:"required"`
+	ImageUrl string `json:"imageUrl"`
 }
 
 // RevertFrameRequest 回滚帧请求

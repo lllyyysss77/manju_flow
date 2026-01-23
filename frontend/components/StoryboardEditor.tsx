@@ -1140,6 +1140,35 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 >
                                   {uploading.start ? '上传中...' : '重新上传'}
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!activeScene?.id || !selectedFrameSetId) return;
+                                    try {
+                                      await storyboardApi.updateStartFrame(activeScene.id, selectedFrameSetId, '');
+                                      setFrameSets(prev =>
+                                        prev.map(fs =>
+                                          fs.id === selectedFrameSetId
+                                            ? { ...fs, startFrameUrl: undefined }
+                                            : fs
+                                        )
+                                      );
+                                      // 清除预览缓存
+                                      setFramePreviewCache(prev => ({
+                                        ...prev,
+                                        [selectedFrameSetId]: { ...prev[selectedFrameSetId], start: undefined }
+                                      }));
+                                      showToast('起始帧已移除', 'success');
+                                    } catch (err) {
+                                      console.error('Failed to remove start frame', err);
+                                      showToast('移除失败', 'error');
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300"
+                                  title="移除起始帧"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </div>
                               {selectedFrameSet?.startFrameVersion ? (
                                 <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded bg-black/60 text-white/70 border border-white/10">
@@ -1225,6 +1254,35 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                   disabled={uploading.end}
                                 >
                                   {uploading.end ? '上传中...' : '重新上传'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!activeScene?.id || !selectedFrameSetId) return;
+                                    try {
+                                      await storyboardApi.updateEndFrame(activeScene.id, selectedFrameSetId, '');
+                                      setFrameSets(prev =>
+                                        prev.map(fs =>
+                                          fs.id === selectedFrameSetId
+                                            ? { ...fs, endFrameUrl: undefined }
+                                            : fs
+                                        )
+                                      );
+                                      // 清除预览缓存
+                                      setFramePreviewCache(prev => ({
+                                        ...prev,
+                                        [selectedFrameSetId]: { ...prev[selectedFrameSetId], end: undefined }
+                                      }));
+                                      showToast('结束帧已移除', 'success');
+                                    } catch (err) {
+                                      console.error('Failed to remove end frame', err);
+                                      showToast('移除失败', 'error');
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300"
+                                  title="移除结束帧"
+                                >
+                                  <Trash2 size={14} />
                                 </button>
                               </div>
                               {selectedFrameSet?.endFrameVersion ? (

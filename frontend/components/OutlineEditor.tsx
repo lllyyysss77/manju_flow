@@ -11,7 +11,8 @@ import {
   BookOpen,
   Image as ImageIcon,
   ChevronDown,
-  GripVertical
+  GripVertical,
+  Download
 } from 'lucide-react';
 import { bookApi, characterApi, fileApi, ensureHttpsUrl, normalizeFileKey, isValidMediaUrl } from '../api';
 
@@ -23,7 +24,7 @@ interface OutlineEditorProps {
   onCharactersChange?: (characters: Character[]) => void;
 }
 
-// 参考图组件（复用 ScriptEditor 的样式）
+// 参考图组件（与分镜模块保持一致的交互）
 const ReferenceImageSection: React.FC<{
   initialImage?: string;
   onUpload: (file: File) => Promise<void>;
@@ -33,9 +34,20 @@ const ReferenceImageSection: React.FC<{
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = isUploading || localUploading;
+
+  // ESC 键关闭预览
+  useEffect(() => {
+    if (!imagePreview) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImagePreview(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imagePreview]);
 
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -101,37 +113,84 @@ const ReferenceImageSection: React.FC<{
 
   if (initialImage) {
     return (
-      <div className="relative group">
-        <div className="flex items-center justify-center p-4 bg-black/20 rounded-xl border border-white/10 min-h-[200px]">
-          <img
-            src={initialImage}
-            className="max-w-full max-h-[300px] object-contain rounded-lg shadow-lg"
-            alt="角色参考图"
+      <>
+        <div className="relative">
+          <div className="flex items-center justify-center p-4 bg-black/20 rounded-xl border border-white/10 min-h-[200px]">
+            <img
+              src={initialImage}
+              className="max-w-full max-h-[300px] object-contain rounded-lg shadow-lg cursor-zoom-in"
+              alt="角色参考图"
+              onClick={() => setImagePreview({ url: initialImage, title: '角色参考图' })}
+            />
+          </div>
+          {/* 右上角工具栏（与分镜模块一致） */}
+          <div className="absolute top-2 right-2 flex items-center gap-2">
+            <a
+              href={initialImage}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
+              title="下载图片"
+              onClick={e => e.stopPropagation()}
+            >
+              <Download size={14} />
+            </a>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+              disabled={busy}
+            >
+              {busy ? '上传中...' : '重新上传'}
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300"
+              title="移除图片"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+            accept="image/*"
           />
         </div>
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 rounded-xl">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy}
-            className="flex items-center gap-2 px-4 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-zinc-200 transition-all disabled:opacity-60"
-          >
-            <Upload size={14} /> 更换图片
-          </button>
-          <button
-            onClick={onRemove}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-500 transition-all"
-          >
-            <X size={14} /> 移除图片
-          </button>
-        </div>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-          accept="image/*"
-        />
-      </div>
+        {/* 图片预览弹窗（与分镜模块一致） */}
+        {imagePreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setImagePreview(null)}
+            />
+            <div className="relative z-10 max-w-5xl w-full px-6">
+              <div className="bg-[#111111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                  <div className="text-sm font-semibold text-white">{imagePreview.title}</div>
+                  <button
+                    onClick={() => setImagePreview(null)}
+                    className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/5"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="bg-black p-4 flex items-center justify-center">
+                  <img
+                    src={imagePreview.url}
+                    alt={imagePreview.title}
+                    className="max-h-[70vh] max-w-full object-contain rounded-lg border border-white/5"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
