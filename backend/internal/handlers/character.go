@@ -108,6 +108,7 @@ func (h *CharacterHandler) Create(c *gin.Context) {
 		Name:              req.Name,
 		Description:       req.Description,
 		ReferenceImageUrl: req.ReferenceImageUrl,
+		VoiceAudioUrl:     req.VoiceAudioUrl,
 		Index:             req.Index,
 	}
 
@@ -211,6 +212,9 @@ func (h *CharacterHandler) Update(c *gin.Context) {
 	}
 	if req.ReferenceImageUrl != nil {
 		character.ReferenceImageUrl = *req.ReferenceImageUrl
+	}
+	if req.VoiceAudioUrl != nil {
+		character.VoiceAudioUrl = *req.VoiceAudioUrl
 	}
 	if req.Index != nil {
 		character.Index = *req.Index

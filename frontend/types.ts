@@ -196,6 +196,7 @@ export interface Character {
   name: string;
   description: string;
   referenceImageUrl?: string;
+  voiceAudioUrl?: string;
   index: number;
   createdAt?: string;
   updatedAt?: string;

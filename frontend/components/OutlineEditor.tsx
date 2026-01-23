@@ -12,7 +12,10 @@ import {
   Image as ImageIcon,
   ChevronDown,
   GripVertical,
-  Download
+  Download,
+  Mic,
+  Play,
+  Pause
 } from 'lucide-react';
 import { bookApi, characterApi, fileApi, ensureHttpsUrl, normalizeFileKey, isValidMediaUrl } from '../api';
 
@@ -250,6 +253,242 @@ const ReferenceImageSection: React.FC<{
   );
 };
 
+// 格式化时间 (秒 -> mm:ss)
+const formatTime = (seconds: number): string => {
+  if (!isFinite(seconds) || seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+// 音色音频组件（样式与 AudioEditor 保持一致）
+const VoiceAudioSection: React.FC<{
+  audioUrl?: string;
+  onUpload: (file: File) => Promise<void>;
+  isUploading?: boolean;
+}> = ({ audioUrl, onUpload, isUploading = false }) => {
+  const [localUploading, setLocalUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const busy = isUploading || localUploading;
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith('audio/')) {
+      setError('只支持上传音频文件');
+      return;
+    }
+    setError(null);
+    setLocalUploading(true);
+    try {
+      await onUpload(file);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传失败，请重试';
+      setError(msg);
+    } finally {
+      setLocalUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUpload(file);
+    }
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleUpload(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+  };
+
+  // 点击进度条跳转
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const newTime = (clickX / rect.width) * duration;
+    audioRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+
+  if (audioUrl) {
+    return (
+      <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-3">
+          {/* 圆形播放按钮 */}
+          <button
+            onClick={togglePlay}
+            className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg flex-shrink-0"
+          >
+            {isPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+          </button>
+
+          {/* 音频信息和进度条 */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between text-white/70 text-sm">
+              <span className="flex items-center gap-2">
+                <Mic size={14} className="text-blue-400" />
+                角色音色样本
+              </span>
+              {/* 时长显示 */}
+              <span className="text-[11px] text-white/50 tabular-nums">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            </div>
+            {/* 可点击的进度条 */}
+            <div
+              className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden cursor-pointer"
+              onClick={handleProgressClick}
+            >
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-100"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="mt-1 text-[11px] text-white/40">用于配音时参考角色音色特征</div>
+          </div>
+
+          {/* 下载和重新上传按钮 */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <a
+              href={audioUrl}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
+              title="下载音频"
+            >
+              <Download size={16} />
+            </a>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              className="px-3 py-1.5 text-[11px] rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/10 transition-all disabled:opacity-60"
+            >
+              {busy ? '上传中...' : '重新上传'}
+            </button>
+          </div>
+        </div>
+
+        {/* 隐藏的原生音频控件 */}
+        <audio
+          ref={audioRef}
+          src={audioUrl}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => {
+            setIsPlaying(false);
+            setCurrentTime(0);
+          }}
+          onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+          onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+          className="hidden"
+        />
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept="audio/*"
+        />
+      </div>
+    );
+  }
+
+  // 空状态：上传区域
+  return (
+    <div
+      className={`bg-[#0b0b0b] border border-dashed rounded-xl p-6 flex flex-col items-center text-center gap-4 transition-all ${
+        isDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/10'
+      }`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+      tabIndex={0}
+    >
+      <div className="p-4 rounded-full bg-blue-600/15 text-blue-400 shadow-inner">
+        <Mic size={26} />
+      </div>
+      <div className="space-y-1">
+        <p className="text-white font-semibold text-sm">上传角色音色样本</p>
+        <p className="text-white/50 text-[12px]">为该角色配置参考音色，便于配音时保持一致</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all disabled:opacity-50"
+        >
+          {busy ? '上传中...' : '上传音频'}
+        </button>
+        <div className="text-[11px] text-white/50 bg-white/5 border border-white/10 rounded-full px-3 py-1">
+          支持 mp3 / wav / aac
+        </div>
+      </div>
+
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-900/30 backdrop-blur-sm flex items-center justify-center pointer-events-none rounded-xl">
+          <div className="flex flex-col items-center gap-2 text-blue-200">
+            <Upload size={32} />
+            <span className="text-sm font-bold">释放以上传音频</span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="w-full text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept="audio/*"
+      />
+    </div>
+  );
+};
+
 export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   bookId,
   initialOutline = '',
@@ -270,6 +509,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [isCharacterDirty, setIsCharacterDirty] = useState(false);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
   const [resolvedReferenceUrl, setResolvedReferenceUrl] = useState<string | undefined>(undefined);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const [resolvedVoiceUrl, setResolvedVoiceUrl] = useState<string | undefined>(undefined);
 
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ characterId: number; name: string } | null>(null);
@@ -285,6 +526,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const savedOutlineRef = useRef(initialOutline);
   const savedCharactersRef = useRef<Record<number, string>>({});
   const referenceUrlCache = useRef<Record<string, string>>({});
+  const voiceUrlCache = useRef<Record<string, string>>({});
 
   const activeCharacter = characters.find(c => c.id === activeCharacterId) || null;
 
@@ -293,6 +535,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       name: char.name,
       description: char.description,
       referenceImageUrl: char.referenceImageUrl,
+      voiceAudioUrl: char.voiceAudioUrl,
       index: char.index,
     });
 
@@ -376,6 +619,46 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     resolveReferenceImage(activeCharacter?.referenceImageUrl);
   }, [activeCharacter?.referenceImageUrl, resolveReferenceImage]);
 
+  // 解析音色音频 URL
+  const resolveVoiceAudio = useCallback(async (raw?: string | null) => {
+    if (!raw) {
+      setResolvedVoiceUrl(undefined);
+      return;
+    }
+    const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
+    if (ref.startsWith('data:') || ref.startsWith('blob:')) {
+      setResolvedVoiceUrl(ref);
+      return;
+    }
+    const { key, externalUrl } = normalizeFileKey(ref);
+    const fallback = externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : undefined;
+    if (!key) {
+      setResolvedVoiceUrl(fallback);
+      return;
+    }
+    if (voiceUrlCache.current[key]) {
+      setResolvedVoiceUrl(voiceUrlCache.current[key]);
+      return;
+    }
+    try {
+      const signed = await fileApi.getSignedUrl(key);
+      const resolved = ensureHttpsUrl(signed.url);
+      if (resolved && isValidMediaUrl(resolved)) {
+        voiceUrlCache.current[key] = resolved;
+        setResolvedVoiceUrl(resolved);
+      } else {
+        setResolvedVoiceUrl(fallback);
+      }
+    } catch (e) {
+      console.error('Failed to resolve voice audio', e);
+      setResolvedVoiceUrl(fallback);
+    }
+  }, []);
+
+  useEffect(() => {
+    resolveVoiceAudio(activeCharacter?.voiceAudioUrl);
+  }, [activeCharacter?.voiceAudioUrl, resolveVoiceAudio]);
+
   // 保存大纲
   const saveOutline = async () => {
     if (outline === savedOutlineRef.current) {
@@ -419,6 +702,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         name: char.name,
         description: char.description,
         referenceImageUrl: char.referenceImageUrl,
+        voiceAudioUrl: char.voiceAudioUrl,
         index: char.index,
       });
       savedCharactersRef.current[char.id] = currentSig;
@@ -516,6 +800,24 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const handleRemoveReference = () => {
     updateActiveCharacter(c => ({ ...c, referenceImageUrl: undefined }));
     setResolvedReferenceUrl(undefined);
+  };
+
+  // 上传音色音频
+  const handleUploadVoice = async (file: File) => {
+    setIsUploadingVoice(true);
+    try {
+      const res = await fileApi.upload(file, 'private');
+      const signed = await fileApi.getSignedUrl(res.key);
+      voiceUrlCache.current[res.key] = signed.url;
+      updateActiveCharacter(c => ({ ...c, voiceAudioUrl: res.key }));
+      setResolvedVoiceUrl(signed.url);
+      setToast({ message: '音色音频已上传', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to upload voice audio', err);
+      throw err;
+    } finally {
+      setIsUploadingVoice(false);
+    }
   };
 
   // 选择角色
@@ -788,6 +1090,16 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     onUpload={handleUploadReference}
                     onRemove={handleRemoveReference}
                     isUploading={isUploadingReference}
+                  />
+                </div>
+
+                {/* 音色音频 */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">角色音色</label>
+                  <VoiceAudioSection
+                    audioUrl={resolvedVoiceUrl || (isValidMediaUrl(activeCharacter.voiceAudioUrl) ? activeCharacter.voiceAudioUrl : undefined)}
+                    onUpload={handleUploadVoice}
+                    isUploading={isUploadingVoice}
                   />
                 </div>
 

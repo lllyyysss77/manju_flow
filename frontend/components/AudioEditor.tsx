@@ -45,6 +45,14 @@ interface AudioEditorProps {
 type AudioVersion = ApiAudioVersion;
 type SceneAudioTrack = ApiSceneAudio;
 
+// 格式化时间 (秒 -> mm:ss)
+const formatTime = (seconds: number): string => {
+  if (!isFinite(seconds) || seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 export const AudioEditor: React.FC<AudioEditorProps> = ({
   bookId,
   episode,
@@ -145,6 +153,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
 
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -288,6 +298,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         audioRef.current.currentTime = 0;
       }
       setIsAudioPlaying(false);
+      setAudioCurrentTime(0);
+      setAudioDuration(0);
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
@@ -310,6 +322,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       audioRef.current.currentTime = 0;
     }
     setIsAudioPlaying(false);
+    setAudioCurrentTime(0);
+    setAudioDuration(0);
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
       previewAudioRef.current.currentTime = 0;
@@ -1277,9 +1291,27 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                           <div className="flex-1">
                             <div className="flex items-center justify-between text-white/70 text-sm">
                               <span>{selectedTrack?.role || '未命名音轨'} · 当前版本 #{currentVersionLabel || '—'}</span>
+                              {/* 时长显示 */}
+                              <span className="text-[11px] text-white/50 tabular-nums">
+                                {formatTime(audioCurrentTime)} / {formatTime(audioDuration)}
+                              </span>
                             </div>
-                            <div className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden">
-                              <div className="h-full w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 animate-pulse [animation-duration:2.5s]" />
+                            {/* 可点击的进度条 */}
+                            <div
+                              className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden cursor-pointer"
+                              onClick={(e) => {
+                                if (!audioRef.current || !audioDuration) return;
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const clickX = e.clientX - rect.left;
+                                const newTime = (clickX / rect.width) * audioDuration;
+                                audioRef.current.currentTime = newTime;
+                                setAudioCurrentTime(newTime);
+                              }}
+                            >
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-100"
+                                style={{ width: `${audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0}%` }}
+                              />
                             </div>
                             <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
                           </div>
@@ -1312,8 +1344,13 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                           src={playbackAudioUrl}
                           onPlay={() => setIsAudioPlaying(true)}
                           onPause={() => setIsAudioPlaying(false)}
+                          onEnded={() => {
+                            setIsAudioPlaying(false);
+                            setAudioCurrentTime(0);
+                          }}
+                          onTimeUpdate={() => setAudioCurrentTime(audioRef.current?.currentTime || 0)}
+                          onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
                           className="hidden"
-                          controls
                         />
                       </div>
                     ) : (

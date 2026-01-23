@@ -13,6 +13,7 @@ type Character struct {
 	Name              string         `gorm:"size:100;not null" json:"name"`
 	Description       string         `gorm:"type:text" json:"description"`
 	ReferenceImageUrl string         `gorm:"size:500" json:"referenceImageUrl"`
+	VoiceAudioUrl     string         `gorm:"size:500" json:"voiceAudioUrl"`
 	Index             float64        `gorm:"not null;default:0" json:"index"`
 	CreatedAt         time.Time      `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`
@@ -29,6 +30,7 @@ type CreateCharacterRequest struct {
 	Name              string  `json:"name" binding:"required"`
 	Description       string  `json:"description"`
 	ReferenceImageUrl string  `json:"referenceImageUrl"`
+	VoiceAudioUrl     string  `json:"voiceAudioUrl"`
 	Index             float64 `json:"index"`
 }
 
@@ -37,5 +39,6 @@ type UpdateCharacterRequest struct {
 	Name              *string  `json:"name"`
 	Description       *string  `json:"description"`
 	ReferenceImageUrl *string  `json:"referenceImageUrl"`
+	VoiceAudioUrl     *string  `json:"voiceAudioUrl"`
 	Index             *float64 `json:"index"`
 }

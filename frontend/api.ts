@@ -772,6 +772,7 @@ export interface CreateCharacterPayload {
   name: string;
   description?: string;
   referenceImageUrl?: string;
+  voiceAudioUrl?: string;
   index: number;
 }
 
@@ -779,6 +780,7 @@ export interface UpdateCharacterPayload {
   name?: string;
   description?: string;
   referenceImageUrl?: string;
+  voiceAudioUrl?: string;
   index?: number;
 }
 
