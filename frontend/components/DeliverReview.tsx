@@ -10,6 +10,7 @@ import {
   Upload,
   History,
   Loader2,
+  Download,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
 import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
@@ -715,21 +716,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => originalInputRef.current?.click()}
-                    disabled={uploadingOriginal}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] rounded-lg border border-blue-500/60 transition-all disabled:opacity-60 flex items-center gap-1"
-                  >
-                    <Upload size={14} />
-                    {uploadingOriginal
-                      ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
-                      : videoDetail?.videoUrl
-                        ? '更新原始视频'
-                        : '上传原始视频'}
-                  </button>
-                  <span className="text-[11px] text-white/40">
-                    {originalDragOver ? '释放即可上传视频' : '可拖拽原始视频到此区域'}
-                  </span>
                   <div className="relative">
                     <button
                       onClick={() => setVersionMenuOpen((prev) => !prev)}
@@ -843,6 +829,36 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                     </div>
                   </div>
                 )}
+
+                {/* 右上角工具栏 */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {playbackSource && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadOriginal();
+                      }}
+                      disabled={downloading}
+                      className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80 disabled:opacity-60"
+                      title="下载源文件"
+                    >
+                      <Download size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      originalInputRef.current?.click();
+                    }}
+                    disabled={uploadingOriginal}
+                    className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                  >
+                    {uploadingOriginal
+                      ? `上传中${originalProgress !== null ? ` ${originalProgress}%` : ''}`
+                      : '重新上传'}
+                  </button>
+                </div>
               </div>
 
               {/* 自定义播放控制 */}
@@ -913,13 +929,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <button
-                      onClick={handleDownloadOriginal}
-                      disabled={downloading}
-                      className="px-4 py-1.5 border border-white/10 rounded text-xs font-bold hover:bg-white/5 disabled:opacity-60"
-                    >
-                      {downloading ? '准备下载...' : '下载源文件'}
-                    </button>
                     <button
                       onClick={handleApprove}
                       disabled={approving || activeChapter?.status === 'COMPLETED'}
