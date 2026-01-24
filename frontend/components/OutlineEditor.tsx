@@ -279,6 +279,17 @@ const VoiceAudioSection: React.FC<{
   const busy = isUploading || localUploading;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  // 当 audioUrl 变化时（切换角色），停止播放并重置状态
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+  }, [audioUrl]);
+
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith('audio/')) {
       setError('只支持上传音频文件');
