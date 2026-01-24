@@ -1010,6 +1010,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     <input
                       value={newClipName}
                       onChange={e => setNewClipName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateClip();
+                        }
+                      }}
                       placeholder="片段名称 / Shot A / 镜头1"
                       className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />

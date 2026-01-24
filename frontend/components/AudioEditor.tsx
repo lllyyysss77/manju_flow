@@ -1142,6 +1142,12 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                     <input
                       value={newTrackRole}
                       onChange={e => setNewTrackRole(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateTrack();
+                        }
+                      }}
                       placeholder="角色名 / 旁白 / 环境音"
                       className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
