@@ -1135,15 +1135,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                       </button>
                     );
                   })}
-                  <button
-                    onClick={() => {
-                      setCreatingTrack(true);
-                      setNewTrackRole('');
-                    }}
-                    className="px-3 py-1 rounded-lg bg-white/5 border border-dashed border-white/20 text-white/60 text-sm flex items-center gap-1 hover:text-white hover:border-white/40"
-                  >
-                    <Plus size={12} /> 添加音轨
-                  </button>
                 </div>
 
                 {creatingTrack && (
