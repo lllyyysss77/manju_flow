@@ -16,12 +16,12 @@ import {
   Image as ImageIcon,
   ChevronDown,
   Trash2,
-  Send,
   Download
 } from 'lucide-react';
 import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
+import { CommentInput } from './CommentInput';
 import { STATUS_MAP } from '../constants';
 import { useScriptEditorReducer } from './useScriptEditorReducer';
 import { usePanelResize } from './usePanelResize';
@@ -1122,7 +1122,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const rightPanel = usePanelResize({ initialWidth: 320, minWidth: 260, maxWidth: 520, side: 'right' });
 
   // ============ 保留的独立 useState (表单输入 + UI 状态) ============
-  const [commentDraft, setCommentDraft] = useState('');
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   // 场景评论数映射 (sceneId -> count)
   const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
@@ -1187,11 +1186,6 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   useEffect(() => {
     setSynopsisDraft(activeChapter?.synopsis || '');
   }, [activeChapter?.id, activeChapter?.synopsis]);
-
-  // 切换场景时清空评论草稿
-  useEffect(() => {
-    setCommentDraft('');
-  }, [activeScene?.id]);
 
   // 加载场景参考资料
   useEffect(() => {
@@ -1296,16 +1290,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     setConfirmDelete({ type: 'chapter', chapterId, label: target?.title || '未命名章节' });
   };
 
-  const handleSubmitComment = async () => {
-    const content = commentDraft.trim();
+  const handleSubmitComment = async (content: string, meta?: string) => {
     if (!activeScene?.id) return;
-    if (!content) {
-      setToast({ message: '请输入评论内容', tone: 'info' });
-      return;
-    }
     try {
-      await addComment(content);
-      setCommentDraft('');
+      await addComment(content, meta);
       // 更新评论数（新评论默认是未解决状态）
       if (activeScene?.id) {
         setSceneCommentCounts(prev => ({
@@ -1909,29 +1897,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             )}
           </div>
 
-          <div className="p-4 bg-[#161616] border-t border-white/5">
-            <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
-              <input
-                className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
-                placeholder="输入您的修改意见或审核回复..."
-                value={commentDraft}
-                onChange={e => setCommentDraft(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmitComment();
-                  }
-                }}
-              />
-              <button
-                onClick={handleSubmitComment}
-                disabled={postingComment || !commentDraft.trim() || !activeScene}
-                className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
-              >
-                {postingComment ? '发送中...' : <Send size={16} />}
-              </button>
-            </div>
-          </div>
+          <CommentInput
+            onSubmit={handleSubmitComment}
+            disabled={!activeScene}
+            posting={postingComment}
+          />
         </div>
       </div>
     </div>

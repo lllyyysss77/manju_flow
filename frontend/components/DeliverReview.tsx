@@ -11,6 +11,8 @@ import {
   History,
   Loader2,
   Download,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
 import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
@@ -80,6 +82,11 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const commentDraftRef = useRef('');
   // 章节评论数映射 (chapterId -> count)
   const [chapterCommentCounts, setChapterCommentCounts] = useState<Record<number, number>>({});
+  // 图片上传相关状态
+  const [pendingImage, setPendingImage] = useState<{ file: File; preview: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const commentFileInputRef = useRef<HTMLInputElement>(null);
 
   const resolveFileUrl = useCallback(
     async (raw?: string | null) => {
@@ -299,19 +306,93 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const unresolvedCount = useMemo(() => reviewComments.filter(c => c.status === 'unresolved').length, [reviewComments]);
 
+  // 图片粘贴处理
+  const handleCommentPaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const preview = URL.createObjectURL(file);
+          setPendingImage({ file, preview });
+          setUploadError(null);
+        }
+        break;
+      }
+    }
+  }, []);
+
+  // 图片选择处理
+  const handleCommentFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const preview = URL.createObjectURL(file);
+      setPendingImage({ file, preview });
+      setUploadError(null);
+    }
+    e.target.value = '';
+  }, []);
+
+  // 移除待上传图片
+  const handleRemoveCommentImage = useCallback(() => {
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.preview);
+      setPendingImage(null);
+      setUploadError(null);
+    }
+  }, [pendingImage]);
+
   const handleSubmitComment = async () => {
     if (!activeChapter?.id) return;
-    const { content, meta } = extractCommentPayload(commentDraft);
-    if (!content) {
+    const { content, meta: timeMeta } = extractCommentPayload(commentDraft);
+    if (!content && !pendingImage) {
       showToast('请输入评论内容', 'error');
       return;
     }
+
+    // 解析已有的 meta（时间点信息）
+    let metaObj: Record<string, unknown> = {};
+    if (timeMeta) {
+      try {
+        metaObj = JSON.parse(timeMeta);
+      } catch {
+        // ignore
+      }
+    }
+
+    // 上传图片
+    if (pendingImage) {
+      setUploadingImage(true);
+      setUploadError(null);
+      try {
+        const res = await fileApi.upload(pendingImage.file, 'public');
+        metaObj.imageUrl = res.url;
+        metaObj.imageName = pendingImage.file.name;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '图片上传失败';
+        setUploadError(msg);
+        setUploadingImage(false);
+        return;
+      }
+      setUploadingImage(false);
+    }
+
+    const finalMeta = Object.keys(metaObj).length > 0 ? JSON.stringify(metaObj) : undefined;
+    const finalContent = content || '（图片）';
+
     setPostingComment(true);
     try {
-      const created = await commentApi.createChapter(activeChapter.id, { content, meta });
+      const created = await commentApi.createChapter(activeChapter.id, { content: finalContent, meta: finalMeta });
       setComments(prev => [created, ...prev]);
       setCommentDraft('');
       commentDraftRef.current = '';
+      // 清空图片
+      if (pendingImage) {
+        URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage(null);
+      }
       // 更新评论数
       setChapterCommentCounts(prev => ({
         ...prev,
@@ -1017,7 +1098,49 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
               </div>
 
               <div className="p-4 bg-[#161616] border-t border-white/5">
+                {/* 图片预览区 */}
+                {pendingImage && (
+                  <div className="mb-3 relative inline-block">
+                    <img
+                      src={pendingImage.preview}
+                      alt="待上传图片"
+                      className="max-h-32 rounded-lg border border-white/10"
+                    />
+                    <button
+                      onClick={handleRemoveCommentImage}
+                      className="absolute -top-2 -right-2 p-1 rounded-full bg-red-500 text-white hover:bg-red-400 transition-colors"
+                      title="移除图片"
+                    >
+                      <X size={12} />
+                    </button>
+                    {uploadingImage && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                        <Loader2 size={20} className="animate-spin text-white" />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* 上传错误提示 */}
+                {uploadError && (
+                  <div className="mb-2 text-xs text-red-400">{uploadError}</div>
+                )}
                 <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
+                  {/* 图片按钮 */}
+                  <button
+                    onClick={() => commentFileInputRef.current?.click()}
+                    disabled={postingComment || uploadingImage}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
+                    title="添加图片"
+                  >
+                    <ImageIcon size={16} />
+                  </button>
+                  <input
+                    ref={commentFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleCommentFileSelect}
+                  />
                   <input
                     className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
                     placeholder={`新评论 @ ${formatTime(currentTime)}`}
@@ -1029,15 +1152,19 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                         handleSubmitComment();
                       }
                     }}
+                    onPaste={handleCommentPaste}
                   />
                   <button
                     onClick={handleSubmitComment}
-                    disabled={postingComment || !commentDraft.trim() || !activeChapter}
+                    disabled={postingComment || uploadingImage || (!commentDraft.trim() && !pendingImage) || !activeChapter}
                     className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
                   >
-                    {postingComment ? '发送中...' : <Send size={16} />}
+                    {postingComment || uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   </button>
                 </div>
+                <p className="mt-1.5 text-[10px] text-white/20">
+                  输入 @ 自动插入时间点 · 支持粘贴图片 · Enter 发送
+                </p>
               </div>
             </div>
           </>

@@ -44,6 +44,16 @@ export interface ReviewCommentMeta {
   seconds?: number;
 }
 
+// 通用评论元数据（支持图片附件）
+export interface CommentMeta {
+  // 审核交付时间点
+  timecode?: string;
+  seconds?: number;
+  // 图片附件
+  imageUrl?: string;
+  imageName?: string;
+}
+
 // 场景参考资料（支持多个）
 export interface SceneReference {
   id: number;

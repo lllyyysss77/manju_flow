@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Pencil, Trash2, X, Check, CheckCircle, Circle } from 'lucide-react';
-import { Comment } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Pencil, Trash2, X, Check, CheckCircle, Circle, ZoomIn } from 'lucide-react';
+import { Comment, CommentMeta } from '../types';
 
 export interface CommentItemProps {
   comment: Comment;
@@ -108,6 +108,18 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   const canDelete = !!onDelete;
   const canResolve = !!onResolve || !!onUnresolve;
   const isResolved = comment.status === 'resolved';
+
+  // 解析评论元数据中的图片
+  const commentMeta = useMemo<CommentMeta | null>(() => {
+    if (!comment.meta) return null;
+    try {
+      return JSON.parse(comment.meta);
+    } catch {
+      return null;
+    }
+  }, [comment.meta]);
+
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   return (
     <div
@@ -250,9 +262,62 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         </div>
       ) : (
-        <p className="text-sm text-white/70 leading-relaxed font-medium whitespace-pre-line">
-          {comment.content}
-        </p>
+        <div>
+          {/* 文字内容 */}
+          {comment.content && comment.content !== '（图片）' && (
+            <p className="text-sm text-white/70 leading-relaxed font-medium whitespace-pre-line">
+              {comment.content}
+            </p>
+          )}
+          {/* 图片附件 */}
+          {commentMeta?.imageUrl && (
+            <div className="mt-2">
+              <div
+                className="relative inline-block cursor-pointer group/img"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowImagePreview(true);
+                }}
+              >
+                <img
+                  src={commentMeta.imageUrl}
+                  alt={commentMeta.imageName || '评论图片'}
+                  className="max-h-40 rounded-lg border border-white/10 hover:border-blue-500/50 transition-colors"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover/img:bg-black/30 rounded-lg transition-colors">
+                  <ZoomIn size={20} className="text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 图片放大预览弹窗 */}
+      {showImagePreview && commentMeta?.imageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowImagePreview(false);
+          }}
+        >
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowImagePreview(false);
+            }}
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={commentMeta.imageUrl}
+            alt={commentMeta.imageName || '评论图片'}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );
