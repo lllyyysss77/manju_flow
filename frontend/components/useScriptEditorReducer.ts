@@ -26,6 +26,9 @@ export interface ScriptEditorState {
   retryCount: number;
   isRetrying: boolean;
 
+  // Save queue
+  saveQueueSize: number;
+
   // Resolved reference URL
   resolvedReferenceUrl: string | undefined;
 }
@@ -56,7 +59,8 @@ type Action =
   | { type: 'SAVE_SUCCESS'; payload: { sceneId: number; savedAt: Date } }
   | { type: 'SAVE_FAILURE'; payload: string }
   | { type: 'SET_RETRY_COUNT'; payload: number }
-  | { type: 'SET_IS_RETRYING'; payload: boolean };
+  | { type: 'SET_IS_RETRYING'; payload: boolean }
+  | { type: 'SET_SAVE_QUEUE_SIZE'; payload: number };
 
 // ============ Initial State ============
 export const initialState: ScriptEditorState = {
@@ -74,6 +78,7 @@ export const initialState: ScriptEditorState = {
   isUploadingReference: false,
   retryCount: 0,
   isRetrying: false,
+  saveQueueSize: 0,
   resolvedReferenceUrl: undefined,
 };
 
@@ -233,6 +238,9 @@ export function scriptEditorReducer(state: ScriptEditorState, action: Action): S
     case 'SET_IS_RETRYING':
       return { ...state, isRetrying: action.payload };
 
+    case 'SET_SAVE_QUEUE_SIZE':
+      return { ...state, saveQueueSize: action.payload };
+
     default:
       return state;
   }
@@ -282,6 +290,19 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
   const savedSignaturesRef = useRef<Record<number, string>>({});
   const savedChapterSynopsisRef = useRef<Record<number, string>>({});
   const referenceUrlCache = useRef<Record<string, string>>({});
+
+  // Save queue management
+  interface SaveTask {
+    id: string;
+    type: 'scene' | 'synopsis';
+    chapterId: number;
+    scene?: Scene;
+    synopsis?: string;
+    timestamp: number;
+  }
+
+  const saveQueueRef = useRef<SaveTask[]>([]);
+  const isProcessingQueueRef = useRef(false);
 
   // Signature helpers
   const getSignature = useCallback((scene: Scene) =>
@@ -456,8 +477,8 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     }
   }, []);
 
-  // Persist scene to API with retry mechanism and local backup
-  const persistScene = useCallback(async (chapterId: number, scene: Scene, retryCount = 0): Promise<boolean> => {
+  // Internal persist scene (called by queue processor)
+  const persistSceneInternal = useCallback(async (chapterId: number, scene: Scene, retryCount = 0): Promise<boolean> => {
     const currentSig = getSignature(scene);
     if (savedSignaturesRef.current[scene.id] === currentSig) {
       dispatch({ type: 'SET_DIRTY', payload: false });
@@ -514,7 +535,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
         console.log(`Retrying save... (${retryCount + 1}/3)`);
         // 延迟重试：第1次等1秒，第2次等2秒，第3次等3秒
         await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
-        return persistScene(chapterId, scene, retryCount + 1);
+        return persistSceneInternal(chapterId, scene, retryCount + 1);
       }
 
       // 重试失败
@@ -525,8 +546,8 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     }
   }, [bookId, getSignature]);
 
-  // Persist chapter synopsis with retry mechanism and local backup
-  const persistChapterSynopsis = useCallback(async (chapterId: number, synopsis: string, retryCount = 0): Promise<boolean> => {
+  // Internal persist chapter synopsis (called by queue processor)
+  const persistChapterSynopsisInternal = useCallback(async (chapterId: number, synopsis: string, retryCount = 0): Promise<boolean> => {
     const currentSig = getSynopsisSignature(synopsis);
     if (savedChapterSynopsisRef.current[chapterId] === currentSig) {
       dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
@@ -566,7 +587,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
       if (retryCount < 3) {
         console.log(`Retrying synopsis save... (${retryCount + 1}/3)`);
         await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
-        return persistChapterSynopsis(chapterId, synopsis, retryCount + 1);
+        return persistChapterSynopsisInternal(chapterId, synopsis, retryCount + 1);
       }
 
       return false;
@@ -574,6 +595,89 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
       dispatch({ type: 'SET_SAVING_SYNOPSIS', payload: false });
     }
   }, [bookId, getSynopsisSignature]);
+
+  // Process save queue
+  const processSaveQueue = useCallback(async () => {
+    if (isProcessingQueueRef.current || saveQueueRef.current.length === 0) {
+      return;
+    }
+
+    isProcessingQueueRef.current = true;
+    dispatch({ type: 'SET_SAVE_QUEUE_SIZE', payload: saveQueueRef.current.length });
+
+    while (saveQueueRef.current.length > 0) {
+      const task = saveQueueRef.current[0];
+
+      // 检查队列中是否有相同 ID 的更新任务，合并它们
+      const duplicateIndex = saveQueueRef.current.findIndex(
+        (t: SaveTask, idx: number) => idx > 0 && t.id === task.id
+      );
+      if (duplicateIndex > 0) {
+        // 移除旧任务，使用最新的任务
+        saveQueueRef.current.shift();
+        dispatch({ type: 'SET_SAVE_QUEUE_SIZE', payload: saveQueueRef.current.length });
+        continue;
+      }
+
+      try {
+        if (task.type === 'scene' && task.scene) {
+          await persistSceneInternal(task.chapterId, task.scene);
+        } else if (task.type === 'synopsis' && task.synopsis !== undefined) {
+          await persistChapterSynopsisInternal(task.chapterId, task.synopsis);
+        }
+      } catch (err) {
+        console.error('Failed to process save task', err);
+      }
+
+      // 移除已处理的任务
+      saveQueueRef.current.shift();
+      dispatch({ type: 'SET_SAVE_QUEUE_SIZE', payload: saveQueueRef.current.length });
+    }
+
+    isProcessingQueueRef.current = false;
+    dispatch({ type: 'SET_SAVE_QUEUE_SIZE', payload: 0 });
+  }, [persistSceneInternal, persistChapterSynopsisInternal]);
+
+  // Add task to save queue
+  const addToSaveQueue = useCallback((task: SaveTask) => {
+    // 检查队列中是否已经有相同的任务，如果有则替换（保留最新）
+    const existingIndex = saveQueueRef.current.findIndex((t: SaveTask) => t.id === task.id);
+    if (existingIndex >= 0) {
+      saveQueueRef.current[existingIndex] = task;
+    } else {
+      saveQueueRef.current.push(task);
+    }
+    dispatch({ type: 'SET_SAVE_QUEUE_SIZE', payload: saveQueueRef.current.length });
+
+    // 触发队列处理
+    processSaveQueue();
+  }, [processSaveQueue]);
+
+  // Public persist scene (adds to queue)
+  const persistScene = useCallback(async (chapterId: number, scene: Scene): Promise<boolean> => {
+    const taskId = `scene_${scene.id}`;
+    addToSaveQueue({
+      id: taskId,
+      type: 'scene',
+      chapterId,
+      scene,
+      timestamp: Date.now(),
+    });
+    return true; // 返回 true 表示已加入队列
+  }, [addToSaveQueue]);
+
+  // Public persist chapter synopsis (adds to queue)
+  const persistChapterSynopsis = useCallback(async (chapterId: number, synopsis: string): Promise<boolean> => {
+    const taskId = `synopsis_${chapterId}`;
+    addToSaveQueue({
+      id: taskId,
+      type: 'synopsis',
+      chapterId,
+      synopsis,
+      timestamp: Date.now(),
+    });
+    return true; // 返回 true 表示已加入队列
+  }, [addToSaveQueue]);
 
   // Update active scene with dirty tracking
   const updateActiveScene = useCallback((updater: (scene: Scene) => Scene) => {

@@ -1117,6 +1117,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     isSavingSynopsis,
     retryCount,
     isRetrying,
+    saveQueueSize,
   } = state;
 
   // ============ 面板拖拽使用 Hook ============
@@ -1393,13 +1394,18 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   }, [isSynopsisDirty, activeChapterId, synopsisDraft, persistChapterSynopsis]);
 
   // Ctrl+S / Cmd+S 手动保存快捷键
+  // 使用 ref 存储回调依赖，避免频繁注册/卸载事件监听器
+  const saveShortcutRef = useRef({ activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast });
+  useEffect(() => {
+    saveShortcutRef.current = { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast };
+  });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+S (Windows/Linux) 或 Cmd+S (Mac)
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault(); // 阻止浏览器默认保存行为
+        e.preventDefault();
+        e.stopPropagation();
 
-        // 保存当前激活的内容
+        const { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast } = saveShortcutRef.current;
         if (activeScene && activeChapterId && isDirty) {
           persistScene(activeChapterId, activeScene).then(ok => {
             if (ok) setToast({ message: '场景已保存 (Ctrl+S)', tone: 'success' });
@@ -1414,9 +1420,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis]);
+    // capture: true 在捕获阶段拦截，确保先于浏览器默认行为
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
 
   // 离开页面前确保保存
   useEffect(() => {
@@ -1903,6 +1910,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                            {saveError}
                          </span>
                        )}
+                       {/* 保存队列提示 */}
+                       {saveQueueSize > 0 && (
+                         <span className="text-[9px] text-blue-400/70">
+                           队列中：{saveQueueSize} 个任务
+                         </span>
+                       )}
                      </div>
                    </div>
 
@@ -1910,6 +1923,16 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                    {isDirty && !isSaving && (
                      <div className="px-2.5 py-1 bg-orange-500/20 border border-orange-500/40 rounded-lg text-[10px] font-bold text-orange-200 animate-pulse">
                        有未保存更改
+                     </div>
+                   )}
+
+                   {/* 保存队列徽章 */}
+                   {saveQueueSize > 1 && (
+                     <div className="px-2.5 py-1 bg-blue-500/20 border border-blue-500/40 rounded-lg text-[10px] font-bold text-blue-200">
+                       <div className="flex items-center gap-1.5">
+                         <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
+                         <span>队列: {saveQueueSize}</span>
+                       </div>
                      </div>
                    )}
                  </div>
