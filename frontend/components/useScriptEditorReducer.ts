@@ -22,6 +22,10 @@ export interface ScriptEditorState {
   isSavingSynopsis: boolean;
   isUploadingReference: boolean;
 
+  // Retry mechanism
+  retryCount: number;
+  isRetrying: boolean;
+
   // Resolved reference URL
   resolvedReferenceUrl: string | undefined;
 }
@@ -50,7 +54,9 @@ type Action =
   | { type: 'SELECT_CHAPTER'; payload: { chapterId: number | null; scene?: Scene | null } }
   | { type: 'SELECT_SCENE'; payload: { chapterId: number; scene: Scene } }
   | { type: 'SAVE_SUCCESS'; payload: { sceneId: number; savedAt: Date } }
-  | { type: 'SAVE_FAILURE'; payload: string };
+  | { type: 'SAVE_FAILURE'; payload: string }
+  | { type: 'SET_RETRY_COUNT'; payload: number }
+  | { type: 'SET_IS_RETRYING'; payload: boolean };
 
 // ============ Initial State ============
 export const initialState: ScriptEditorState = {
@@ -66,6 +72,8 @@ export const initialState: ScriptEditorState = {
   lastSavedAt: null,
   isSavingSynopsis: false,
   isUploadingReference: false,
+  retryCount: 0,
+  isRetrying: false,
   resolvedReferenceUrl: undefined,
 };
 
@@ -218,6 +226,12 @@ export function scriptEditorReducer(state: ScriptEditorState, action: Action): S
         isSaving: false,
         saveError: action.payload,
       };
+
+    case 'SET_RETRY_COUNT':
+      return { ...state, retryCount: action.payload };
+
+    case 'SET_IS_RETRYING':
+      return { ...state, isRetrying: action.payload };
 
     default:
       return state;
@@ -442,15 +456,30 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     }
   }, []);
 
-  // Persist scene to API
-  const persistScene = useCallback(async (chapterId: number, scene: Scene): Promise<boolean> => {
+  // Persist scene to API with retry mechanism and local backup
+  const persistScene = useCallback(async (chapterId: number, scene: Scene, retryCount = 0): Promise<boolean> => {
     const currentSig = getSignature(scene);
     if (savedSignaturesRef.current[scene.id] === currentSig) {
       dispatch({ type: 'SET_DIRTY', payload: false });
       return false;
     }
 
+    // 1. 先保存到 localStorage 作为备份
+    try {
+      const backupKey = `manju_scene_${scene.id}`;
+      localStorage.setItem(backupKey, JSON.stringify({
+        ...scene,
+        backupTime: new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.warn('Failed to backup to localStorage', err);
+    }
+
     dispatch({ type: 'SET_SAVING', payload: true });
+    if (retryCount > 0) {
+      dispatch({ type: 'SET_IS_RETRYING', payload: true });
+      dispatch({ type: 'SET_RETRY_COUNT', payload: retryCount });
+    }
 
     try {
       const updated = await sceneApi.update(bookId, chapterId, scene.id, {
@@ -466,20 +495,53 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
 
       savedSignaturesRef.current[scene.id] = getSignature(updated);
       dispatch({ type: 'SAVE_SUCCESS', payload: { sceneId: scene.id, savedAt: new Date() } });
+      dispatch({ type: 'SET_IS_RETRYING', payload: false });
+      dispatch({ type: 'SET_RETRY_COUNT', payload: 0 });
+
+      // 保存成功后清除 localStorage 备份
+      try {
+        localStorage.removeItem(`manju_scene_${scene.id}`);
+      } catch (err) {
+        console.warn('Failed to clear backup', err);
+      }
+
       return true;
     } catch (err) {
       console.error('Failed to save scene', err);
-      dispatch({ type: 'SAVE_FAILURE', payload: '保存失败，请重试' });
+
+      // 2. 重试机制（最多3次）
+      if (retryCount < 3) {
+        console.log(`Retrying save... (${retryCount + 1}/3)`);
+        // 延迟重试：第1次等1秒，第2次等2秒，第3次等3秒
+        await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
+        return persistScene(chapterId, scene, retryCount + 1);
+      }
+
+      // 重试失败
+      dispatch({ type: 'SAVE_FAILURE', payload: '保存失败，已重试3次。数据已备份到本地' });
+      dispatch({ type: 'SET_IS_RETRYING', payload: false });
+      dispatch({ type: 'SET_RETRY_COUNT', payload: 0 });
       return false;
     }
   }, [bookId, getSignature]);
 
-  // Persist chapter synopsis
-  const persistChapterSynopsis = useCallback(async (chapterId: number, synopsis: string): Promise<boolean> => {
+  // Persist chapter synopsis with retry mechanism and local backup
+  const persistChapterSynopsis = useCallback(async (chapterId: number, synopsis: string, retryCount = 0): Promise<boolean> => {
     const currentSig = getSynopsisSignature(synopsis);
     if (savedChapterSynopsisRef.current[chapterId] === currentSig) {
       dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
       return false;
+    }
+
+    // 先保存到 localStorage 作为备份
+    try {
+      const backupKey = `manju_synopsis_${chapterId}`;
+      localStorage.setItem(backupKey, JSON.stringify({
+        synopsis,
+        backupTime: new Date().toISOString(),
+      }));
+    } catch (err) {
+      console.warn('Failed to backup synopsis to localStorage', err);
     }
 
     dispatch({ type: 'SET_SAVING_SYNOPSIS', payload: true });
@@ -488,9 +550,25 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
       await chapterApi.update(bookId, chapterId, { synopsis });
       savedChapterSynopsisRef.current[chapterId] = currentSig;
       dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
+
+      // 保存成功后清除备份
+      try {
+        localStorage.removeItem(`manju_synopsis_${chapterId}`);
+      } catch (err) {
+        console.warn('Failed to clear synopsis backup', err);
+      }
+
       return true;
     } catch (err) {
       console.error('Failed to update chapter synopsis', err);
+
+      // 重试机制
+      if (retryCount < 3) {
+        console.log(`Retrying synopsis save... (${retryCount + 1}/3)`);
+        await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000));
+        return persistChapterSynopsis(chapterId, synopsis, retryCount + 1);
+      }
+
       return false;
     } finally {
       dispatch({ type: 'SET_SAVING_SYNOPSIS', payload: false });

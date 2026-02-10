@@ -1115,6 +1115,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     saveError,
     lastSavedAt,
     isSavingSynopsis,
+    retryCount,
+    isRetrying,
   } = state;
 
   // ============ 面板拖拽使用 Hook ============
@@ -1140,6 +1142,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // 场景参考资料
   const [sceneReferences, setSceneReferences] = useState<SceneReference[]>([]);
   const [loadingReferences, setLoadingReferences] = useState(false);
+  // 本地备份恢复提示
+  const [localBackup, setLocalBackup] = useState<{ sceneId: number; data: any } | null>(null);
 
   // ============ Hooks ============
   const {
@@ -1170,6 +1174,32 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   useEffect(() => {
     loadChapters();
   }, [loadChapters]);
+
+  // 检查是否有本地备份需要恢复
+  useEffect(() => {
+    if (!activeScene?.id) return;
+
+    const backupKey = `manju_scene_${activeScene.id}`;
+    try {
+      const backup = localStorage.getItem(backupKey);
+      if (backup) {
+        const data = JSON.parse(backup);
+        // 检查备份时间，如果是最近1小时内的备份才提示恢复
+        const backupTime = new Date(data.backupTime);
+        const now = new Date();
+        const hoursDiff = (now.getTime() - backupTime.getTime()) / (1000 * 60 * 60);
+
+        if (hoursDiff < 1) {
+          setLocalBackup({ sceneId: activeScene.id, data });
+        } else {
+          // 超过1小时的备份自动清除
+          localStorage.removeItem(backupKey);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check local backup', err);
+    }
+  }, [activeScene?.id]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -1344,26 +1374,125 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // 场景定时自动保存
+  // 场景定时自动保存（2秒）
   useEffect(() => {
     if (!isDirty || !activeScene || !activeChapterId) return;
     const timer = setTimeout(() => {
       persistScene(activeChapterId, activeScene);
-    }, 5000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [isDirty, activeScene, activeChapterId, persistScene]);
 
-  // 梗概定时自动保存
+  // 梗概定时自动保存（2秒）
   useEffect(() => {
     if (!isSynopsisDirty || !activeChapterId) return;
     const timer = setTimeout(() => {
       persistChapterSynopsis(activeChapterId, synopsisDraft);
-    }, 5000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [isSynopsisDirty, activeChapterId, synopsisDraft, persistChapterSynopsis]);
 
+  // Ctrl+S / Cmd+S 手动保存快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S (Windows/Linux) 或 Cmd+S (Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault(); // 阻止浏览器默认保存行为
+
+        // 保存当前激活的内容
+        if (activeScene && activeChapterId && isDirty) {
+          persistScene(activeChapterId, activeScene).then(ok => {
+            if (ok) setToast({ message: '场景已保存 (Ctrl+S)', tone: 'success' });
+          });
+        } else if (activeChapterId && isSynopsisDirty && activeChapter) {
+          persistChapterSynopsis(activeChapterId, synopsisDraft).then(ok => {
+            if (ok) setToast({ message: '章节梗概已保存 (Ctrl+S)', tone: 'success' });
+          });
+        } else {
+          setToast({ message: '无改动，无需保存', tone: 'info' });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis]);
+
+  // 离开页面前确保保存
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty || isSynopsisDirty) {
+        e.preventDefault();
+        // 现代浏览器会显示标准确认对话框
+        return (e.returnValue = '您有未保存的更改，确定要离开吗？');
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty, isSynopsisDirty]);
+
   return (
     <div className="flex h-full bg-[#121212] relative">
+      {/* 本地备份恢复提示 */}
+      {localBackup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1a1a] border border-blue-500/30 rounded-2xl p-6 w-[420px] shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg bg-blue-500/15 border border-blue-500/30 text-blue-200">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">发现本地备份</h3>
+                <p className="text-xs text-white/50 mt-0.5">
+                  检测到有未同步到服务器的本地备份数据
+                </p>
+              </div>
+            </div>
+            <div className="bg-black/30 border border-white/5 rounded-xl p-4 mb-4">
+              <p className="text-sm text-white/70 mb-2">备份信息：</p>
+              <div className="text-xs text-white/50 space-y-1">
+                <div>• 场景 ID: {localBackup.sceneId}</div>
+                <div>• 备份时间: {new Date(localBackup.data.backupTime).toLocaleString()}</div>
+              </div>
+            </div>
+            <p className="text-sm text-white/60 mb-6">
+              这可能是之前保存失败时的备份数据，您想要恢复吗？
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  // 删除备份
+                  try {
+                    localStorage.removeItem(`manju_scene_${localBackup.sceneId}`);
+                  } catch (err) {
+                    console.error('Failed to remove backup', err);
+                  }
+                  setLocalBackup(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-white/10 text-white/70 hover:text-white hover:border-white/30 transition-colors"
+              >
+                丢弃备份
+              </button>
+              <button
+                onClick={() => {
+                  // 恢复备份
+                  if (activeScene && localBackup.sceneId === activeScene.id) {
+                    const { backupTime, ...sceneData } = localBackup.data;
+                    updateActiveScene(() => sceneData);
+                    setToast({ message: '已恢复本地备份，请手动保存', tone: 'success' });
+                  }
+                  setLocalBackup(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors"
+              >
+                恢复备份
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDelete && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 w-[380px] shadow-2xl">
@@ -1726,16 +1855,65 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
               </div>
               
               <div className="h-16 bg-[#1a1a1a] border-t border-white/5 flex justify-between items-center px-10">
-                 <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest">
-                 <div className={`w-1.5 h-1.5 rounded-full ${saveError ? 'bg-red-500 shadow-[0_0_8px_#ef4444]' : isSaving ? 'bg-yellow-400 shadow-[0_0_8px_#fbbf24]' : 'bg-green-500 shadow-[0_0_8px_#22c55e]'}`} />
-                 <span className={saveError ? 'text-red-300' : 'text-white/40'}>
-                   {saveError
-                     ? saveError
-                     : isSaving
-                       ? '保存中...'
-                       : `实时保存：${lastSavedAt ? `上次 ${lastSavedAt.toLocaleTimeString()}` : '尚未保存'}`}
-                 </span>
-               </div>
+                 <div className="flex items-center gap-4">
+                   {/* 保存状态指示器 */}
+                   <div className="flex items-center gap-3">
+                     {/* 动画状态点 */}
+                     <div className="relative">
+                       <div className={`w-2.5 h-2.5 rounded-full transition-all ${
+                         saveError
+                           ? 'bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse'
+                           : isDirty && !isSaving
+                             ? 'bg-orange-400 shadow-[0_0_12px_#fb923c] animate-pulse'
+                             : isSaving || isRetrying
+                               ? 'bg-yellow-400 shadow-[0_0_12px_#fbbf24]'
+                               : 'bg-green-500 shadow-[0_0_12px_#22c55e]'
+                       }`} />
+                       {(isSaving || isRetrying) && (
+                         <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-yellow-400 animate-ping" />
+                       )}
+                     </div>
+
+                     {/* 状态文字 */}
+                     <div className="flex flex-col gap-0.5">
+                       <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                         saveError
+                           ? 'text-red-300'
+                           : isDirty && !isSaving
+                             ? 'text-orange-300'
+                             : 'text-white/50'
+                       }`}>
+                         {saveError
+                           ? '保存失败'
+                           : isRetrying
+                             ? `正在重试 (${retryCount}/3)`
+                             : isSaving
+                               ? '保存中...'
+                               : isDirty
+                                 ? '未保存'
+                                 : '已保存'}
+                       </span>
+                       {lastSavedAt && !isDirty && (
+                         <span className="text-[9px] text-white/30">
+                           上次保存：{lastSavedAt.toLocaleTimeString()}
+                         </span>
+                       )}
+                       {saveError && (
+                         <span className="text-[9px] text-red-400/70">
+                           {saveError}
+                         </span>
+                       )}
+                     </div>
+                   </div>
+
+                   {/* 未保存徽章 */}
+                   {isDirty && !isSaving && (
+                     <div className="px-2.5 py-1 bg-orange-500/20 border border-orange-500/40 rounded-lg text-[10px] font-bold text-orange-200 animate-pulse">
+                       有未保存更改
+                     </div>
+                   )}
+                 </div>
+
                  <button
                    onClick={async () => {
                      if (!activeScene || !activeChapterId) return;
@@ -1751,7 +1929,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                    className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 active:scale-95 disabled:opacity-60"
                    disabled={isSaving || !activeScene || !activeChapterId}
                  >
-                    <Save size={16} /> 手动保存
+                    <Save size={16} /> 手动保存 <span className="text-[9px] opacity-60">(Ctrl+S)</span>
                  </button>
               </div>
             </>
