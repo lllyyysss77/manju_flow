@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Scene } from '../types';
-import { ensureHttpsUrl, fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
+import { fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, getFileUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   ChevronLeft,
@@ -161,12 +161,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const { toast, showToast, hideToast } = useToast();
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
-  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
-  const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | undefined>();
-  const urlCacheRef = useRef<Record<string, string>>({});
-  const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
-  // 用于追踪已发起请求的 scene ID，避免重复请求
-  const sceneThumbRequestedRef = useRef<Set<number>>(new Set());
   const [animationPreviewMap, setAnimationPreviewMap] = useState<Record<number, { url?: string; version?: number }>>({});
   const [audioTracks, setAudioTracks] = useState<SceneAudioTrack[]>([]);
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(null);
@@ -224,44 +218,21 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     };
   }, [isResizingRight, MAX_RIGHT, MIN_RIGHT]);
 
-  const resolveFileUrl = useCallback(async (raw?: string | null) => {
-    if (!raw) return '';
-    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
-    const normalized = ensureHttpsUrl(raw);
-    const { key, externalUrl } = normalizeFileKey(normalized);
-    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
-    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-    const cached = urlCacheRef.current[key];
-    if (cached) return cached;
-    try {
-      const res = await fileApi.getSignedUrl(key);
-      if (!res.url) return '';
-      const resolved = ensureHttpsUrl(res.url);
-      urlCacheRef.current[key] = resolved;
-      return resolved;
-    } catch (err) {
-      console.error('Failed to resolve file url', err);
-      return '';
-    }
-  }, []);
-
   const resolveVersions = useCallback(
     async (audioId: number, versions: AudioVersion[]) => {
       setResolvingVersion(true);
       try {
-        const resolved = await Promise.all(
-          versions.map(async v => ({
-            ...v,
-            audioUrl: await resolveFileUrl(v.audioUrl),
-          }))
-        );
+        const resolved = versions.map(v => ({
+          ...v,
+          audioUrl: getFileUrl(v.audioUrl),
+        }));
         setVersionMap(prev => ({ ...prev, [audioId]: resolved }));
         return resolved;
       } finally {
         setResolvingVersion(false);
       }
     },
-    [resolveFileUrl]
+    []
   );
 
   const activeScene = sortedScenes[activeSceneIndex];
@@ -285,7 +256,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setVersionMap({});
       setResolvingVersion(false);
       setSelectedAudioId(null);
-      setResolvedAudioUrl(undefined);
       setVersionMenuOpen(false);
       setPreviewPlayingVersion(null);
       setCreatingTrack(false);
@@ -310,7 +280,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     setVersionMap({});
     setResolvingVersion(false);
     setSelectedAudioId(null);
-    setResolvedAudioUrl(undefined);
     setVersionMenuOpen(false);
     setPreviewPlayingVersion(null);
     setCreatingTrack(false);
@@ -364,17 +333,12 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           setAnimationPreviewMap(prev => ({ ...prev, [activeScene.id]: { url: undefined, version: undefined } }));
           return;
         }
-        const resolved = await resolveFileUrl(first.animationUrl);
+        const resolved = getFileUrl(first.animationUrl);
         if (!cancelled) {
-          // 只使用已 resolve 的 URL 或有效的原始 URL，避免使用未 resolve 的文件 key
-          const validUrl = resolved || (isValidMediaUrl(first.animationUrl) ? first.animationUrl : undefined);
           setAnimationPreviewMap(prev => ({
             ...prev,
-            [activeScene.id]: { url: validUrl, version: first.animationVersion },
+            [activeScene.id]: { url: resolved || undefined, version: first.animationVersion },
           }));
-          if (validUrl) {
-            setSceneThumbCache(prev => (prev[activeScene.id] ? prev : { ...prev, [activeScene.id]: validUrl }));
-          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -385,11 +349,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, resolveFileUrl]);
+  }, [activeScene?.id]);
 
   useEffect(() => {
     if (!activeScene?.id || !selectedAudioId) {
-      setResolvedAudioUrl(undefined);
       setVersionMenuOpen(false);
       return;
     }
@@ -409,9 +372,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         const versionsRes = await audioApi.listVersions(activeScene.id, selectedAudioId);
         if (cancelled) return;
         await resolveVersions(selectedAudioId, versionsRes.data || []);
-        const rawUrl = currentTrack?.audioUrl;
-        const resolved = rawUrl ? await resolveFileUrl(rawUrl) : '';
-        if (!cancelled) setResolvedAudioUrl(resolved || undefined);
       } catch (err) {
         if (cancelled) return;
         console.error('Failed to load audio versions', err);
@@ -434,21 +394,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
         previewAudioRef.current.currentTime = 0;
       }
     };
-  }, [activeScene?.id, selectedAudioId, audioTracks, resolveFileUrl, resolveVersions]);
-
-  // 加载场景缩略图 - 移除 sceneThumbCache 依赖避免循环
-  useEffect(() => {
-    sortedScenes.forEach(scene => {
-      // 使用 ref 检查是否已发起请求，避免重复
-      if (sceneThumbRequestedRef.current.has(scene.id)) return;
-      const raw = scene.thumbnailUrl;
-      if (!raw) return;
-      sceneThumbRequestedRef.current.add(scene.id);
-      resolveFileUrl(raw).then(url => {
-        setSceneThumbCache(prev => ({ ...prev, [scene.id]: url }));
-      });
-    });
-  }, [sortedScenes, resolveFileUrl]);
+  }, [activeScene?.id, selectedAudioId, audioTracks, resolveVersions]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -482,53 +428,22 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const displayVideoUrl = activeScene?.id ? animationPreviewMap[activeScene.id]?.url : undefined;
   const currentVersionLabel = currentVersionNumber ?? '—';
   const hasAudio = Boolean(selectedTrack && (displayAudioUrl || currentVersions.length > 0));
-  // 只有当回退值是有效的媒体 URL 时才使用，避免将文件 key 直接作为 src
-  const playbackVideoUrl = resolvedVideoUrl || (isValidMediaUrl(displayVideoUrl) ? displayVideoUrl : undefined);
-  const playbackAudioUrl = resolvedAudioUrl || (isValidMediaUrl(displayAudioUrl) ? displayAudioUrl : undefined);
-
-  useEffect(() => {
-    if (!displayVideoUrl) {
-      setResolvedVideoUrl(undefined);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const resolved = await resolveFileUrl(displayVideoUrl);
-      if (!cancelled) setResolvedVideoUrl(resolved || undefined);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [displayVideoUrl, resolveFileUrl]);
-
-  useEffect(() => {
-    if (!displayAudioUrl) {
-      setResolvedAudioUrl(undefined);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const resolved = await resolveFileUrl(displayAudioUrl);
-      if (!cancelled) setResolvedAudioUrl(resolved || undefined);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [displayAudioUrl, resolveFileUrl, activeScene?.id, selectedAudioId]);
+  const playbackVideoUrl = displayVideoUrl ? getFileUrl(displayVideoUrl) || undefined : undefined;
+  const playbackAudioUrl = displayAudioUrl ? getFileUrl(displayAudioUrl) || undefined : undefined;
 
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.pause();
     videoRef.current.load();
     setIsVideoPlaying(false);
-  }, [resolvedVideoUrl, activeScene?.id]);
+  }, [playbackVideoUrl, activeScene?.id]);
 
   useEffect(() => {
     if (!audioRef.current) return;
     audioRef.current.pause();
     audioRef.current.load();
     setIsAudioPlaying(false);
-  }, [resolvedAudioUrl, activeScene?.id, selectedAudioId]);
+  }, [playbackAudioUrl, activeScene?.id, selectedAudioId]);
 
   useEffect(() => {
     if (!hasAudio) setVersionMenuOpen(false);
@@ -546,14 +461,10 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       showToast('该版本缺少音频链接，无法播放', 'error');
       return;
     }
-    // 确保使用有效的媒体 URL，如果不是则尝试解析
-    let audioUrl = versionData.audioUrl;
-    if (!isValidMediaUrl(audioUrl)) {
-      audioUrl = await resolveFileUrl(audioUrl);
-      if (!isValidMediaUrl(audioUrl)) {
-        showToast('无法解析音频链接', 'error');
-        return;
-      }
+    const audioUrl = getFileUrl(versionData.audioUrl);
+    if (!audioUrl) {
+      showToast('无法解析音频链接', 'error');
+      return;
     }
     try {
       if (!previewAudioRef.current) {
@@ -591,7 +502,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     setAudioError(null);
     try {
       const updated = await audioApi.revert(activeScene.id, selectedTrack.id, version);
-      const resolvedSceneUrl = await resolveFileUrl(updated.audioUrl);
       setAudioTracks(prev =>
         prev.map(track =>
           track.id === selectedTrack.id
@@ -599,7 +509,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
             : track
         )
       );
-      setResolvedAudioUrl(resolvedSceneUrl || (isValidMediaUrl(updated.audioUrl) ? updated.audioUrl : undefined));
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
@@ -634,9 +543,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     try {
       const uploaded = await fileApi.upload(file, 'private');
       const rawUrl = uploaded.key || uploaded.url;
-      const resolvedUploadUrl = await resolveFileUrl(rawUrl);
       const version = await audioApi.upload(activeScene.id, selectedTrack.id, rawUrl || '');
-      const resolvedVersionUrl = await resolveFileUrl(version.audioUrl);
       setAudioTracks(prev =>
         prev.map(track =>
           track.id === selectedTrack.id
@@ -644,7 +551,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
             : track
         )
       );
-      setResolvedAudioUrl(resolvedVersionUrl || resolvedUploadUrl || undefined);
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current.currentTime = 0;
@@ -731,7 +637,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setCreatingTrack(false);
       setNewTrackRole('');
       setVersionMenuOpen(false);
-      setResolvedAudioUrl(undefined);
       showToast('已创建新音轨，上传音频以开始制作', 'success');
     } catch (err) {
       console.error('Create audio track failed', err);
@@ -787,7 +692,6 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       const nextId = nextTracks[0]?.id ?? null;
       setSelectedAudioId(nextId);
       setRoleDraft(nextTracks.find(t => t.id === nextId)?.role || '');
-      setResolvedAudioUrl(undefined);
       showToast('音轨已删除', 'success');
     } catch (err) {
       console.error('Delete audio track failed', err);
@@ -853,9 +757,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           ) : (
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
-              // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
-              const cachedThumb = sceneThumbCache[scene.id];
-              const thumb = cachedThumb || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
+              const thumb = getFileUrl(scene.thumbnailUrl) || DEFAULT_SCENE_THUMB;
               return (
               <button
                 key={scene.id}

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Episode, Scene, SceneAnimation, SceneAnimationVersion } from '../types';
-import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, commentApi, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
+import { fileApi, animationApi, storyboardApi, commentApi, getFileUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   AlertCircle,
@@ -146,12 +146,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const { toast, showToast, hideToast } = useToast();
-  const urlCacheRef = useRef<Record<string, string>>({});
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
-  const [sceneThumbCache, setSceneThumbCache] = useState<Record<number, string>>({});
-  // 用于追踪已发起请求的 scene ID，避免重复请求
-  const sceneThumbRequestedRef = useRef<Set<number>>(new Set());
-  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -218,44 +213,21 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     };
   }, [isResizingRight, MAX_RIGHT, MIN_RIGHT]);
 
-  const resolveFileUrl = useCallback(async (raw?: string | null) => {
-    if (!raw) return '';
-    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
-    const normalized = ensureHttpsUrl(raw);
-    const { key, externalUrl } = normalizeFileKey(normalized);
-    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
-    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-    const cached = urlCacheRef.current[key];
-    if (cached) return cached;
-    try {
-      const res = await fileApi.getSignedUrl(key);
-      if (!res.url) return '';
-      const resolved = ensureHttpsUrl(res.url);
-      urlCacheRef.current[key] = resolved;
-      return resolved;
-    } catch (err) {
-      console.error('Failed to resolve file url', err);
-      return '';
-    }
-  }, []);
-
   const resolveVersions = useCallback(
     async (animationId: number, versions: SceneAnimationVersion[]) => {
       setResolvingVersion(true);
       try {
-        const resolved = await Promise.all(
-          versions.map(async v => ({
-            ...v,
-            videoUrl: await resolveFileUrl(v.videoUrl),
-          }))
-        );
+        const resolved = versions.map(v => ({
+          ...v,
+          videoUrl: getFileUrl(v.videoUrl),
+        }));
         setVersionMap(prev => ({ ...prev, [animationId]: resolved }));
         return resolved;
       } finally {
         setResolvingVersion(false);
       }
     },
-    [resolveFileUrl]
+    []
   );
 
   useEffect(() => {
@@ -263,7 +235,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setAnimations([]);
       setSelectedAnimationId(null);
       setVersionMap({});
-      setResolvedVideoUrl(undefined);
       setPreviewSource(null);
       setAnimationError(null);
       setLoadingAnimation(false);
@@ -274,7 +245,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }
     setVersionMap({});
     setSelectedAnimationId(null);
-    setResolvedVideoUrl(undefined);
     setPreviewSource(null);
     setVersionMenuOpen(false);
     setDeleteTarget(null);
@@ -321,10 +291,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           setFramePreviewCache(prev => ({ ...prev, [activeScene.id]: { start: undefined, end: undefined } }));
           return;
         }
-        const [start, end] = await Promise.all([
-          firstSet.startFrameUrl ? resolveFileUrl(firstSet.startFrameUrl) : Promise.resolve(''),
-          firstSet.endFrameUrl ? resolveFileUrl(firstSet.endFrameUrl) : Promise.resolve(''),
-        ]);
+        const start = firstSet.startFrameUrl ? getFileUrl(firstSet.startFrameUrl) : '';
+        const end = firstSet.endFrameUrl ? getFileUrl(firstSet.endFrameUrl) : '';
         if (!cancelled) {
           setFramePreviewCache(prev => ({
             ...prev,
@@ -340,21 +308,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id, resolveFileUrl]);
-
-  // 加载场景缩略图 - 移除 sceneThumbCache 依赖避免循环
-  useEffect(() => {
-    sortedScenes.forEach(scene => {
-      // 使用 ref 检查是否已发起请求，避免重复
-      if (sceneThumbRequestedRef.current.has(scene.id)) return;
-      const raw = scene.thumbnailUrl;
-      if (!raw) return;
-      sceneThumbRequestedRef.current.add(scene.id);
-      resolveFileUrl(raw).then(url => {
-        setSceneThumbCache(prev => ({ ...prev, [scene.id]: url }));
-      });
-    });
-  }, [sortedScenes, resolveFileUrl]);
+  }, [activeScene?.id]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -386,7 +340,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   useEffect(() => {
     if (!activeScene?.id || !selectedAnimationId) {
       setVersionMenuOpen(false);
-      setResolvedVideoUrl(undefined);
       return;
     }
     // 确保 selectedAnimationId 属于当前场景的 animations 列表
@@ -447,25 +400,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       : undefined) || currentVersions[0];
   const displayClipUrl = currentVersionData?.videoUrl || selectedAnimation?.animationUrl;
   const currentVersionLabel = normalizedVersionNumber ?? '—';
-  useEffect(() => {
-    if (!displayClipUrl) {
-      setResolvedVideoUrl(undefined);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const url = await resolveFileUrl(displayClipUrl);
-      if (!cancelled) setResolvedVideoUrl(url || undefined);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [displayClipUrl, resolveFileUrl]);
-
   const startFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.start : undefined;
   const endFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.end : undefined;
-  // 只有当回退值是有效的媒体 URL 时才使用，避免将文件 key 直接作为 src
-  const playbackUrl = resolvedVideoUrl || (isValidMediaUrl(displayClipUrl) ? displayClipUrl : undefined);
+  const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.pause();
@@ -480,9 +417,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     try {
       const uploaded = await fileApi.upload(file, 'private');
       const rawUrl = uploaded.key || uploaded.url;
-      const resolvedUploadUrl = await resolveFileUrl(rawUrl);
       const version = await animationApi.upload(activeScene.id, selectedAnimationId, rawUrl || '');
-      const resolvedVersionUrl = await resolveFileUrl(version.videoUrl);
       setAnimations(prev =>
         prev.map(a =>
           a.id === selectedAnimationId
@@ -490,7 +425,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             : a
         )
       );
-      setResolvedVideoUrl(resolvedVersionUrl || resolvedUploadUrl || undefined);
       const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
       await resolveVersions(selectedAnimationId, versionsRes.data || []);
       showToast('新动画版本已上传', 'success');
@@ -526,14 +460,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       showToast('该版本缺少视频链接，无法预览', 'error');
       return;
     }
-    // 确保使用有效的媒体 URL，如果不是则尝试解析
-    let videoUrl = versionData.videoUrl;
-    if (!isValidMediaUrl(videoUrl)) {
-      videoUrl = await resolveFileUrl(videoUrl);
-      if (!isValidMediaUrl(videoUrl)) {
-        showToast('无法解析视频链接', 'error');
-        return;
-      }
+    const videoUrl = getFileUrl(versionData.videoUrl);
+    if (!videoUrl) {
+      showToast('无法解析视频链接', 'error');
+      return;
     }
     setPreviewSource({ url: videoUrl, version: versionData.version });
     setVersionMenuOpen(false);
@@ -545,11 +475,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setAnimationError(null);
     try {
       const animation = await animationApi.revert(activeScene.id, selectedAnimationId, version);
-      const resolvedSceneUrl = await resolveFileUrl(animation.animationUrl);
       setAnimations(prev =>
         prev.map(a => (a.id === selectedAnimationId ? { ...a, ...animation } : a))
       );
-      setResolvedVideoUrl(resolvedSceneUrl || (isValidMediaUrl(animation.animationUrl) ? animation.animationUrl : undefined));
       const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
       await resolveVersions(selectedAnimationId, versionsRes.data || []);
       showToast(`已回滚到版本 #${version}`, 'success');
@@ -738,9 +666,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             sortedScenes.map((scene, idx) => {
               const displayNumber = idx + 1;
               const sceneClip = scene.id === activeScene?.id ? displayClipUrl : undefined;
-              // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
-              const cachedThumb = sceneThumbCache[scene.id];
-              const thumb = cachedThumb || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
+              const thumb = getFileUrl(scene.thumbnailUrl) || DEFAULT_SCENE_THUMB;
               return (
               <button
                 key={scene.id}

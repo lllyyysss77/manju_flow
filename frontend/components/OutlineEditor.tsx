@@ -17,7 +17,7 @@ import {
   Play,
   Pause
 } from 'lucide-react';
-import { bookApi, characterApi, fileApi, ensureHttpsUrl, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
+import { bookApi, characterApi, fileApi, getFileUrl, downloadFile } from '../api';
 
 interface OutlineEditorProps {
   bookId: number;
@@ -514,9 +514,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [isCharacterDirty, setIsCharacterDirty] = useState(false);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
-  const [resolvedReferenceUrl, setResolvedReferenceUrl] = useState<string | undefined>(undefined);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
-  const [resolvedVoiceUrl, setResolvedVoiceUrl] = useState<string | undefined>(undefined);
 
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ characterId: number; name: string } | null>(null);
@@ -531,8 +529,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const savedOutlineRef = useRef(initialOutline);
   const savedCharactersRef = useRef<Record<number, string>>({});
-  const referenceUrlCache = useRef<Record<string, string>>({});
-  const voiceUrlCache = useRef<Record<string, string>>({});
 
   const activeCharacter = characters.find(c => c.id === activeCharacterId) || null;
 
@@ -585,85 +581,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     loadData();
   }, [loadData]);
 
-  // 解析参考图 URL
-  const resolveReferenceImage = useCallback(async (raw?: string | null) => {
-    if (!raw) {
-      setResolvedReferenceUrl(undefined);
-      return;
-    }
-    const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
-    if (ref.startsWith('data:') || ref.startsWith('blob:')) {
-      setResolvedReferenceUrl(ref);
-      return;
-    }
-    const { key, externalUrl } = normalizeFileKey(ref);
-    const fallback = externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : undefined;
-    if (!key) {
-      setResolvedReferenceUrl(fallback);
-      return;
-    }
-    if (referenceUrlCache.current[key]) {
-      setResolvedReferenceUrl(referenceUrlCache.current[key]);
-      return;
-    }
-    try {
-      const signed = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(signed.url);
-      if (resolved && isValidMediaUrl(resolved)) {
-        referenceUrlCache.current[key] = resolved;
-        setResolvedReferenceUrl(resolved);
-      } else {
-        setResolvedReferenceUrl(fallback);
-      }
-    } catch (e) {
-      console.error('Failed to resolve reference image', e);
-      setResolvedReferenceUrl(fallback);
-    }
-  }, []);
-
-  useEffect(() => {
-    resolveReferenceImage(activeCharacter?.referenceImageUrl);
-  }, [activeCharacter?.referenceImageUrl, resolveReferenceImage]);
-
-  // 解析音色音频 URL
-  const resolveVoiceAudio = useCallback(async (raw?: string | null) => {
-    if (!raw) {
-      setResolvedVoiceUrl(undefined);
-      return;
-    }
-    const ref = ensureHttpsUrl(typeof raw === 'string' ? raw : String(raw));
-    if (ref.startsWith('data:') || ref.startsWith('blob:')) {
-      setResolvedVoiceUrl(ref);
-      return;
-    }
-    const { key, externalUrl } = normalizeFileKey(ref);
-    const fallback = externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : undefined;
-    if (!key) {
-      setResolvedVoiceUrl(fallback);
-      return;
-    }
-    if (voiceUrlCache.current[key]) {
-      setResolvedVoiceUrl(voiceUrlCache.current[key]);
-      return;
-    }
-    try {
-      const signed = await fileApi.getSignedUrl(key);
-      const resolved = ensureHttpsUrl(signed.url);
-      if (resolved && isValidMediaUrl(resolved)) {
-        voiceUrlCache.current[key] = resolved;
-        setResolvedVoiceUrl(resolved);
-      } else {
-        setResolvedVoiceUrl(fallback);
-      }
-    } catch (e) {
-      console.error('Failed to resolve voice audio', e);
-      setResolvedVoiceUrl(fallback);
-    }
-  }, []);
-
-  useEffect(() => {
-    resolveVoiceAudio(activeCharacter?.voiceAudioUrl);
-  }, [activeCharacter?.voiceAudioUrl, resolveVoiceAudio]);
 
   // 保存大纲
   const saveOutline = async () => {
@@ -790,10 +707,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     setIsUploadingReference(true);
     try {
       const res = await fileApi.upload(file, 'private');
-      const signed = await fileApi.getSignedUrl(res.key);
-      referenceUrlCache.current[res.key] = signed.url;
       updateActiveCharacter(c => ({ ...c, referenceImageUrl: res.key }));
-      setResolvedReferenceUrl(signed.url);
       setToast({ message: '参考图已上传', tone: 'success' });
     } catch (err) {
       console.error('Failed to upload reference', err);
@@ -805,7 +719,6 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const handleRemoveReference = () => {
     updateActiveCharacter(c => ({ ...c, referenceImageUrl: undefined }));
-    setResolvedReferenceUrl(undefined);
   };
 
   // 上传音色音频
@@ -813,10 +726,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     setIsUploadingVoice(true);
     try {
       const res = await fileApi.upload(file, 'private');
-      const signed = await fileApi.getSignedUrl(res.key);
-      voiceUrlCache.current[res.key] = signed.url;
       updateActiveCharacter(c => ({ ...c, voiceAudioUrl: res.key }));
-      setResolvedVoiceUrl(signed.url);
       setToast({ message: '音色音频已上传', tone: 'success' });
     } catch (err) {
       console.error('Failed to upload voice audio', err);
@@ -1092,7 +1002,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">角色参考图</label>
                   <ReferenceImageSection
-                    initialImage={resolvedReferenceUrl || (isValidMediaUrl(activeCharacter.referenceImageUrl) ? activeCharacter.referenceImageUrl : undefined)}
+                    initialImage={getFileUrl(activeCharacter.referenceImageUrl) || undefined}
                     onUpload={handleUploadReference}
                     onRemove={handleRemoveReference}
                     isUploading={isUploadingReference}
@@ -1103,7 +1013,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">角色音色</label>
                   <VoiceAudioSection
-                    audioUrl={resolvedVoiceUrl || (isValidMediaUrl(activeCharacter.voiceAudioUrl) ? activeCharacter.voiceAudioUrl : undefined)}
+                    audioUrl={getFileUrl(activeCharacter.voiceAudioUrl) || undefined}
                     onUpload={handleUploadVoice}
                     isUploading={isUploadingVoice}
                   />

@@ -116,6 +116,11 @@ func (c *Client) Delete(key string) error {
 	return c.bucket.DeleteObject(key)
 }
 
+// GetObject 获取对象内容（流式读取）
+func (c *Client) GetObject(key string) (io.ReadCloser, error) {
+	return c.bucket.GetObject(key)
+}
+
 // GetSignedURL 获取签名 URL
 func (c *Client) GetSignedURL(key string, expireSeconds int64) (string, error) {
 	return c.bucket.SignURL(key, oss.HTTPGet, expireSeconds)

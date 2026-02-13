@@ -18,7 +18,7 @@ import {
   Trash2,
   Download
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey, downloadFile } from '../api';
+import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { CommentInput } from './CommentInput';
@@ -916,55 +916,6 @@ const MultipleReferencesSection: React.FC<{
 }> = ({ sceneId, references, onReferencesChange }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resolvedUrls, setResolvedUrls] = useState<Record<number, string>>({});
-  const resolvedUrlsCacheRef = useRef<Record<string, string>>({});
-
-  // 解析参考图的 URL
-  useEffect(() => {
-    const resolveUrls = async () => {
-      const newResolved: Record<number, string> = {};
-      for (const ref of references) {
-        if (!ref.imageUrl) continue;
-
-        const raw = ensureHttpsUrl(ref.imageUrl);
-        if (raw.startsWith('data:') || raw.startsWith('blob:')) {
-          newResolved[ref.id] = raw;
-          continue;
-        }
-
-        const { key, externalUrl } = normalizeFileKey(raw);
-        if (!key) {
-          if (externalUrl && isValidMediaUrl(externalUrl)) {
-            newResolved[ref.id] = externalUrl;
-          }
-          continue;
-        }
-
-        // 使用缓存
-        if (resolvedUrlsCacheRef.current[key]) {
-          newResolved[ref.id] = resolvedUrlsCacheRef.current[key];
-          continue;
-        }
-
-        try {
-          const signed = await fileApi.getSignedUrl(key);
-          const url = ensureHttpsUrl(signed.url);
-          if (url && isValidMediaUrl(url)) {
-            resolvedUrlsCacheRef.current[key] = url;
-            newResolved[ref.id] = url;
-          }
-        } catch (e) {
-          console.error('Failed to resolve reference image', e);
-          if (externalUrl && isValidMediaUrl(externalUrl)) {
-            newResolved[ref.id] = externalUrl;
-          }
-        }
-      }
-      setResolvedUrls(newResolved);
-    };
-
-    resolveUrls();
-  }, [references]);
 
   const handleAddReference = async () => {
     setIsAdding(true);
@@ -1018,7 +969,7 @@ const MultipleReferencesSection: React.FC<{
               key={ref.id}
               reference={ref}
               index={idx}
-              resolvedImageUrl={resolvedUrls[ref.id]}
+              resolvedImageUrl={getFileUrl(ref.imageUrl)}
               onUpdate={handleUpdateReference}
               onDelete={() => handleDeleteReference(ref.id)}
               onUploadImage={handleUploadImage}

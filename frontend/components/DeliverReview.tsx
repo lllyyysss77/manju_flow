@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
-import { chapterApi, commentApi, downloadFile, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { chapterApi, commentApi, downloadFile, fileApi, getFileUrl, videoApi } from '../api';
 import { CommentItem } from './CommentItem';
 import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
@@ -46,8 +46,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const [videoDetail, setVideoDetail] = useState<ChapterVideoDetail | null>(null);
   const [versions, setVersions] = useState<ChapterVideoVersion[]>([]);
-  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>();
-  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string | undefined>();
   const [loadingVideo, setLoadingVideo] = useState(false);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [uploadingOriginal, setUploadingOriginal] = useState(false);
@@ -62,13 +60,10 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const originalInputRef = useRef<HTMLInputElement>(null);
-  const urlCache = useRef<Record<string, string>>({});
-
-  const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl || resolvedVideoUrl || resolvedPreviewUrl);
+  const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl);
   const [preferPreview, setPreferPreview] = useState(true);
-  // 只使用已 resolve 的 URL 或有效的原始 URL，避免使用未 resolve 的文件 key
-  const previewSource = resolvedPreviewUrl || (isValidMediaUrl(videoDetail?.previewUrl) ? videoDetail?.previewUrl : '') || '';
-  const originalSource = resolvedVideoUrl || (isValidMediaUrl(videoDetail?.videoUrl) ? videoDetail?.videoUrl : '') || (isValidMediaUrl(videoUrl) ? videoUrl : '') || '';
+  const previewSource = videoDetail?.previewUrl ? getFileUrl(videoDetail.previewUrl) : '';
+  const originalSource = videoDetail?.videoUrl ? getFileUrl(videoDetail.videoUrl) : (videoUrl ? getFileUrl(videoUrl) : '');
   const playbackSource = hasUploadedVideo
     ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
     : '';
@@ -88,30 +83,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [uploadError, setUploadError] = useState<string | null>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
 
-  const resolveFileUrl = useCallback(
-    async (raw?: string | null) => {
-      if (!raw) return '';
-      if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
-      const normalized = ensureHttpsUrl(raw);
-      const { key, externalUrl } = normalizeFileKey(normalized);
-      // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
-      if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-      const cached = urlCache.current[key];
-      if (cached) return cached;
-      try {
-        const res = await fileApi.getSignedUrl(key);
-        if (!res.url) return '';
-        const resolved = ensureHttpsUrl(res.url);
-        urlCache.current[key] = resolved;
-        return resolved;
-      } catch (err) {
-        console.error('Resolve video url failed', err);
-        return '';
-      }
-    },
-    []
-  );
-
   const fetchVideoData = useCallback(
     async (chapterId: number) => {
       setLoadingVideo(true);
@@ -121,13 +92,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         setVideoDetail(info);
         const versionRes = await videoApi.listVersions(chapterId);
         setVersions(versionRes.data || []);
-
-        const [resolvedVideo, resolvedPreview] = await Promise.all([
-          resolveFileUrl(info.videoUrl),
-          resolveFileUrl(info.previewUrl),
-        ]);
-        setResolvedVideoUrl(resolvedVideo || undefined);
-        setResolvedPreviewUrl(resolvedPreview || undefined);
       } catch (err) {
         console.error('Failed to load chapter video', err);
         showToast('章节交付视频加载失败', 'error');
@@ -143,15 +107,13 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         }
       }
     },
-    [resolveFileUrl]
+    []
   );
 
   useEffect(() => {
     if (!activeChapter?.id) {
       setVideoDetail(null);
       setVersions([]);
-      setResolvedPreviewUrl(undefined);
-      setResolvedVideoUrl(undefined);
       setComments([]);
       setCommentError(null);
       setCommentDraft('');
@@ -524,7 +486,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         bitrate,
       };
       const version = await videoApi.upload(activeChapter.id, payload);
-      const resolved = await resolveFileUrl(key);
       // 先立刻展示播放器（使用原始视频），预览版后台生成
       setVideoDetail((prev) => ({
         ...(prev || { id: version.chapterVideoId, chapterId: activeChapter.id, status: 'READY' as VideoStatus }),
@@ -536,7 +497,6 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         height: meta.height,
         bitrate,
       }));
-      setResolvedVideoUrl(resolved || undefined);
       showToast(`原始视频已上传 · 新版本 #${version.version}`, 'success');
       fetchVideoData(activeChapter.id);
     } catch (err) {
@@ -580,15 +540,14 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   };
 
   const handleDownloadOriginal = async () => {
-    const raw = videoDetail?.videoUrl || resolvedVideoUrl || videoUrl;
+    const raw = videoDetail?.videoUrl || videoUrl;
     if (!raw) {
       showToast('暂无可下载的原始视频', 'error');
       return;
     }
     setDownloading(true);
     try {
-      const resolved = await resolveFileUrl(raw);
-      const url = resolved || (isValidMediaUrl(raw) ? raw : '');
+      const url = getFileUrl(raw);
       if (!url) {
         showToast('无法解析视频地址', 'error');
         return;

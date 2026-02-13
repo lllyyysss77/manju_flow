@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, SceneFrameSet, SceneFrameSetVersion } from '../types';
-import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey, downloadFile } from '../api';
+import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl, getFileUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -23,7 +23,6 @@ import {
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { CommentInput } from './CommentInput';
-import { useFileUrl } from './useFileUrl';
 import { usePanelResize } from './usePanelResize';
 import { DEFAULT_SCENE_THUMB, STATUS_MAP } from '../constants';
 import { Toast, useToast } from './Toast';
@@ -163,15 +162,10 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [selectedFrameSetId, setSelectedFrameSetId] = useState<number | null>(null);
   const [versionsMap, setVersionsMap] = useState<Record<number, { start: SceneFrameSetVersion[]; end: SceneFrameSetVersion[] }>>({});
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
-  const [previewCache, setPreviewCache] = useState<Record<number, string>>({});
-  const [scenePreviewCache, setScenePreviewCache] = useState<Record<number, string>>({});
-  // 用于追踪已发起请求的 scene ID，避免重复请求
-  const scenePreviewRequestedRef = useRef<Set<number>>(new Set());
   const firstFrameSetId = useMemo(() => {
     if (!frameSets.length) return null;
     return [...frameSets].sort((a, b) => a.index - b.index)[0]?.id ?? null;
   }, [frameSets]);
-  const urlCacheRef = useRef<Record<string, string>>({});
   const [loadingStoryboard, setLoadingStoryboard] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
@@ -183,7 +177,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const { toast, showToast, hideToast } = useToast();
   const [historyPanel, setHistoryPanel] = useState<{ type: 'start' | 'end'; open: boolean }>({ type: 'start', open: false });
   const [historySelection, setHistorySelection] = useState<{ start?: string; end?: string }>({});
-  const [resolvedReference, setResolvedReference] = useState<string | undefined>();
   const [creatingSet, setCreatingSet] = useState(false);
   const [newSetName, setNewSetName] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
@@ -234,57 +227,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     };
   }, [isResizingRight, MAX_RIGHT, MIN_RIGHT]);
 
-  const resolveFileUrl = useCallback(async (raw?: string | null) => {
-    if (!raw) return '';
-    if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
-    const normalized = ensureHttpsUrl(raw);
-    const { key, externalUrl } = normalizeFileKey(normalized);
-    // 如果没有 key，只有当 externalUrl 是有效媒体 URL 时才返回
-    if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-    const cached = urlCacheRef.current[key];
-    if (cached) return cached;
-    try {
-      const res = await fileApi.getSignedUrl(key);
-      if (!res.url) return '';
-      const resolved = ensureHttpsUrl(res.url);
-      urlCacheRef.current[key] = resolved;
-      return resolved;
-    } catch (err) {
-      console.error('Failed to resolve file url', err);
-      return '';
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!activeScene?.referenceImageUrl) {
-      setResolvedReference(undefined);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const url = await resolveFileUrl(activeScene.referenceImageUrl);
-      if (!cancelled) setResolvedReference(url);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeScene?.referenceImageUrl, resolveFileUrl]);
-
-  // 加载场景缩略图 - 移除 scenePreviewCache 依赖避免循环
-  useEffect(() => {
-    sortedScenes.forEach(scene => {
-      if (!scene.thumbnailUrl) return;
-      // 使用 ref 检查是否已发起请求，避免重复
-      if (scenePreviewRequestedRef.current.has(scene.id)) return;
-      scenePreviewRequestedRef.current.add(scene.id);
-      resolveFileUrl(scene.thumbnailUrl).then(url => {
-        // 只有当 url 是有效的媒体 URL 时才缓存，避免使用未 resolve 的文件 key
-        if (url && isValidMediaUrl(url)) {
-          setScenePreviewCache(prev => ({ ...prev, [scene.id]: url }));
-        }
-      });
-    });
-  }, [sortedScenes, resolveFileUrl]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -297,23 +239,14 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     });
   }, [bookId]);
 
-  const primeVersionCache = useCallback(async (items: SceneFrameSetVersion[]) => {
-    const entries = await Promise.all(
-      items.map(async item => {
-        const resolved = await resolveFileUrl(item.imageUrl);
-        return [item.id, resolved] as const;
-      })
-    );
-    const mapped = Object.fromEntries(entries);
-    setPreviewCache(prev => ({ ...prev, ...mapped }));
-  }, [resolveFileUrl]);
+  const primeVersionCache = useCallback(async (_items: SceneFrameSetVersion[]) => {
+    // no-op: URLs are now resolved synchronously via getFileUrl
+  }, []);
 
   const resolveFrameSetPreview = useCallback(
-    async (frameSet: SceneFrameSet, sceneId?: number) => {
-      const [start, end] = await Promise.all([
-        frameSet.startFrameUrl ? resolveFileUrl(frameSet.startFrameUrl) : Promise.resolve(''),
-        frameSet.endFrameUrl ? resolveFileUrl(frameSet.endFrameUrl) : Promise.resolve(''),
-      ]);
+    async (frameSet: SceneFrameSet, _sceneId?: number) => {
+      const start = frameSet.startFrameUrl ? getFileUrl(frameSet.startFrameUrl) : '';
+      const end = frameSet.endFrameUrl ? getFileUrl(frameSet.endFrameUrl) : '';
       setFramePreviewCache(prev => ({
         ...prev,
         [frameSet.id]: {
@@ -322,7 +255,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         },
       }));
     },
-    [resolveFileUrl]
+    []
   );
 
   const loadFrameSets = useCallback(
@@ -451,7 +384,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     try {
       const uploaded = await fileApi.upload(file, 'private');
       const key = uploaded.key || uploaded.url;
-      const resolved = await resolveFileUrl(key);
+      const resolved = getFileUrl(key);
       if (type === 'start') {
         const version = await storyboardApi.updateStartFrame(activeScene.id, selectedFrameSetId, key);
         setFrameSets(prev =>
@@ -487,9 +420,6 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       }));
       await loadVersionsForFrameSet(activeScene.id, selectedFrameSetId);
       setHistorySelection({});
-      if (type === 'start' && resolved) {
-        setScenePreviewCache(prev => ({ ...prev, [activeScene.id]: resolved }));
-      }
       showToast(`${type === 'start' ? '起始帧' : '结束帧'}已保存`, 'success');
     } catch (err) {
       console.error('Upload frame failed', err);
@@ -529,10 +459,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
       setFrameSets(prev => prev.map(fs => (fs.id === selectedFrameSetId ? { ...fs, ...updated } : fs)));
       await resolveFrameSetPreview(updated, activeScene.id);
       if (type === 'start' && updated.startFrameUrl) {
-        const resolvedStart = await resolveFileUrl(updated.startFrameUrl);
         const chapterId = activeScene.chapterId ?? activeEpisode?.id;
         const isFirstFrameSet = firstFrameSetId ? selectedFrameSetId === firstFrameSetId : true;
-        setScenePreviewCache(prev => ({ ...prev, [activeScene.id]: resolvedStart || updated.startFrameUrl }));
         if (isFirstFrameSet && bookId && chapterId) {
           sceneApi.update(bookId, chapterId, activeScene.id, { thumbnailUrl: updated.startFrameUrl }).catch(err => {
             console.error('Failed to update scene thumbnail', err);
@@ -724,9 +652,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
         <div className="h-20 border-t border-white/10 bg-[#161616] flex items-center px-4 gap-2 overflow-x-auto">
           {sortedScenes.map((scene, idx) => {
             const displayNumber = idx + 1;
-            // 只使用已 resolve 的缓存 URL 或有效的原始 URL，否则使用默认占位图
-            const cachedUrl = scenePreviewCache[scene.id];
-            const preview = cachedUrl || (isValidMediaUrl(scene.thumbnailUrl) ? scene.thumbnailUrl : DEFAULT_SCENE_THUMB);
+            const preview = getFileUrl(scene.thumbnailUrl) || DEFAULT_SCENE_THUMB;
             return (
             <button
               key={scene.id}
@@ -841,7 +767,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-widest">参考图</h3>
             </div>
             {activeScene.referenceImageUrl ? (
-              <img src={resolvedReference || (isValidMediaUrl(activeScene.referenceImageUrl) ? activeScene.referenceImageUrl : undefined)} className="w-full rounded-lg border border-white/10" alt="参考图" />
+              <img src={getFileUrl(activeScene.referenceImageUrl) || undefined} className="w-full rounded-lg border border-white/10" alt="参考图" />
             ) : (
               <p className="text-xs text-white/40 leading-relaxed px-1">暂无参考图</p>
             )}
@@ -1362,7 +1288,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
               <div className="p-4 space-y-3 overflow-y-auto h-full">
                 {(historyPanel.type === 'start' ? currentVersions.start : currentVersions.end).map(item => {
                   // 只使用已 resolve 的缓存 URL 或有效的原始 URL
-                  const url = previewCache[item.id] || (isValidMediaUrl(item.imageUrl) ? item.imageUrl : '');
+                  const url = getFileUrl(item.imageUrl);
                   const label = `版本 #${item.version}`;
                   const time = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false }) : '时间未知';
                   return (

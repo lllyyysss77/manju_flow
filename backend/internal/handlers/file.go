@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
 	"strings"
 
@@ -120,7 +121,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	c.JSON(http.StatusCreated, fileRecord.ToResponse(baseURL))
 }
 
-// Get 获取文件
+// Get 获取文件（代理模式：流式返回文件内容，配合浏览器缓存）
 // GET /api/files/*key
 func (h *FileHandler) Get(c *gin.Context) {
 	// 检查 OSS 是否配置
@@ -142,14 +143,20 @@ func (h *FileHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// 查询文件记录
-	// 由于使用内容哈希作为 key，同一文件可能被多个用户上传，产生多条记录
-	// 优先查找当前用户的记录，确保用户能访问自己上传的文件
+	// 使用文件 key 作为 ETag（key 基于内容 SHA256，天然不可变）
+	etag := `"` + key + `"`
+
+	// 检查 If-None-Match：命中则直接返回 304，不查 DB、不请求 OSS
+	if c.GetHeader("If-None-Match") == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	// 查询文件记录获取 MimeType
 	var fileRecord models.File
 	db := database.GetDB()
 	found := false
 
-	// 如果用户已登录，优先查找该用户的记录
 	if user, exists := c.Get("user"); exists {
 		currentUser := user.(*models.User)
 		if err := db.Where("`key` = ? AND uploader_id = ?", key, currentUser.ID).First(&fileRecord).Error; err == nil {
@@ -157,7 +164,6 @@ func (h *FileHandler) Get(c *gin.Context) {
 		}
 	}
 
-	// 如果没有找到当前用户的记录，查找任意一条记录
 	if !found {
 		if err := db.Where("`key` = ?", key).First(&fileRecord).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -167,51 +173,30 @@ func (h *FileHandler) Get(c *gin.Context) {
 		}
 	}
 
-	// TODO: 权限设计完成后恢复以下权限校验逻辑
-	// // 检查权限
-	// if fileRecord.Visibility == models.FileVisibilityPrivate {
-	// 	// 获取当前用户
-	// 	user, exists := c.Get("user")
-	// 	if !exists {
-	// 		c.JSON(http.StatusUnauthorized, gin.H{
-	// 			"error": "需要登录才能访问此文件",
-	// 		})
-	// 		return
-	// 	}
-	// 	currentUser := user.(*models.User)
-	//
-	// 	// 检查是否是上传者
-	// 	if currentUser.ID != fileRecord.UploaderID {
-	// 		c.JSON(http.StatusForbidden, gin.H{
-	// 			"error": "没有权限访问此文件",
-	// 		})
-	// 		return
-	// 	}
-	// }
-
-	// 生成签名 URL（有效期 1 小时）
+	// 从 OSS 获取文件流
 	ossClient := oss.GetClient()
-	signedURL, err := ossClient.GetSignedURL(key, 3600)
+	body, err := ossClient.GetObject(key)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "生成访问链接失败: " + err.Error(),
+			"error": "获取文件失败: " + err.Error(),
 		})
 		return
 	}
+	defer body.Close()
 
-	// 判断是否需要重定向
-	redirect := c.DefaultQuery("redirect", "true")
-	if redirect == "true" {
-		c.Redirect(http.StatusFound, signedURL)
-		return
+	// 设置缓存 headers
+	contentType := fileRecord.MimeType
+	if contentType == "" {
+		contentType = "application/octet-stream"
 	}
 
-	// 返回 JSON
-	c.JSON(http.StatusOK, gin.H{
-		"url":      signedURL,
-		"file":     fileRecord,
-		"expireIn": 3600,
-	})
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.Header("ETag", etag)
+	c.Header("Content-Type", contentType)
+
+	// 流式写回客户端
+	c.Status(http.StatusOK)
+	io.Copy(c.Writer, body)
 }
 
 // Delete 删除文件
