@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { Comment, Episode, ChapterVideo, ChapterVideoVersion, ReviewCommentMeta, VideoStatus } from '../types';
-import { chapterApi, commentApi, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { chapterApi, commentApi, downloadFile, ensureHttpsUrl, fileApi, videoApi, normalizeFileKey, isValidMediaUrl } from '../api';
 import { CommentItem } from './CommentItem';
 import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
@@ -588,19 +588,12 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     setDownloading(true);
     try {
       const resolved = await resolveFileUrl(raw);
-      // 只使用已 resolve 的 URL 或有效的原始 URL
-      const downloadUrl = resolved || (isValidMediaUrl(raw) ? raw : '');
-      if (!downloadUrl) {
+      const url = resolved || (isValidMediaUrl(raw) ? raw : '');
+      if (!url) {
         showToast('无法解析视频地址', 'error');
         return;
       }
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = '';
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      await downloadFile(url);
     } catch (err) {
       console.error('Download original failed', err);
       showToast('下载失败，请稍后重试', 'error');

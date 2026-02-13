@@ -41,6 +41,28 @@ export const isValidMediaUrl = (url?: string | null): boolean => {
   );
 };
 
+/**
+ * 通过 fetch + Blob 强制下载文件（解决跨域 URL 下 <a download> 失效的问题）
+ */
+export const downloadFile = async (url: string, filename?: string) => {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename || url.split('/').pop()?.split('?')[0] || 'download';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    // fallback: 直接打开链接
+    window.open(url, '_blank');
+  }
+};
+
 export const normalizeFileKey = (input?: string | null): { key: string | null; externalUrl?: string } => {
   if (!input) return { key: null };
   const normalized = ensureHttpsUrl(typeof input === 'string' ? input : String(input));

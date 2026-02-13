@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, Scene } from '../types';
-import { ensureHttpsUrl, fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { ensureHttpsUrl, fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   ChevronLeft,
@@ -1304,16 +1304,14 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                           {/* 下载和重新上传按钮 */}
                           <div className="flex items-center gap-2">
                             {playbackAudioUrl && (
-                              <a
-                                href={playbackAudioUrl}
-                                download
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); downloadFile(playbackAudioUrl); }}
                                 className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
                                 title="下载音频"
                               >
                                 <Download size={16} />
-                              </a>
+                              </button>
                             )}
                             <button
                               type="button"

@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Episode, SceneFrameSet, SceneFrameSetVersion } from '../types';
-import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey } from '../api';
+import { fileApi, sceneApi, storyboardApi, commentApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey, downloadFile } from '../api';
 import {
   MessageSquare,
   Upload,
@@ -1116,17 +1116,14 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 alt="起始帧预览"
                               />
                               <div className="absolute top-2 right-2 flex items-center gap-2">
-                                <a
-                                  href={startDisplayUrl}
-                                  download
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); downloadFile(startDisplayUrl); }}
                                   className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
                                   title="下载起始帧"
-                                  onClick={e => e.stopPropagation()}
                                 >
                                   <Download size={14} />
-                                </a>
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => startInputRef.current?.click()}
@@ -1231,17 +1228,14 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 alt="结束帧预览"
                               />
                               <div className="absolute top-2 right-2 flex items-center gap-2">
-                                <a
-                                  href={endDisplayUrl}
-                                  download
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); downloadFile(endDisplayUrl); }}
                                   className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
                                   title="下载结束帧"
-                                  onClick={e => e.stopPropagation()}
                                 >
                                   <Download size={14} />
-                                </a>
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => endInputRef.current?.click()}

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Episode, Scene, SceneAnimation, SceneAnimationVersion } from '../types';
-import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, commentApi, normalizeFileKey, isValidMediaUrl } from '../api';
+import { ensureHttpsUrl, fileApi, animationApi, storyboardApi, commentApi, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   AlertCircle,
@@ -1149,17 +1149,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           {/* 右上角工具栏 */}
                           <div className="absolute top-3 right-3 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             {playbackUrl && (
-                              <a
-                                href={playbackUrl}
-                                download
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); downloadFile(playbackUrl); }}
                                 className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
                                 title="下载视频"
-                                onClick={e => e.stopPropagation()}
                               >
                                 <Download size={14} />
-                              </a>
+                              </button>
                             )}
                             <button
                               type="button"

@@ -18,7 +18,7 @@ import {
   Trash2,
   Download
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey } from '../api';
+import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, isValidMediaUrl, ensureHttpsUrl, normalizeFileKey, downloadFile } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { CommentInput } from './CommentInput';
@@ -198,17 +198,14 @@ const ReferenceSection: React.FC<{
           />
           {/* 右上角工具栏（与分镜模块一致） */}
           <div className="absolute top-3 right-3 flex items-center gap-2">
-            <a
-              href={initialImage}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); downloadFile(initialImage); }}
               className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
               title="下载图片"
-              onClick={e => e.stopPropagation()}
             >
               <Download size={14} />
-            </a>
+            </button>
             <button
               onClick={() => fileInputRef.current?.click()}
               className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
@@ -533,17 +530,14 @@ const ReferenceWithDescriptionSection: React.FC<{
           </div>
           {/* 右上角工具栏（与分镜模块一致） */}
           <div className="absolute top-2 right-2 flex items-center gap-2">
-            <a
-              href={initialImage}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); downloadFile(initialImage); }}
               className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
               title="下载图片"
-              onClick={e => e.stopPropagation()}
             >
               <Download size={14} />
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -795,17 +789,14 @@ const ReferenceCard: React.FC<{
           </div>
           {/* 右上角工具栏（与分镜模块一致） */}
           <div className="absolute top-2 right-2 flex items-center gap-2">
-            <a
-              href={resolvedImageUrl}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); downloadFile(resolvedImageUrl); }}
               className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
               title="下载图片"
-              onClick={e => e.stopPropagation()}
             >
               <Download size={14} />
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}

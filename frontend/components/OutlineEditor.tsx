@@ -17,7 +17,7 @@ import {
   Play,
   Pause
 } from 'lucide-react';
-import { bookApi, characterApi, fileApi, ensureHttpsUrl, normalizeFileKey, isValidMediaUrl } from '../api';
+import { bookApi, characterApi, fileApi, ensureHttpsUrl, normalizeFileKey, isValidMediaUrl, downloadFile } from '../api';
 
 interface OutlineEditorProps {
   bookId: number;
@@ -128,17 +128,14 @@ const ReferenceImageSection: React.FC<{
           </div>
           {/* 右上角工具栏（与分镜模块一致） */}
           <div className="absolute top-2 right-2 flex items-center gap-2">
-            <a
-              href={initialImage}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); downloadFile(initialImage); }}
               className="p-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80"
               title="下载图片"
-              onClick={e => e.stopPropagation()}
             >
               <Download size={14} />
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -395,16 +392,14 @@ const VoiceAudioSection: React.FC<{
 
           {/* 下载和重新上传按钮 */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <a
-              href={audioUrl}
-              download
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => downloadFile(audioUrl)}
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
               title="下载音频"
             >
               <Download size={16} />
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
