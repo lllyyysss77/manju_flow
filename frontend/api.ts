@@ -42,25 +42,17 @@ export const isValidMediaUrl = (url?: string | null): boolean => {
 };
 
 /**
- * 通过 fetch + Blob 强制下载文件（解决跨域 URL 下 <a download> 失效的问题）
+ * 下载文件：通过 ?download=true 触发后端返回 Content-Disposition: attachment
  */
-export const downloadFile = async (url: string, filename?: string) => {
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const blob = await resp.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename || url.split('/').pop()?.split('?')[0] || 'download';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(blobUrl);
-  } catch (err) {
-    // fallback: 直接打开链接
-    window.open(url, '_blank');
-  }
+export const downloadFile = async (url: string, _filename?: string) => {
+  const separator = url.includes('?') ? '&' : '?';
+  const downloadUrl = `${url}${separator}download=true`;
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 export const normalizeFileKey = (input?: string | null): { key: string | null; externalUrl?: string } => {
@@ -377,7 +369,7 @@ export const getFileUrl = (raw?: string | null): string => {
   if (!raw) return '';
   const { key, externalUrl } = normalizeFileKey(raw);
   if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-  return `${API_BASE_URL}/api/files/${encodeURIComponent(key)}`;
+  return `${API_BASE_URL}/api/files/${key}`;
 };
 
 export const fileApi = {

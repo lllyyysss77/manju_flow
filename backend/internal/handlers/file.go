@@ -194,6 +194,15 @@ func (h *FileHandler) Get(c *gin.Context) {
 	c.Header("ETag", etag)
 	c.Header("Content-Type", contentType)
 
+	// 下载模式：设置 Content-Disposition 触发浏览器下载
+	if c.Query("download") == "true" {
+		filename := fileRecord.OriginalName
+		if filename == "" {
+			filename = key
+		}
+		c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	}
+
 	// 流式写回客户端
 	c.Status(http.StatusOK)
 	io.Copy(c.Writer, body)
