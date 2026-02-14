@@ -211,3 +211,58 @@ export interface Character {
   createdAt?: string;
   updatedAt?: string;
 }
+
+// LoRA 相关类型
+export type LoraModelType = 'SD_1.5' | 'SDXL';
+
+export interface Lora {
+  id: number;
+  name: string;
+  description: string;
+  modelType: LoraModelType;
+  tags: string[];
+  fileUrl: string;
+  fileSize: number;
+  previewUrl: string;
+  configUrl: string;
+  uploaderId: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLoraRequest {
+  name: string;
+  description?: string;
+  modelType: LoraModelType;
+  tags?: string[];
+  fileUrl?: string;
+  fileSize?: number;
+  previewUrl?: string;
+  configUrl?: string;
+}
+
+export interface UpdateLoraRequest {
+  name?: string;
+  description?: string;
+  modelType?: LoraModelType;
+  tags?: string[];
+  fileUrl?: string;
+  fileSize?: number;
+  previewUrl?: string;
+  configUrl?: string;
+}
+
+export interface LoraListResponse {
+  total: number;
+  page: number;
+  size: number;
+  data: Lora[];
+}
+
+export interface LoraListParams {
+  page?: number;
+  size?: number;
+  modelType?: LoraModelType;
+  tag?: string;
+  keyword?: string;
+}

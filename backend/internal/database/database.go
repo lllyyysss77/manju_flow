@@ -57,6 +57,7 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.ChapterVideoVersion{},   // 视频版本历史
 		&models.Comment{},               // 评论
 		&models.Character{},             // 角色人设
+		&models.Lora{},                  // LoRA 库
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

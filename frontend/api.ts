@@ -268,6 +268,11 @@ import {
   SceneAnimation,
   SceneAnimationVersion,
   Character,
+  Lora,
+  LoraListResponse,
+  LoraListParams,
+  CreateLoraRequest,
+  UpdateLoraRequest,
 } from './types';
 
 export function bookToProject(book: Book): Project {
@@ -811,4 +816,55 @@ export const sceneReferenceApi = {
     request(`/api/scenes/${sceneId}/references`, {
       method: 'DELETE',
     }),
+};
+
+// LoRA 库 API
+export const loraApi = {
+  // 获取 LoRA 列表
+  list: async (params?: LoraListParams): Promise<LoraListResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.size) searchParams.set('size', String(params.size));
+    if (params?.modelType) searchParams.set('modelType', params.modelType);
+    if (params?.tag) searchParams.set('tag', params.tag);
+    if (params?.keyword) searchParams.set('keyword', params.keyword);
+
+    const queryString = searchParams.toString();
+    const endpoint = `/api/loras${queryString ? `?${queryString}` : ''}`;
+
+    return request<LoraListResponse>(endpoint);
+  },
+
+  // 创建 LoRA
+  create: async (data: CreateLoraRequest): Promise<Lora> => {
+    return request<Lora>('/api/loras', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // 获取单个 LoRA 详情
+  getById: async (id: number): Promise<Lora> => {
+    return request<Lora>(`/api/loras/${id}`);
+  },
+
+  // 更新 LoRA
+  update: async (id: number, data: UpdateLoraRequest): Promise<Lora> => {
+    return request<Lora>(`/api/loras/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // 删除 LoRA
+  delete: async (id: number): Promise<void> => {
+    return request(`/api/loras/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // 获取所有标签
+  getTags: async (): Promise<{ tags: string[] }> => {
+    return request<{ tags: string[] }>('/api/loras/tags');
+  },
 };

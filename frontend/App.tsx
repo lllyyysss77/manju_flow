@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useCallback, Suspense, lazy } from
 import { ProductionStage, Project, Episode } from './types';
 import { STAGE_CONFIG, STATUS_MAP } from './constants';
 import { ImportBookModal } from './components/ImportBookModal';
+import { LoraLibrary } from './components/LoraLibrary';
 import { authApi, authStorage, bookApi, chapterApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
 import {
@@ -18,7 +19,8 @@ import {
   AlertCircle,
   RefreshCw,
   Pencil,
-  Trash2
+  Trash2,
+  Layers
 } from 'lucide-react';
 
 // 懒加载编辑器组件 - 按需加载减少首屏体积
@@ -47,6 +49,7 @@ const BUILD_TIME = (() => {
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'PRODUCTION'>('DASHBOARD');
+  const [libraryType, setLibraryType] = useState<'BOOK' | 'LORA'>('BOOK');
   const [currentStage, setCurrentStage] = useState<ProductionStage>(ProductionStage.OUTLINE);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthResponse['user'] | null>(null);
@@ -280,7 +283,69 @@ const App: React.FC = () => {
 
   const filteredProjects = projects;
 
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    // LoRA 库模式
+    if (libraryType === 'LORA') {
+      return (
+        <div className="flex flex-col h-full bg-[#0a0a0a]">
+          {/* LoRA 库顶栏 */}
+          <nav className="h-16 border-b border-white/5 bg-[#0f0f0f] px-8 flex items-center justify-between sticky top-0 z-30">
+            <div className="flex items-center gap-10">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-black text-xl italic shadow-lg shadow-blue-900/40">M</div>
+                <h1 className="font-bold text-white tracking-tighter text-lg">ManjuFlow</h1>
+              </div>
+              {/* 主 Tab 切换 */}
+              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+                <button
+                  onClick={() => setLibraryType('BOOK')}
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all text-white/40 hover:text-white"
+                >
+                  <BookOpen size={14} />
+                  书库
+                </button>
+                <button
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-purple-600 text-white shadow-lg"
+                >
+                  <Layers size={14} />
+                  LoRA库
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm">
+                <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold uppercase">
+                  {(currentUser?.nickname || currentUser?.username || '?')[0]}
+                </div>
+                <div>
+                  <div className="font-semibold leading-tight">{currentUser?.nickname || currentUser?.username}</div>
+                  <div className="text-white/40 text-xs">{currentUser?.username}</div>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="text-white/50 text-sm hover:text-white underline underline-offset-4"
+              >
+                退出登录
+              </button>
+            </div>
+          </nav>
+
+          {/* LoRA 库内容 */}
+          <div className="flex-1 overflow-hidden">
+            <LoraLibrary />
+          </div>
+
+          <footer className="border-t border-white/5 bg-[#0f0f0f] text-white/40 text-[11px] text-center py-3">
+            前端版本 {BUILD_VERSION} · 构建 {BUILD_TIME}
+          </footer>
+        </div>
+      );
+    }
+
+    // 书库模式
+    return (
     <div className="flex flex-col h-full bg-[#0a0a0a]">
       {/* 媒体库顶栏 */}
       <nav className="h-16 border-b border-white/5 bg-[#0f0f0f] px-8 flex items-center justify-between sticky top-0 z-30">
@@ -289,22 +354,24 @@ const App: React.FC = () => {
             <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-black text-xl italic shadow-lg shadow-blue-900/40">M</div>
             <h1 className="font-bold text-white tracking-tighter text-lg">ManjuFlow</h1>
           </div>
+          {/* 主 Tab 切换 */}
           <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
-            <button 
-              onClick={() => setFilterType('ALL')}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'ALL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-            >全部</button>
-            <button 
-              onClick={() => setFilterType('NOVEL')}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'NOVEL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-            >小说库</button>
-            <button 
-              onClick={() => setFilterType('COMIC')}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'COMIC' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-            >漫画库</button>
+            <button
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-blue-600 text-white shadow-lg"
+            >
+              <BookOpen size={14} />
+              书库
+            </button>
+            <button
+              onClick={() => setLibraryType('LORA')}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all text-white/40 hover:text-white"
+            >
+              <Layers size={14} />
+              LoRA库
+            </button>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-6">
           <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm">
             <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase">
@@ -321,33 +388,57 @@ const App: React.FC = () => {
           >
             退出登录
           </button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
-            <input
-              className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
-              placeholder="搜索书名、作者..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
-          >
-            <PlusCircle size={16} /> 导入新作品
-          </button>
         </div>
       </nav>
 
       {/* 媒体库内容区 */}
-      <div className="flex-1 overflow-y-auto p-12">
+      <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
-          <header className="mb-10">
-            <h2 className="text-3xl font-bold text-white mb-2">欢迎回来</h2>
-            <p className="text-white/30 text-sm">
-              {isLoading ? '正在加载...' : `共有 ${filteredProjects.length} 个作品`}
-            </p>
-          </header>
+          {/* 书库子筛选栏 - 移到内容区内部 */}
+          <div className="sticky top-0 z-20 bg-[#0a0a0a] px-12 py-4 border-b border-white/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+                <button
+                  onClick={() => setFilterType('ALL')}
+                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'ALL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                >全部</button>
+                <button
+                  onClick={() => setFilterType('NOVEL')}
+                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'NOVEL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                >小说库</button>
+                <button
+                  onClick={() => setFilterType('COMIC')}
+                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'COMIC' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                >漫画库</button>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
+                  <input
+                    className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                    placeholder="搜索书名、作者..."
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
+                >
+                  <PlusCircle size={16} /> 导入新作品
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 内容区域 */}
+          <div className="p-12">
+            <header className="mb-10">
+              <h2 className="text-3xl font-bold text-white mb-2">欢迎回来</h2>
+              <p className="text-white/30 text-sm">
+                {isLoading ? '正在加载...' : `共有 ${filteredProjects.length} 个作品`}
+              </p>
+            </header>
 
           {/* 加载状态 */}
           {isLoading && (
@@ -473,6 +564,7 @@ const App: React.FC = () => {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -495,7 +587,8 @@ const App: React.FC = () => {
         isLoading={isEditLoading}
       />
     </div>
-  );
+    );
+  };
 
   const renderProduction = () => {
     if (!selectedProject) return null;

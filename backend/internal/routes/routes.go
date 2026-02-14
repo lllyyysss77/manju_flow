@@ -172,6 +172,18 @@ func Setup(r *gin.Engine) {
 				sceneReferences.DELETE("", sceneReferenceHandler.DeleteAll)               // 删除全部参考资料
 			}
 
+			// LoRA 库路由
+			loraHandler := handlers.NewLoraHandler()
+			loras := authorized.Group("/loras")
+			{
+				loras.GET("", loraHandler.List)              // 获取 LoRA 列表
+				loras.POST("", loraHandler.Create)           // 创建 LoRA
+				loras.GET("/tags", loraHandler.GetTags)      // 获取所有标签
+				loras.GET("/:id", loraHandler.GetByID)       // 获取 LoRA 详情
+				loras.PUT("/:id", loraHandler.Update)        // 更新 LoRA
+				loras.DELETE("/:id", loraHandler.Delete)     // 删除 LoRA
+			}
+
 			// 评论路由
 			commentHandler := handlers.NewCommentHandler()
 			// 评论数统计（用于显示徽章）
