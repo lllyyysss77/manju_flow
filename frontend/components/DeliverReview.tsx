@@ -51,6 +51,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [uploadingOriginal, setUploadingOriginal] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const { toast, showToast, hideToast } = useToast();
   const [approving, setApproving] = useState(false);
@@ -178,6 +179,13 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     const clamped = Math.min(Math.max(time, 0), duration);
     videoRef.current.currentTime = clamped;
     setCurrentTime(clamped);
+  };
+
+  const seekByClientX = (clientX: number, rect: DOMRect) => {
+    const duration = videoRef.current?.duration;
+    if (!Number.isFinite(duration) || duration <= 0 || rect.width <= 0) return;
+    const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    handleSeek(ratio * duration);
   };
 
   const formatTime = (seconds: number) => {
@@ -900,14 +908,30 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
               <div className="p-4 bg-[#1a1a1a] border-t border-white/5">
                 <div
                   className="relative w-full h-1.5 bg-white/10 rounded-full mb-4 cursor-pointer"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const clickedPos = rect.width ? x / rect.width : 0;
-                    const duration = videoRef.current?.duration;
-                    if (videoRef.current && Number.isFinite(duration) && duration > 0) {
-                      handleSeek(clickedPos * duration);
+                  onPointerDown={(e) => {
+                    const target = e.currentTarget;
+                    target.setPointerCapture(e.pointerId);
+                    setIsScrubbing(true);
+                    seekByClientX(e.clientX, target.getBoundingClientRect());
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isScrubbing) return;
+                    seekByClientX(e.clientX, e.currentTarget.getBoundingClientRect());
+                  }}
+                  onPointerUp={(e) => {
+                    if (!isScrubbing) return;
+                    seekByClientX(e.clientX, e.currentTarget.getBoundingClientRect());
+                    setIsScrubbing(false);
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }}
+                  onPointerCancel={(e) => {
+                    setIsScrubbing(false);
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
                     }
+                  }}
+                  onLostPointerCapture={() => {
+                    setIsScrubbing(false);
                   }}
                 >
                   <div
@@ -928,6 +952,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                             e.stopPropagation();
                             handleSeek(c.timeSeconds);
                           }}
+                          onPointerDown={(e) => e.stopPropagation()}
                           title={`在 ${formatTime(c.timeSeconds)} 的评论`}
                         />
                       )
