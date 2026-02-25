@@ -3,6 +3,7 @@ package handlers
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"manju-flow/internal/database"
@@ -175,6 +176,24 @@ func (h *FileHandler) Get(c *gin.Context) {
 
 	// 从 OSS 获取文件流
 	ossClient := oss.GetClient()
+	redirect, _ := strconv.ParseBool(c.DefaultQuery("redirect", "false"))
+	download, _ := strconv.ParseBool(c.DefaultQuery("download", "false"))
+	if redirect && !download {
+		// 重定向到 OSS 签名 URL，避免后端代理大文件传输
+		signedURL, err := ossClient.GetSignedURL(key, 3600)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "生成文件访问链接失败: " + err.Error(),
+			})
+			return
+		}
+
+		c.Header("Cache-Control", "public, max-age=300")
+		c.Header("ETag", etag)
+		c.Redirect(http.StatusTemporaryRedirect, signedURL)
+		return
+	}
+
 	body, err := ossClient.GetObject(key)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -195,7 +214,7 @@ func (h *FileHandler) Get(c *gin.Context) {
 	c.Header("Content-Type", contentType)
 
 	// 下载模式：设置 Content-Disposition 触发浏览器下载
-	if c.Query("download") == "true" {
+	if download {
 		filename := fileRecord.OriginalName
 		if filename == "" {
 			filename = key

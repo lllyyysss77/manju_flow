@@ -370,11 +370,19 @@ export interface FileUploadResponse {
  * 同步函数：将原始文件 key/url 转换为可直接使用的 /api/files/{key} 代理 URL
  * 后端代理模式下浏览器自动利用 Cache-Control + ETag 缓存，无需 JS 侧缓存
  */
-export const getFileUrl = (raw?: string | null): string => {
+export interface GetFileUrlOptions {
+  redirect?: boolean;
+}
+
+export const getFileUrl = (raw?: string | null, options?: GetFileUrlOptions): string => {
   if (!raw) return '';
   const { key, externalUrl } = normalizeFileKey(raw);
   if (!key) return externalUrl && isValidMediaUrl(externalUrl) ? externalUrl : '';
-  return `${API_BASE_URL}/api/files/${key}`;
+  const base = `${API_BASE_URL}/api/files/${key}`;
+  if (options?.redirect) {
+    return `${base}?redirect=true`;
+  }
+  return base;
 };
 
 export const fileApi = {

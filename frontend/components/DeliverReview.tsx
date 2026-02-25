@@ -62,8 +62,10 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const originalInputRef = useRef<HTMLInputElement>(null);
   const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl);
   const [preferPreview, setPreferPreview] = useState(true);
-  const previewSource = videoDetail?.previewUrl ? getFileUrl(videoDetail.previewUrl) : '';
-  const originalSource = videoDetail?.videoUrl ? getFileUrl(videoDetail.videoUrl) : (videoUrl ? getFileUrl(videoUrl) : '');
+  const previewSource = videoDetail?.previewUrl ? getFileUrl(videoDetail.previewUrl, { redirect: true }) : '';
+  const originalSource = videoDetail?.videoUrl
+    ? getFileUrl(videoDetail.videoUrl, { redirect: true })
+    : (videoUrl ? getFileUrl(videoUrl, { redirect: true }) : '');
   const playbackSource = hasUploadedVideo
     ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
     : '';
