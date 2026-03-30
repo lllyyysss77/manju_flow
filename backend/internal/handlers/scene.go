@@ -106,9 +106,24 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		status = models.SceneStatusDraft
 	}
 
+	// 检查 index 是否与同章节已有场景冲突，若冲突则微调
+	requestedIndex := *req.Index
+	var conflictCount int64
+	db.Model(&models.Scene{}).Where("chapter_id = ? AND `index` = ?", chapterIdUint, requestedIndex).Count(&conflictCount)
+	if conflictCount > 0 {
+		// 找到冲突 index 的下一个场景，在两者之间取中间值；若没有下一个则 +0.001
+		var nextScene models.Scene
+		if err := db.Where("chapter_id = ? AND `index` > ?", chapterIdUint, requestedIndex).
+			Order("`index` ASC").First(&nextScene).Error; err == nil {
+			requestedIndex = (requestedIndex + nextScene.Index) / 2
+		} else {
+			requestedIndex += 0.001
+		}
+	}
+
 	scene := models.Scene{
 		ChapterID:        uint(chapterIdUint),
-		Index:            *req.Index,
+		Index:            requestedIndex,
 		Status:           status,
 		Description:      req.Description,
 		CameraMovement:   req.CameraMovement,

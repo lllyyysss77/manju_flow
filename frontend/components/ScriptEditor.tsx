@@ -1197,6 +1197,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     dispatch({ type: 'SET_ACTIVE_CHAPTER', payload: chapterId });
     const chapter = chapters.find(c => c.id === chapterId);
     const index = computeInsertIndex(chapter?.scenes || [], insertIndex);
+    // 乐观更新：立即加入占位 scene，防止快速连续插入时 index 重复
+    const tempId = -(Date.now() + Math.random());
+    const placeholder: Scene = {
+      id: tempId, chapterId, index,
+      description: '待补充描述', cameraMovement: '', dialogue: '',
+      status: 'DRAFT' as const, thumbnailUrl: '', comments: [],
+    };
+    dispatch({ type: 'ADD_SCENE', payload: { chapterId, scene: placeholder } });
     sceneApi.create(bookId, chapterId, {
       index,
       description: '待补充描述',
@@ -1206,9 +1214,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }).then(newScene => {
       const created: Scene = { ...newScene, chapterId, comments: newScene.comments || [] };
       storeSceneSignature(created);
-      dispatch({ type: 'ADD_SCENE', payload: { chapterId, scene: created } });
+      // 用真实数据替换占位 scene
+      dispatch({ type: 'REPLACE_SCENE', payload: { chapterId, tempId, scene: created } });
     }).catch(err => {
       console.error('Failed to create scene', err);
+      // 失败时移除占位 scene
+      dispatch({ type: 'REMOVE_SCENE', payload: { chapterId, sceneId: tempId } });
       setToast({ message: '创建场景失败，请稍后再试', tone: 'error' });
     });
   };

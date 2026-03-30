@@ -43,6 +43,7 @@ type Action =
   | { type: 'ADD_CHAPTER'; payload: { chapter: Episode; insertIndex: number } }
   | { type: 'REMOVE_CHAPTER'; payload: number }
   | { type: 'ADD_SCENE'; payload: { chapterId: number; scene: Scene } }
+  | { type: 'REPLACE_SCENE'; payload: { chapterId: number; tempId: number; scene: Scene } }
   | { type: 'REMOVE_SCENE'; payload: { chapterId: number; sceneId: number } }
   | { type: 'SET_DIRTY'; payload: boolean }
   | { type: 'SET_SYNOPSIS_DIRTY'; payload: boolean }
@@ -147,6 +148,17 @@ export function scriptEditorReducer(state: ScriptEditorState, action: Action): S
         return { ...ch, scenes };
       });
       return { ...state, chapters, activeScene: scene };
+    }
+
+    case 'REPLACE_SCENE': {
+      const { chapterId, tempId, scene } = action.payload;
+      const chapters = state.chapters.map(ch => {
+        if (ch.id !== chapterId) return ch;
+        const scenes = (ch.scenes || []).map(s => s.id === tempId ? scene : s);
+        return { ...ch, scenes };
+      });
+      const activeScene = state.activeScene?.id === tempId ? scene : state.activeScene;
+      return { ...state, chapters, activeScene };
     }
 
     case 'REMOVE_SCENE': {
