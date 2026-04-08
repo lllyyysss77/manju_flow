@@ -29,6 +29,7 @@ import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
 import { SceneThumbnailStrip } from './SceneThumbnailStrip';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { useImageOrientation } from './useImageOrientation';
 
 const computeFrameSetReorder = (
   list: SceneFrameSet[],
@@ -627,6 +628,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const rawEndUrl = historySelection.end || currentFramePreview?.end || '';
   const startDisplayUrl = isValidMediaUrl(rawStartUrl) ? rawStartUrl : '';
   const endDisplayUrl = isValidMediaUrl(rawEndUrl) ? rawEndUrl : '';
+  const startPreviewIsPortrait = useImageOrientation(startDisplayUrl);
+  const endPreviewIsPortrait = useImageOrientation(endDisplayUrl);
 
   if (!hasChapters) {
     return (
@@ -1018,7 +1021,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                           </div>
                         </div>
                         <div
-                          className={`aspect-video w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
+                          className={`${startPreviewIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
                             frameDragOver.start ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
                           }`}
                           onDragOver={e => {
@@ -1037,7 +1040,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                             <>
                               <img
                                 src={startDisplayUrl}
-                                className="w-full h-full object-cover cursor-zoom-in"
+                                className="w-full h-full object-contain cursor-zoom-in"
                                 onClick={() => openImagePreview(startDisplayUrl, '起始帧预览')}
                                 alt="起始帧预览"
                               />
@@ -1130,7 +1133,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                           </div>
                         </div>
                         <div
-                          className={`aspect-video w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
+                          className={`${endPreviewIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} w-full rounded-xl border-2 border-dashed bg-zinc-900 overflow-hidden relative transition-colors ${
                             frameDragOver.end ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
                           }`}
                           onDragOver={e => {
@@ -1149,7 +1152,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                              <>
                               <img
                                 src={endDisplayUrl}
-                                className="w-full h-full object-cover cursor-zoom-in"
+                                className="w-full h-full object-contain cursor-zoom-in"
                                 onClick={() => openImagePreview(endDisplayUrl, '结束帧预览')}
                                 alt="结束帧预览"
                               />
@@ -1297,7 +1300,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                       className="w-full text-left bg-white/5 border border-white/10 rounded-xl overflow-hidden transition-all hover:border-white/30"
                     >
                       <div className="aspect-video bg-black overflow-hidden">
-                        <img src={url} className="w-full h-full object-cover" />
+                        <img src={url} className="w-full h-full object-contain" />
                       </div>
                       <div className="p-3 flex items-center justify-between gap-2 text-white/80">
                         <div>

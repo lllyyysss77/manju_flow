@@ -27,6 +27,7 @@ import { DEFAULT_SCENE_THUMB, STATUS_MAP } from '../constants';
 import { Toast, useToast } from './Toast';
 import { ChapterTabBar } from './ChapterTabBar';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { useImageOrientation } from './useImageOrientation';
 
 interface AnimationEditorProps {
   bookId?: number;
@@ -402,6 +403,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const currentVersionLabel = normalizedVersionNumber ?? '—';
   const startFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.start : undefined;
   const endFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.end : undefined;
+  const startFrameIsPortrait = useImageOrientation(startFrameResolved);
+  const endFrameIsPortrait = useImageOrientation(endFrameResolved);
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   useEffect(() => {
     if (!videoRef.current) return;
@@ -775,9 +778,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             <div className="space-y-3">
               <div>
                 <div className="text-[10px] text-white/40 font-semibold mb-1">首帧 (Keyframe A)</div>
-                <div className="aspect-video rounded-lg overflow-hidden border border-white/10 bg-black">
+                <div className={`${startFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
                   {startFrameResolved ? (
-                    <img src={startFrameResolved} className="w-full h-full object-cover" />
+                    <img src={startFrameResolved} className="w-full h-full object-contain" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
                   )}
@@ -785,9 +788,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
               </div>
               <div>
                 <div className="text-[10px] text-white/40 font-semibold mb-1">尾帧 (Keyframe B)</div>
-                <div className="aspect-video rounded-lg overflow-hidden border border-white/10 bg-black">
+                <div className={`${endFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
                   {endFrameResolved ? (
-                    <img src={endFrameResolved} className="w-full h-full object-cover" />
+                    <img src={endFrameResolved} className="w-full h-full object-contain" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
                   )}
