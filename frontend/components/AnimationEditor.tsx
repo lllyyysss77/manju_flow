@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Episode, Scene, SceneAnimation, SceneAnimationVersion } from '../types';
+import { Episode, Scene, SceneAnimation, SceneAnimationVersion, SceneFrameSet } from '../types';
 import { fileApi, animationApi, storyboardApi, commentApi, getFileUrl, downloadFile } from '../api';
 import {
   MessageSquare,
@@ -17,6 +17,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  X,
   CheckCircle2,
   Download
 } from 'lucide-react';
@@ -39,6 +40,70 @@ interface AnimationEditorProps {
   onActiveChapterChange?: (chapterId: number | null) => void;
   onActiveSceneChange?: (sceneId: number | null) => void;
 }
+
+interface ResolvedSceneFrameSet extends SceneFrameSet {
+  resolvedStartFrameUrl?: string;
+  resolvedEndFrameUrl?: string;
+}
+
+const StoryboardReferenceCard: React.FC<{
+  frameSet: ResolvedSceneFrameSet;
+  onPreview: (url?: string, title?: string) => void;
+}> = ({ frameSet, onPreview }) => {
+  const startFrameIsPortrait = useImageOrientation(frameSet.resolvedStartFrameUrl);
+  const endFrameIsPortrait = useImageOrientation(frameSet.resolvedEndFrameUrl);
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-[0.18em] text-emerald-300">
+              #{Math.round(frameSet.index)}
+            </span>
+            <p className="text-sm font-bold text-white truncate">{frameSet.name || `帧集 #${Math.round(frameSet.index)}`}</p>
+          </div>
+          <p className="mt-1 text-[10px] text-white/35">当前帧集的首尾关键帧参考</p>
+        </div>
+        <div className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-white/45 bg-black/20">
+          帧集
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-[10px] text-white/40 font-semibold mb-1">首帧 (Keyframe A)</div>
+          <div className={`${startFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
+            {frameSet.resolvedStartFrameUrl ? (
+              <img
+                src={frameSet.resolvedStartFrameUrl}
+                className="w-full h-full object-contain cursor-zoom-in"
+                onClick={() => onPreview(frameSet.resolvedStartFrameUrl, `${frameSet.name || `帧集 #${Math.round(frameSet.index)}`} · 首帧`)}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] text-white/40 font-semibold mb-1">尾帧 (Keyframe B)</div>
+          <div className={`${endFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
+            {frameSet.resolvedEndFrameUrl ? (
+              <img
+                src={frameSet.resolvedEndFrameUrl}
+                className="w-full h-full object-contain cursor-zoom-in"
+                onClick={() => onPreview(frameSet.resolvedEndFrameUrl, `${frameSet.name || `帧集 #${Math.round(frameSet.index)}`} · 尾帧`)}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   bookId,
@@ -147,7 +212,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const { toast, showToast, hideToast } = useToast();
-  const [framePreviewCache, setFramePreviewCache] = useState<Record<number, { start?: string; end?: string }>>({});
+  const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -156,6 +221,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [creatingClip, setCreatingClip] = useState(false);
   const [newClipName, setNewClipName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SceneAnimation | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -287,17 +353,17 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       try {
         const res = await storyboardApi.list(activeScene.id);
         if (cancelled) return;
-        const firstSet = (res.data || []).sort((a, b) => a.index - b.index)[0];
-        if (!firstSet) {
-          setFramePreviewCache(prev => ({ ...prev, [activeScene.id]: { start: undefined, end: undefined } }));
-          return;
-        }
-        const start = firstSet.startFrameUrl ? getFileUrl(firstSet.startFrameUrl) : '';
-        const end = firstSet.endFrameUrl ? getFileUrl(firstSet.endFrameUrl) : '';
+        const resolvedFrameSets = (res.data || [])
+          .sort((a, b) => a.index - b.index)
+          .map(frameSet => ({
+            ...frameSet,
+            resolvedStartFrameUrl: frameSet.startFrameUrl ? getFileUrl(frameSet.startFrameUrl) || undefined : undefined,
+            resolvedEndFrameUrl: frameSet.endFrameUrl ? getFileUrl(frameSet.endFrameUrl) || undefined : undefined,
+          }));
         if (!cancelled) {
           setFramePreviewCache(prev => ({
             ...prev,
-            [activeScene.id]: { start: start || undefined, end: end || undefined },
+            [activeScene.id]: resolvedFrameSets,
           }));
         }
       } catch (err) {
@@ -389,6 +455,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }
   }, [selectedAnimationId, versionMenuOpen]);
 
+  const openImagePreview = useCallback((url?: string, title?: string) => {
+    if (!url) return;
+    setImagePreview({ url, title: title || '画面预览' });
+  }, []);
+
+  useEffect(() => {
+    if (!imagePreview) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImagePreview(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imagePreview]);
+
   const selectedAnimation = animations.find(a => a.id === selectedAnimationId) || null;
   const currentVersions = selectedAnimation ? versionMap[selectedAnimation.id] || [] : [];
   const normalizedVersionNumber =
@@ -401,10 +481,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       : undefined) || currentVersions[0];
   const displayClipUrl = currentVersionData?.videoUrl || selectedAnimation?.animationUrl;
   const currentVersionLabel = normalizedVersionNumber ?? '—';
-  const startFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.start : undefined;
-  const endFrameResolved = activeScene?.id ? framePreviewCache[activeScene.id]?.end : undefined;
-  const startFrameIsPortrait = useImageOrientation(startFrameResolved);
-  const endFrameIsPortrait = useImageOrientation(endFrameResolved);
+  const storyboardReferenceList = activeScene?.id ? framePreviewCache[activeScene.id] || [] : [];
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   useEffect(() => {
     if (!videoRef.current) return;
@@ -775,28 +852,17 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
               <Layout size={14} />
               <h3 className="text-xs font-bold uppercase tracking-widest">分镜参考</h3>
             </div>
-            <div className="space-y-3">
-              <div>
-                <div className="text-[10px] text-white/40 font-semibold mb-1">首帧 (Keyframe A)</div>
-                <div className={`${startFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
-                  {startFrameResolved ? (
-                    <img src={startFrameResolved} className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
-                  )}
-                </div>
+            {storyboardReferenceList.length > 0 ? (
+              <div className="space-y-3">
+                {storyboardReferenceList.map(frameSet => (
+                  <StoryboardReferenceCard key={frameSet.id} frameSet={frameSet} onPreview={openImagePreview} />
+                ))}
               </div>
-              <div>
-                <div className="text-[10px] text-white/40 font-semibold mb-1">尾帧 (Keyframe B)</div>
-                <div className={`${endFrameIsPortrait ? 'aspect-[9/16]' : 'aspect-video'} rounded-lg overflow-hidden border border-white/10 bg-black`}>
-                  {endFrameResolved ? (
-                    <img src={endFrameResolved} className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] text-white/10">未上传</div>
-                  )}
-                </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-3 py-6 text-center text-xs text-white/30">
+                当前场景暂无分镜帧集
               </div>
-            </div>
+            )}
           </section>
 
           <section>
@@ -1268,6 +1334,34 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         </>
         )}
       </div>
+      {imagePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setImagePreview(null)}
+          />
+          <div className="relative z-10 max-w-5xl w-full px-6">
+            <div className="bg-[#111111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                <div className="text-sm font-semibold text-white">{imagePreview.title}</div>
+                <button
+                  onClick={() => setImagePreview(null)}
+                  className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="bg-black p-4 flex items-center justify-center">
+                <img
+                  src={imagePreview.url}
+                  alt={imagePreview.title}
+                  className="max-h-[70vh] max-w-full object-contain rounded-lg border border-white/5"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
