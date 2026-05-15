@@ -1,13 +1,29 @@
 package handlers
 
 import (
+	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
+	"manju-flow/internal/config"
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
+	"manju-flow/internal/oss"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // AudioHandler 音频处理器
@@ -16,6 +32,98 @@ type AudioHandler struct{}
 // NewAudioHandler 创建音频处理器
 func NewAudioHandler() *AudioHandler {
 	return &AudioHandler{}
+}
+
+type ttsSynthesisRequest struct {
+	Text           string    `json:"text"`
+	ReferenceAudio string    `json:"reference_audio,omitempty"`
+	EmotionPrompt  string    `json:"emotion_prompt,omitempty"`
+	EmotionVector  []float64 `json:"emotion_vector,omitempty"`
+	EmotionAlpha   *float64  `json:"emotion_alpha,omitempty"`
+}
+
+type ttsErrorResponse struct {
+	Detail any `json:"detail"`
+	Error  any `json:"error"`
+}
+
+func (h *AudioHandler) generateTTSJWT() (string, error) {
+	privateKeyPEM := strings.TrimSpace(config.Cfg.TTS.JWTPrivateKey)
+	if privateKeyPEM == "" {
+		return "", nil
+	}
+
+	block, _ := pem.Decode([]byte(privateKeyPEM))
+	if block == nil {
+		return "", fmt.Errorf("failed to parse TTS JWT private key PEM")
+	}
+
+	var privateKey *rsa.PrivateKey
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err == nil {
+		var ok bool
+		privateKey, ok = key.(*rsa.PrivateKey)
+		if !ok {
+			return "", fmt.Errorf("TTS JWT private key is not RSA")
+		}
+	} else {
+		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse TTS JWT private key: %w", err)
+		}
+	}
+
+	headerJSON, err := json.Marshal(map[string]string{
+		"alg": "RS256",
+		"typ": "JWT",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode JWT header: %w", err)
+	}
+
+	expireSeconds := config.Cfg.TTS.JWTExpireSeconds
+	if expireSeconds <= 0 {
+		expireSeconds = 60
+	}
+	payloadJSON, err := json.Marshal(map[string]int64{
+		"exp": time.Now().Add(time.Duration(expireSeconds) * time.Second).Unix(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode JWT payload: %w", err)
+	}
+
+	encoding := base64.RawURLEncoding
+	signingInput := encoding.EncodeToString(headerJSON) + "." + encoding.EncodeToString(payloadJSON)
+	digest := sha256.Sum256([]byte(signingInput))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		return "", fmt.Errorf("failed to sign JWT: %w", err)
+	}
+
+	return signingInput + "." + encoding.EncodeToString(signature), nil
+}
+
+func (h *AudioHandler) findOwnedFile(db *gorm.DB, userID uint, key string) (*models.File, error) {
+	normalizedKey := strings.TrimSpace(key)
+	if normalizedKey == "" {
+		return nil, fmt.Errorf("file key is required")
+	}
+
+	var file models.File
+	if err := db.Where("`key` = ? AND uploader_id = ?", normalizedKey, userID).First(&file).Error; err != nil {
+		return nil, err
+	}
+
+	return &file, nil
+}
+
+func (h *AudioHandler) buildSignedAudioURL(file *models.File) (string, error) {
+	ossClient := oss.GetClient()
+	if ossClient == nil {
+		return "", fmt.Errorf("file service not configured")
+	}
+
+	return ossClient.GetSignedURL(file.Key, 3600)
 }
 
 // List 获取场景的所有音频轨道
@@ -380,6 +488,322 @@ func (h *AudioHandler) Upload(c *gin.Context) {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update audio",
+		})
+		return
+	}
+
+	tx.Commit()
+
+	c.JSON(http.StatusOK, version)
+}
+
+// Generate 使用 TTS 服务为音频轨道生成新版本
+// @Summary AI 合成音频
+// @Description 使用声音参考、情感参考或情感向量为音频轨道生成新版本
+// @Tags audio
+// @Accept json
+// @Produce json
+// @Param sceneId path int true "场景ID"
+// @Param audioId path int true "音频轨道ID"
+// @Param payload body models.GenerateSceneAudioRequest true "合成参数"
+// @Success 200 {object} models.SceneAudioVersion
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/scenes/{sceneId}/audios/{audioId}/generate [post]
+func (h *AudioHandler) Generate(c *gin.Context) {
+	sceneID := c.Param("sceneId")
+	audioID := c.Param("audioId")
+	audioIDUint, err := strconv.ParseUint(audioID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid audio ID",
+		})
+		return
+	}
+
+	user, userExists := c.Get("user")
+	userIDValue, userIDExists := c.Get("userId")
+	if !userExists || !userIDExists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User not authenticated",
+		})
+		return
+	}
+	currentUser := user.(*models.User)
+	userID := userIDValue.(uint)
+
+	db := database.GetDB()
+
+	var scene models.Scene
+	if err := db.First(&scene, sceneID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Scene not found",
+		})
+		return
+	}
+
+	var audio models.SceneAudio
+	if err := db.Where("id = ? AND scene_id = ?", audioID, scene.ID).First(&audio).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Audio not found",
+		})
+		return
+	}
+
+	var req models.GenerateSceneAudioRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if len(req.EmotionVector) > 0 && len(req.EmotionVector) != 8 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "emotionVector must contain exactly 8 values",
+		})
+		return
+	}
+	for idx, value := range req.EmotionVector {
+		if value < 0 || value > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("emotionVector[%d] must be between 0 and 1", idx),
+			})
+			return
+		}
+	}
+	if req.EmotionAlpha != nil && (*req.EmotionAlpha < 0 || *req.EmotionAlpha > 2) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "emotionAlpha must be between 0 and 2",
+		})
+		return
+	}
+
+	referenceFile, err := h.findOwnedFile(db, userID, req.ReferenceAudioKey)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Reference audio not found",
+		})
+		return
+	}
+
+	referenceURL, err := h.buildSignedAudioURL(referenceFile)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Failed to prepare reference audio",
+		})
+		return
+	}
+
+	var emotionPromptURL string
+	if strings.TrimSpace(req.EmotionPromptKey) != "" {
+		emotionFile, err := h.findOwnedFile(db, userID, req.EmotionPromptKey)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Emotion reference audio not found",
+			})
+			return
+		}
+
+		emotionPromptURL, err = h.buildSignedAudioURL(emotionFile)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Failed to prepare emotion reference audio",
+			})
+			return
+		}
+	}
+
+	ttsURL := strings.TrimSpace(config.Cfg.TTS.APIURL)
+	if ttsURL == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "TTS service is not configured",
+		})
+		return
+	}
+
+	ttsReq := ttsSynthesisRequest{
+		Text:           strings.TrimSpace(req.Text),
+		ReferenceAudio: referenceURL,
+		EmotionPrompt:  emotionPromptURL,
+		EmotionVector:  req.EmotionVector,
+		EmotionAlpha:   req.EmotionAlpha,
+	}
+	if ttsReq.Text == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "text is required",
+		})
+		return
+	}
+
+	body, err := json.Marshal(ttsReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to encode TTS request",
+		})
+		return
+	}
+
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, ttsURL, bytes.NewReader(body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create TTS request",
+		})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	ttsJWT, err := h.generateTTSJWT()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate TTS JWT",
+		})
+		return
+	}
+	if ttsJWT != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+ttsJWT)
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "TTS service is unavailable",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		rawErr, _ := io.ReadAll(resp.Body)
+		message := strings.TrimSpace(string(rawErr))
+		if message != "" {
+			var ttsErr ttsErrorResponse
+			if err := json.Unmarshal(rawErr, &ttsErr); err == nil {
+				switch detail := ttsErr.Detail.(type) {
+				case string:
+					message = detail
+				default:
+					if detail != nil {
+						message = fmt.Sprint(detail)
+					}
+				}
+				if message == "" {
+					switch apiErr := ttsErr.Error.(type) {
+					case string:
+						message = apiErr
+					default:
+						if apiErr != nil {
+							message = fmt.Sprint(apiErr)
+						}
+					}
+				}
+			}
+		}
+		if message == "" {
+			message = "TTS generation failed"
+		}
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": message,
+		})
+		return
+	}
+
+	audioBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "Failed to read generated audio",
+		})
+		return
+	}
+
+	if len(audioBytes) == 0 {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "TTS service returned empty audio",
+		})
+		return
+	}
+
+	var maxVersion int
+	db.Model(&models.SceneAudioVersion{}).
+		Where("scene_audio_id = ?", audio.ID).
+		Select("COALESCE(MAX(version), 0)").
+		Scan(&maxVersion)
+
+	newVersion := maxVersion + 1
+	fileName := fmt.Sprintf("scene-%d-audio-%d-v%d.wav", scene.ID, audio.ID, newVersion)
+	objectKey, content, err := oss.GenerateKeyFromContent(bytes.NewReader(audioBytes), fileName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to process generated audio",
+		})
+		return
+	}
+
+	ossClient := oss.GetClient()
+	if ossClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "File service is not configured",
+		})
+		return
+	}
+
+	exists, err := ossClient.Exists(objectKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check generated audio file",
+		})
+		return
+	}
+	if !exists {
+		if err := ossClient.UploadBytes(objectKey, content, "audio/wav"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to store generated audio",
+			})
+			return
+		}
+	}
+
+	fileRecord := models.File{
+		Key:          objectKey,
+		OriginalName: fileName,
+		Size:         int64(len(content)),
+		MimeType:     "audio/wav",
+		UploaderID:   currentUser.ID,
+		Visibility:   models.FileVisibilityPrivate,
+	}
+
+	tx := db.Begin()
+
+	if err := tx.Create(&fileRecord).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to save generated audio file",
+		})
+		return
+	}
+
+	version := models.SceneAudioVersion{
+		SceneAudioID: uint(audioIDUint),
+		AudioUrl:     objectKey,
+		Version:      newVersion,
+		CreatedBy:    userID,
+	}
+
+	if err := tx.Create(&version).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create generated audio version",
+		})
+		return
+	}
+
+	if err := tx.Model(&audio).Updates(map[string]interface{}{
+		"audio_url":     objectKey,
+		"audio_version": newVersion,
+	}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update audio track",
 		})
 		return
 	}

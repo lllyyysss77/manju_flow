@@ -10,10 +10,10 @@ import (
 type SceneAudio struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	SceneID      uint           `gorm:"not null;index" json:"sceneId"`
-	Role         string         `gorm:"size:100;not null" json:"role"`     // 角色/类型（如：角色A、旁白、背景音效）
-	Index        float64        `gorm:"not null" json:"index"`             // 排序索引，支持中间插入
-	AudioUrl     string         `gorm:"type:text" json:"audioUrl"`         // 当前音频URL
-	AudioVersion int            `gorm:"default:0" json:"audioVersion"`     // 当前版本号
+	Role         string         `gorm:"size:100;not null" json:"role"` // 角色/类型（如：角色A、旁白、背景音效）
+	Index        float64        `gorm:"not null" json:"index"`         // 排序索引，支持中间插入
+	AudioUrl     string         `gorm:"type:text" json:"audioUrl"`     // 当前音频URL
+	AudioVersion int            `gorm:"default:0" json:"audioVersion"` // 当前版本号
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
@@ -74,4 +74,13 @@ type UpdateSceneAudioRequest struct {
 // UploadAudioRequest 上传音频请求
 type UploadAudioRequest struct {
 	AudioUrl string `json:"audioUrl" binding:"required"`
+}
+
+// GenerateSceneAudioRequest AI 合成音频请求
+type GenerateSceneAudioRequest struct {
+	Text              string    `json:"text" binding:"required"`
+	ReferenceAudioKey string    `json:"referenceAudioKey" binding:"required"`
+	EmotionPromptKey  string    `json:"emotionPromptKey"`
+	EmotionVector     []float64 `json:"emotionVector"`
+	EmotionAlpha      *float64  `json:"emotionAlpha"`
 }

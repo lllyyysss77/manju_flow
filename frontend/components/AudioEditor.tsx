@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Episode, Scene } from '../types';
-import { fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, getFileUrl, downloadFile } from '../api';
+import { Character, Episode, Scene } from '../types';
+import { fileApi, audioApi, commentApi, AudioVersion as ApiAudioVersion, SceneAudio as ApiSceneAudio, animationApi, getFileUrl, downloadFile, normalizeFileKey, characterApi } from '../api';
 import {
   MessageSquare,
   ChevronLeft,
@@ -13,7 +13,6 @@ import {
   Volume2,
   Type,
   History,
-  Headphones,
   Film,
   MonitorPlay,
   Camera,
@@ -21,7 +20,11 @@ import {
   Pencil,
   Trash2,
   Download,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles,
+  SlidersHorizontal,
+  UserRound,
+  UploadCloud
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -44,6 +47,39 @@ interface AudioEditorProps {
 
 type AudioVersion = ApiAudioVersion;
 type SceneAudioTrack = ApiSceneAudio;
+type EmotionMode = 'same_as_reference' | 'emotion_prompt' | 'emotion_vector';
+type EmotionVectorState = {
+  happy: number;
+  angry: number;
+  sad: number;
+  fear: number;
+  disgust: number;
+  melancholic: number;
+  surprised: number;
+  calm: number;
+};
+
+const DEFAULT_EMOTION_VECTOR: EmotionVectorState = {
+  happy: 0,
+  angry: 0,
+  sad: 0,
+  fear: 0,
+  disgust: 0,
+  melancholic: 0,
+  surprised: 0,
+  calm: 1,
+};
+
+const EMOTION_VECTOR_FIELDS: Array<{ key: keyof EmotionVectorState; label: string }> = [
+  { key: 'happy', label: '高兴' },
+  { key: 'angry', label: '愤怒' },
+  { key: 'sad', label: '悲伤' },
+  { key: 'fear', label: '恐惧' },
+  { key: 'disgust', label: '反感' },
+  { key: 'melancholic', label: '低落' },
+  { key: 'surprised', label: '惊讶' },
+  { key: 'calm', label: '平静' },
+];
 
 // 格式化时间 (秒 -> mm:ss)
 const formatTime = (seconds: number): string => {
@@ -158,6 +194,8 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const referenceAudioInputRef = useRef<HTMLInputElement>(null);
+  const emotionAudioInputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const { toast, showToast, hideToast } = useToast();
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
@@ -168,12 +206,25 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [uploadingReferenceAudio, setUploadingReferenceAudio] = useState(false);
+  const [uploadingEmotionAudio, setUploadingEmotionAudio] = useState(false);
+  const [generatingAudio, setGeneratingAudio] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const [audioDragOver, setAudioDragOver] = useState(false);
   const [previewPlayingVersion, setPreviewPlayingVersion] = useState<number | null>(null);
   const [creatingTrack, setCreatingTrack] = useState(false);
   const [newTrackRole, setNewTrackRole] = useState('');
   const [roleDraft, setRoleDraft] = useState('');
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [loadingCharacters, setLoadingCharacters] = useState(false);
+  const [referenceSource, setReferenceSource] = useState<'character' | 'upload'>('character');
+  const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(null);
+  const [uploadedReferenceAudio, setUploadedReferenceAudio] = useState<{ key: string; name: string; url: string } | null>(null);
+  const [emotionMode, setEmotionMode] = useState<EmotionMode>('same_as_reference');
+  const [emotionPromptAudio, setEmotionPromptAudio] = useState<{ key: string; name: string; url: string } | null>(null);
+  const [emotionAlpha, setEmotionAlpha] = useState(1);
+  const [emotionVector, setEmotionVector] = useState<EmotionVectorState>(DEFAULT_EMOTION_VECTOR);
+  const [ttsText, setTtsText] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SceneAudioTrack | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
@@ -352,6 +403,34 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   }, [activeScene?.id]);
 
   useEffect(() => {
+    if (!bookId) {
+      setCharacters([]);
+      setSelectedCharacterId(null);
+      return;
+    }
+    let cancelled = false;
+    const loadCharacters = async () => {
+      setLoadingCharacters(true);
+      try {
+        const res = await characterApi.list(bookId);
+        if (cancelled) return;
+        const list = (res.data || []).sort((a, b) => a.index - b.index);
+        setCharacters(list);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load characters', err);
+        showToast('角色音色样本加载失败', 'error');
+      } finally {
+        if (!cancelled) setLoadingCharacters(false);
+      }
+    };
+    loadCharacters();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  useEffect(() => {
     if (!activeScene?.id || !selectedAudioId) {
       setVersionMenuOpen(false);
       return;
@@ -416,6 +495,66 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     () => audioTracks.find(t => t.id === selectedAudioId) || null,
     [audioTracks, selectedAudioId]
   );
+
+  const charactersWithVoice = useMemo(
+    () => characters.filter(char => Boolean(normalizeFileKey(char.voiceAudioUrl).key)),
+    [characters]
+  );
+
+  const selectedCharacter = useMemo(
+    () => charactersWithVoice.find(char => char.id === selectedCharacterId) || null,
+    [charactersWithVoice, selectedCharacterId]
+  );
+
+  useEffect(() => {
+    if (!selectedTrack) {
+      setSelectedCharacterId(null);
+      setTtsText('');
+      setEmotionMode('same_as_reference');
+      setEmotionPromptAudio(null);
+      setEmotionAlpha(1);
+      setEmotionVector(DEFAULT_EMOTION_VECTOR);
+      return;
+    }
+
+    setTtsText(activeScene?.dialogue || '');
+    setEmotionMode('same_as_reference');
+    setEmotionPromptAudio(null);
+    setEmotionAlpha(1);
+    setEmotionVector(DEFAULT_EMOTION_VECTOR);
+
+    if (referenceSource === 'upload' && uploadedReferenceAudio) {
+      return;
+    }
+
+    const role = (selectedTrack.role || '').trim();
+    const matchedCharacter = charactersWithVoice.find(
+      char => char.name.trim() === role
+    );
+
+    if (matchedCharacter) {
+      setReferenceSource('character');
+      setSelectedCharacterId(matchedCharacter.id);
+      return;
+    }
+
+    if (selectedCharacterId && charactersWithVoice.some(char => char.id === selectedCharacterId)) {
+      return;
+    }
+
+    if (charactersWithVoice.length === 1) {
+      setReferenceSource('character');
+      setSelectedCharacterId(charactersWithVoice[0].id);
+      return;
+    }
+
+    setSelectedCharacterId(null);
+  }, [
+    activeScene?.dialogue,
+    charactersWithVoice,
+    selectedTrack?.id,
+    selectedTrack?.role,
+  ]);
 
   const currentVersions = selectedTrack ? versionMap[selectedTrack.id] || [] : [];
   const normalizedTrackVersion =
@@ -532,18 +671,16 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     }
   };
 
-  const handleUploadAudio = async (file?: File | null) => {
-    if (!file || !activeScene?.id) return;
-    if (!selectedTrack) {
-      showToast('请先创建并选择一个音轨', 'error');
-      return;
+  const selectedReferenceKey = useMemo(() => {
+    if (referenceSource === 'upload') {
+      return uploadedReferenceAudio?.key || null;
     }
-    setUploadingAudio(true);
-    setAudioError(null);
-    try {
-      const uploaded = await fileApi.upload(file, 'private');
-      const rawUrl = uploaded.key || uploaded.url;
-      const version = await audioApi.upload(activeScene.id, selectedTrack.id, rawUrl || '');
+    return normalizeFileKey(selectedCharacter?.voiceAudioUrl).key;
+  }, [referenceSource, selectedCharacter?.voiceAudioUrl, uploadedReferenceAudio?.key]);
+
+  const applyNewVersion = useCallback(
+    async (version: AudioVersion, successMessage: string) => {
+      if (!activeScene?.id || !selectedTrack) return;
       setAudioTracks(prev =>
         prev.map(track =>
           track.id === selectedTrack.id
@@ -558,7 +695,114 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       setPreviewPlayingVersion(null);
       const versionsRes = await audioApi.listVersions(activeScene.id, selectedTrack.id);
       await resolveVersions(selectedTrack.id, versionsRes.data || []);
-      showToast('新音频版本已上传', 'success');
+      showToast(successMessage, 'success');
+    },
+    [activeScene?.id, resolveVersions, selectedTrack, showToast]
+  );
+
+  const handleUploadReferenceAudio = async (file?: File | null) => {
+    if (!file) return;
+    setUploadingReferenceAudio(true);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const url = getFileUrl(uploaded.key);
+      setUploadedReferenceAudio({
+        key: uploaded.key,
+        name: uploaded.originalName || file.name,
+        url,
+      });
+      setReferenceSource('upload');
+      showToast('已上传自定义音色样本', 'success');
+    } catch (err) {
+      console.error('Upload reference audio failed', err);
+      showToast('上传音色样本失败，请重试', 'error');
+    } finally {
+      setUploadingReferenceAudio(false);
+      if (referenceAudioInputRef.current) referenceAudioInputRef.current.value = '';
+    }
+  };
+
+  const handleUploadEmotionAudio = async (file?: File | null) => {
+    if (!file) return;
+    setUploadingEmotionAudio(true);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const url = getFileUrl(uploaded.key);
+      setEmotionPromptAudio({
+        key: uploaded.key,
+        name: uploaded.originalName || file.name,
+        url,
+      });
+      setEmotionMode('emotion_prompt');
+      showToast('已上传情感参考音频', 'success');
+    } catch (err) {
+      console.error('Upload emotion audio failed', err);
+      showToast('上传情感参考失败，请重试', 'error');
+    } finally {
+      setUploadingEmotionAudio(false);
+      if (emotionAudioInputRef.current) emotionAudioInputRef.current.value = '';
+    }
+  };
+
+  const handleGenerateAudio = async () => {
+    if (!activeScene?.id || !selectedTrack) return;
+    const text = ttsText.trim();
+    if (!text) {
+      showToast('请输入需要朗读的文本', 'error');
+      return;
+    }
+    if (!selectedReferenceKey) {
+      showToast('请先选择声音参考音频', 'error');
+      return;
+    }
+    if (emotionMode === 'emotion_prompt' && !emotionPromptAudio?.key) {
+      showToast('请先上传情感参考音频', 'error');
+      return;
+    }
+
+    setGeneratingAudio(true);
+    setAudioError(null);
+    try {
+      const nextVector =
+        emotionMode === 'emotion_vector'
+          ? EMOTION_VECTOR_FIELDS.map(field => emotionVector[field.key])
+          : undefined;
+      const version = await audioApi.generate(activeScene.id, selectedTrack.id, {
+        text,
+        referenceAudioKey: selectedReferenceKey,
+        emotionPromptKey: emotionMode === 'emotion_prompt' ? emotionPromptAudio?.key : undefined,
+        emotionVector: nextVector,
+        emotionAlpha: emotionMode === 'same_as_reference' ? undefined : emotionAlpha,
+      });
+      await applyNewVersion(version, 'AI 音频已生成并保存为新版本');
+    } catch (err) {
+      console.error('Generate audio failed', err);
+      setAudioError(err instanceof Error ? err.message : '音频生成失败');
+      showToast(err instanceof Error ? err.message : '音频生成失败，请重试', 'error');
+    } finally {
+      setGeneratingAudio(false);
+      setVersionMenuOpen(false);
+      setIsAudioPlaying(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    }
+  };
+
+  const handleUploadAudio = async (file?: File | null) => {
+    if (!file || !activeScene?.id) return;
+    if (!selectedTrack) {
+      showToast('请先创建并选择一个音轨', 'error');
+      return;
+    }
+    setUploadingAudio(true);
+    setAudioError(null);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const rawUrl = uploaded.key || uploaded.url;
+      const version = await audioApi.upload(activeScene.id, selectedTrack.id, rawUrl || '');
+      await applyNewVersion(version, '新音频版本已上传');
     } catch (err) {
       console.error('Upload audio failed', err);
       setAudioError(err instanceof Error ? err.message : '上传失败，请重试');
@@ -726,6 +970,340 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       showToast(msg, 'error');
     }
   };
+
+  const selectedReferencePreviewUrl =
+    referenceSource === 'upload'
+      ? uploadedReferenceAudio?.url
+      : getFileUrl(selectedCharacter?.voiceAudioUrl) || undefined;
+  const canGenerateAudio =
+    Boolean(selectedTrack) &&
+    Boolean(selectedReferenceKey) &&
+    Boolean(ttsText.trim()) &&
+    !generatingAudio &&
+    !uploadingReferenceAudio &&
+    !uploadingEmotionAudio &&
+    (emotionMode !== 'emotion_prompt' || Boolean(emotionPromptAudio?.key));
+
+  const renderVoiceStudioCard = () => (
+    <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-5 space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-blue-600/15 text-blue-300">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <h5 className="text-sm font-semibold text-white">克隆工作室</h5>
+            <p className="text-[11px] text-white/45">参考人设音色、补充情感控制并生成音轨，结果会自动写入历史版本。</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => audioInputRef.current?.click()}
+          disabled={uploadingAudio || generatingAudio}
+          className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[11px] text-white/75 transition-all disabled:opacity-50"
+        >
+          {uploadingAudio ? '上传中...' : '上传现成音频'}
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">声音参考音频</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => referenceAudioInputRef.current?.click()}
+              disabled={uploadingReferenceAudio}
+              className={`px-2.5 py-1 rounded-full border text-[10px] transition-all ${
+                referenceSource === 'upload'
+                  ? 'border-blue-500/50 bg-blue-500/15 text-blue-100'
+                  : 'border-white/10 bg-white/5 text-white/50 hover:text-white/70'
+              }`}
+            >
+              {uploadingReferenceAudio ? '上传中...' : '上传自定义'}
+            </button>
+            {uploadedReferenceAudio && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReferenceSource('character');
+                  setUploadedReferenceAudio(null);
+                }}
+                className="text-[10px] text-white/35 hover:text-white/60 transition-colors"
+              >
+                清除自定义
+              </button>
+            )}
+          </div>
+        </div>
+        <input
+          ref={referenceAudioInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={e => handleUploadReferenceAudio(e.target.files?.[0])}
+        />
+
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 space-y-4">
+          {charactersWithVoice.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {charactersWithVoice.map(character => {
+                const isSelected = referenceSource === 'character' && selectedCharacterId === character.id;
+                return (
+                  <button
+                    key={character.id}
+                    type="button"
+                    onClick={() => {
+                      setReferenceSource('character');
+                      setSelectedCharacterId(character.id);
+                    }}
+                    className={`rounded-xl border p-3 text-left transition-all ${
+                      isSelected
+                        ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.12)]'
+                        : 'border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-2 rounded-lg ${isSelected ? 'bg-blue-500/15 text-blue-200' : 'bg-white/5 text-white/45'}`}>
+                          <UserRound size={14} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{character.name}</p>
+                          <p className="text-[11px] text-white/35">已同步大纲人设音色</p>
+                        </div>
+                      </div>
+                      {selectedTrack?.role?.trim() === character.name.trim() && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-200 border border-emerald-500/30">
+                          音轨匹配
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-[12px] text-white/45">
+              {loadingCharacters ? '正在读取大纲人设中的音色样本...' : '大纲人设里还没有可用音色样本，可以先去上传，或直接在这里补一个自定义参考音频。'}
+            </div>
+          )}
+
+          {uploadedReferenceAudio && (
+            <button
+              type="button"
+              onClick={() => setReferenceSource('upload')}
+              className={`w-full rounded-xl border p-3 text-left transition-all ${
+                referenceSource === 'upload'
+                  ? 'border-blue-500/60 bg-blue-500/10'
+                  : 'border-white/10 bg-black/20 hover:border-white/25'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-lg ${referenceSource === 'upload' ? 'bg-blue-500/15 text-blue-200' : 'bg-white/5 text-white/45'}`}>
+                  <UploadCloud size={14} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">{uploadedReferenceAudio.name}</p>
+                  <p className="text-[11px] text-white/35">自定义上传的音色样本</p>
+                </div>
+              </div>
+            </button>
+          )}
+
+          {selectedReferencePreviewUrl ? (
+            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="text-[11px] text-white/55">
+                  当前使用：
+                  {referenceSource === 'upload'
+                    ? uploadedReferenceAudio?.name || '自定义音色'
+                    : selectedCharacter?.name || '角色音色'}
+                </span>
+                <span className="text-[10px] text-white/30">
+                  {referenceSource === 'upload' ? '自定义参考' : '人设联动'}
+                </span>
+              </div>
+              <audio controls src={selectedReferencePreviewUrl} className="w-full h-10" />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-4 text-center text-[12px] text-white/40">
+              请选择一个角色音色，或上传自定义参考音频
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">朗读文本</label>
+        <textarea
+          value={ttsText}
+          onChange={e => setTtsText(e.target.value)}
+          placeholder="输入当前音轨需要生成的台词、旁白或环境播报文本..."
+          className="w-full min-h-[140px] rounded-2xl border border-white/10 bg-[#111111] px-4 py-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500/40 resize-none leading-relaxed"
+        />
+        <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
+          <span>可按音轨拆分对白；当前场景台词已自动带入，方便直接改写。</span>
+          <button
+            type="button"
+            onClick={() => setTtsText(activeScene?.dialogue || '')}
+            className="text-white/50 hover:text-white transition-colors"
+          >
+            重新带入场景台词
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal size={14} className="text-amber-300" />
+          <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">情感控制</label>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          {[
+            { mode: 'same_as_reference' as EmotionMode, label: '沿用音色情绪', desc: '直接使用参考音频中的表达方式' },
+            { mode: 'emotion_prompt' as EmotionMode, label: '情感参考音频', desc: '额外上传一段情绪样本' },
+            { mode: 'emotion_vector' as EmotionMode, label: '情感向量', desc: '手动混合 8 维情绪强度' },
+          ].map(option => {
+            const active = emotionMode === option.mode;
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                onClick={() => setEmotionMode(option.mode)}
+                className={`rounded-xl border p-3 text-left transition-all ${
+                  active
+                    ? 'border-blue-500/60 bg-blue-500/10 text-white'
+                    : 'border-white/10 bg-black/20 text-white/65 hover:border-white/25'
+                }`}
+              >
+                <div className="text-sm font-medium">{option.label}</div>
+                <div className="mt-1 text-[11px] text-white/40">{option.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {emotionMode === 'emotion_prompt' && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] text-white/55">上传目标情感样本，系统会把情绪风格混入新音频。</span>
+              <button
+                type="button"
+                onClick={() => emotionAudioInputRef.current?.click()}
+                disabled={uploadingEmotionAudio}
+                className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[11px] text-white/75 disabled:opacity-50"
+              >
+                {uploadingEmotionAudio ? '上传中...' : '上传情感音频'}
+              </button>
+            </div>
+            <input
+              ref={emotionAudioInputRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={e => handleUploadEmotionAudio(e.target.files?.[0])}
+            />
+            {emotionPromptAudio ? (
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-sm text-white">{emotionPromptAudio.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEmotionPromptAudio(null)}
+                    className="text-[10px] text-white/35 hover:text-white/60 transition-colors"
+                  >
+                    清除
+                  </button>
+                </div>
+                <audio controls src={emotionPromptAudio.url} className="w-full h-10" />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-4 text-center text-[12px] text-white/40">
+                上传一段目标语气，例如平静旁白、激动对白或压抑低声。
+              </div>
+            )}
+            <div>
+              <div className="mb-1 flex items-center justify-between text-[11px] text-white/45">
+                <span>情感强度</span>
+                <span>{emotionAlpha.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={emotionAlpha}
+                onChange={e => setEmotionAlpha(parseFloat(e.target.value))}
+                className="w-full"
+              />
+            </div>
+          </div>
+        )}
+
+        {emotionMode === 'emotion_vector' && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {EMOTION_VECTOR_FIELDS.map(field => (
+                <div key={field.key}>
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-white/45">
+                    <span>{field.label}</span>
+                    <span>{emotionVector[field.key].toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={emotionVector[field.key]}
+                    onChange={e =>
+                      setEmotionVector(prev => ({
+                        ...prev,
+                        [field.key]: parseFloat(e.target.value),
+                      }))
+                    }
+                    className="w-full"
+                  />
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between text-[11px] text-white/45">
+                <span>情感强度</span>
+                <span>{emotionAlpha.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={emotionAlpha}
+                onChange={e => setEmotionAlpha(parseFloat(e.target.value))}
+                className="w-full"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-[11px] text-white/40">
+          {selectedTrack
+            ? `${selectedTrack.role || '当前音轨'} 的生成结果会立即成为当前版本，并自动保留历史记录。`
+            : '选择音轨后即可开始合成。'}
+        </div>
+        <button
+          type="button"
+          onClick={handleGenerateAudio}
+          disabled={!canGenerateAudio}
+          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white text-sm font-semibold border border-blue-500/60 shadow-lg transition-all flex items-center gap-2"
+        >
+          <Sparkles size={15} />
+          {generatingAudio ? '正在生成新音频...' : hasAudio ? '生成新版本' : '生成第一版'}
+        </button>
+      </div>
+    </div>
+  );
 
   if (!hasChapters) {
     return (
@@ -1168,99 +1746,79 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
                     </div>
 
                     {hasAudio ? (
-                      <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={toggleAudioPlay}
-                            className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
-                          >
-                            {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
-                          </button>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between text-white/70 text-sm">
-                              <span>{selectedTrack?.role || '未命名音轨'} · 当前版本 #{currentVersionLabel || '—'}</span>
-                              {/* 时长显示 */}
-                              <span className="text-[11px] text-white/50 tabular-nums">
-                                {formatTime(audioCurrentTime)} / {formatTime(audioDuration)}
-                              </span>
-                            </div>
-                            {/* 可点击的进度条 */}
-                            <div
-                              className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden cursor-pointer"
-                              onClick={(e) => {
-                                if (!audioRef.current || !audioDuration) return;
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                const clickX = e.clientX - rect.left;
-                                const newTime = (clickX / rect.width) * audioDuration;
-                                audioRef.current.currentTime = newTime;
-                                setAudioCurrentTime(newTime);
-                              }}
+                      <>
+                        <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={toggleAudioPlay}
+                              className="w-10 h-10 rounded-full bg-blue-600/80 hover:bg-blue-500 text-white flex items-center justify-center transition-all shadow-lg"
                             >
+                              {isAudioPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+                            </button>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between text-white/70 text-sm">
+                                <span>{selectedTrack?.role || '未命名音轨'} · 当前版本 #{currentVersionLabel || '—'}</span>
+                                <span className="text-[11px] text-white/50 tabular-nums">
+                                  {formatTime(audioCurrentTime)} / {formatTime(audioDuration)}
+                                </span>
+                              </div>
                               <div
-                                className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-100"
-                                style={{ width: `${audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0}%` }}
-                              />
+                                className="mt-2 h-2 rounded-full bg-white/5 overflow-hidden cursor-pointer"
+                                onClick={(e) => {
+                                  if (!audioRef.current || !audioDuration) return;
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const clickX = e.clientX - rect.left;
+                                  const newTime = (clickX / rect.width) * audioDuration;
+                                  audioRef.current.currentTime = newTime;
+                                  setAudioCurrentTime(newTime);
+                                }}
+                              >
+                                <div
+                                  className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-100"
+                                  style={{ width: `${audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0}%` }}
+                                />
+                              </div>
+                              <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
                             </div>
-                            <div className="mt-1 text-[11px] text-white/40">若需交付，请在历史版本中设为当前</div>
-                          </div>
-                          {/* 下载和重新上传按钮 */}
-                          <div className="flex items-center gap-2">
-                            {playbackAudioUrl && (
+                            <div className="flex items-center gap-2">
+                              {playbackAudioUrl && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); downloadFile(playbackAudioUrl); }}
+                                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
+                                  title="下载音频"
+                                >
+                                  <Download size={16} />
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); downloadFile(playbackAudioUrl); }}
-                                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center transition-all border border-white/10"
-                                title="下载音频"
+                                onClick={() => audioInputRef.current?.click()}
+                                disabled={uploadingAudio}
+                                className="px-3 py-1.5 text-[11px] rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/10 transition-all disabled:opacity-60"
                               >
-                                <Download size={16} />
+                                {uploadingAudio ? '上传中...' : '重新上传'}
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => audioInputRef.current?.click()}
-                              disabled={uploadingAudio}
-                              className="px-3 py-1.5 text-[11px] rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/10 transition-all disabled:opacity-60"
-                            >
-                              {uploadingAudio ? '上传中...' : '重新上传'}
-                            </button>
+                            </div>
                           </div>
+                          <audio
+                            ref={audioRef}
+                            src={playbackAudioUrl}
+                            onPlay={() => setIsAudioPlaying(true)}
+                            onPause={() => setIsAudioPlaying(false)}
+                            onEnded={() => {
+                              setIsAudioPlaying(false);
+                              setAudioCurrentTime(0);
+                            }}
+                            onTimeUpdate={() => setAudioCurrentTime(audioRef.current?.currentTime || 0)}
+                            onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
+                            className="hidden"
+                          />
                         </div>
-                        <audio
-                          ref={audioRef}
-                          src={playbackAudioUrl}
-                          onPlay={() => setIsAudioPlaying(true)}
-                          onPause={() => setIsAudioPlaying(false)}
-                          onEnded={() => {
-                            setIsAudioPlaying(false);
-                            setAudioCurrentTime(0);
-                          }}
-                          onTimeUpdate={() => setAudioCurrentTime(audioRef.current?.currentTime || 0)}
-                          onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
-                          className="hidden"
-                        />
-                      </div>
+                        {renderVoiceStudioCard()}
+                      </>
                     ) : (
-                      <div className="bg-[#0b0b0b] border border-dashed border-white/10 rounded-xl p-6 flex flex-col items-center text-center gap-4">
-                        <div className="p-4 rounded-full bg-blue-600/15 text-blue-400 shadow-inner">
-                          <Headphones size={26} />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-white font-semibold text-sm">当前音轨还没有音频</p>
-                          <p className="text-white/50 text-[12px]">上传对白、配乐或氛围音，历史版本会自动留存便于比对</p>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-center gap-3">
-                          <button
-                            onClick={() => audioInputRef.current?.click()}
-                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[12px] font-bold border border-blue-500/60 shadow-lg transition-all disabled:opacity-50"
-                          >
-                            上传第一版
-                          </button>
-                          <div className="text-[11px] text-white/50 bg-white/5 border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
-                            <Volume2 size={12} className="text-amber-300" />
-                            <span>支持 mp3 / wav / aac</span>
-                          </div>
-                        </div>
-                      </div>
+                      renderVoiceStudioCard()
                     )}
                   </>
                 ) : (
@@ -1310,7 +1868,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
               <div className="flex items-center gap-2 text-white/40">
                 <Info size={14} className="text-amber-300" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">
-                  {selectedTrack?.role || '音轨'} 暂无音频 · 上传后即可开始对齐
+                  {selectedTrack?.role || '音轨'} 暂无音频 · 可直接生成第一版或上传现成音频
                 </span>
               </div>
             )}

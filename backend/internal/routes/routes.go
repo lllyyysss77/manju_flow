@@ -60,11 +60,11 @@ func Setup(r *gin.Engine) {
 			bookHandler := handlers.NewBookHandler()
 			books := authorized.Group("/books")
 			{
-				books.GET("", bookHandler.List)              // 获取书籍列表
-				books.POST("", bookHandler.Create)           // 创建书籍
-				books.GET("/:bookId", bookHandler.GetByID)   // 获取书籍详情
-				books.PUT("/:bookId", bookHandler.Update)    // 更新书籍
-				books.DELETE("/:bookId", bookHandler.Delete)         // 删除书籍
+				books.GET("", bookHandler.List)                          // 获取书籍列表
+				books.POST("", bookHandler.Create)                       // 创建书籍
+				books.GET("/:bookId", bookHandler.GetByID)               // 获取书籍详情
+				books.PUT("/:bookId", bookHandler.Update)                // 更新书籍
+				books.DELETE("/:bookId", bookHandler.Delete)             // 删除书籍
 				books.PUT("/:bookId/outline", bookHandler.UpdateOutline) // 更新大纲
 			}
 
@@ -72,11 +72,11 @@ func Setup(r *gin.Engine) {
 			characterHandler := handlers.NewCharacterHandler()
 			characters := authorized.Group("/books/:bookId/characters")
 			{
-				characters.GET("", characterHandler.List)                     // 获取角色列表
-				characters.POST("", characterHandler.Create)                  // 创建角色
-				characters.GET("/:characterId", characterHandler.GetByID)     // 获取角色详情
-				characters.PUT("/:characterId", characterHandler.Update)      // 更新角色
-				characters.DELETE("/:characterId", characterHandler.Delete)   // 删除角色
+				characters.GET("", characterHandler.List)                   // 获取角色列表
+				characters.POST("", characterHandler.Create)                // 创建角色
+				characters.GET("/:characterId", characterHandler.GetByID)   // 获取角色详情
+				characters.PUT("/:characterId", characterHandler.Update)    // 更新角色
+				characters.DELETE("/:characterId", characterHandler.Delete) // 删除角色
 			}
 
 			// 章节路由
@@ -142,6 +142,7 @@ func Setup(r *gin.Engine) {
 				audios.PUT("/:audioId", audioHandler.Update)                 // 更新音频轨道信息
 				audios.DELETE("/:audioId", audioHandler.Delete)              // 删除音频轨道
 				audios.PUT("/:audioId/upload", audioHandler.Upload)          // 上传新版本音频
+				audios.POST("/:audioId/generate", audioHandler.Generate)     // AI 生成新版本音频
 				audios.GET("/:audioId/versions", audioHandler.ListVersions)  // 音频版本历史
 				audios.PUT("/:audioId/revert/:version", audioHandler.Revert) // 回滚音频
 			}
@@ -163,25 +164,25 @@ func Setup(r *gin.Engine) {
 			sceneReferenceHandler := handlers.NewSceneReferenceHandler()
 			sceneReferences := authorized.Group("/scenes/:sceneId/references")
 			{
-				sceneReferences.GET("", sceneReferenceHandler.List)                       // 获取参考资料列表
-				sceneReferences.POST("", sceneReferenceHandler.Create)                    // 创建参考资料
-				sceneReferences.POST("/batch", sceneReferenceHandler.BatchCreate)         // 批量创建参考资料
-				sceneReferences.GET("/:referenceId", sceneReferenceHandler.GetByID)       // 获取参考资料详情
-				sceneReferences.PUT("/:referenceId", sceneReferenceHandler.Update)        // 更新参考资料
-				sceneReferences.DELETE("/:referenceId", sceneReferenceHandler.Delete)     // 删除参考资料
-				sceneReferences.DELETE("", sceneReferenceHandler.DeleteAll)               // 删除全部参考资料
+				sceneReferences.GET("", sceneReferenceHandler.List)                   // 获取参考资料列表
+				sceneReferences.POST("", sceneReferenceHandler.Create)                // 创建参考资料
+				sceneReferences.POST("/batch", sceneReferenceHandler.BatchCreate)     // 批量创建参考资料
+				sceneReferences.GET("/:referenceId", sceneReferenceHandler.GetByID)   // 获取参考资料详情
+				sceneReferences.PUT("/:referenceId", sceneReferenceHandler.Update)    // 更新参考资料
+				sceneReferences.DELETE("/:referenceId", sceneReferenceHandler.Delete) // 删除参考资料
+				sceneReferences.DELETE("", sceneReferenceHandler.DeleteAll)           // 删除全部参考资料
 			}
 
 			// LoRA 库路由
 			loraHandler := handlers.NewLoraHandler()
 			loras := authorized.Group("/loras")
 			{
-				loras.GET("", loraHandler.List)              // 获取 LoRA 列表
-				loras.POST("", loraHandler.Create)           // 创建 LoRA
-				loras.GET("/tags", loraHandler.GetTags)      // 获取所有标签
-				loras.GET("/:id", loraHandler.GetByID)       // 获取 LoRA 详情
-				loras.PUT("/:id", loraHandler.Update)        // 更新 LoRA
-				loras.DELETE("/:id", loraHandler.Delete)     // 删除 LoRA
+				loras.GET("", loraHandler.List)          // 获取 LoRA 列表
+				loras.POST("", loraHandler.Create)       // 创建 LoRA
+				loras.GET("/tags", loraHandler.GetTags)  // 获取所有标签
+				loras.GET("/:id", loraHandler.GetByID)   // 获取 LoRA 详情
+				loras.PUT("/:id", loraHandler.Update)    // 更新 LoRA
+				loras.DELETE("/:id", loraHandler.Delete) // 删除 LoRA
 			}
 
 			// 评论路由
@@ -204,9 +205,9 @@ func Setup(r *gin.Engine) {
 			// 评论通用操作
 			comments := authorized.Group("/comments")
 			{
-				comments.GET("/:id", commentHandler.GetByID)          // 获取评论详情
-				comments.PUT("/:id", commentHandler.Update)           // 更新评论
-				comments.DELETE("/:id", commentHandler.Delete)        // 删除评论
+				comments.GET("/:id", commentHandler.GetByID)             // 获取评论详情
+				comments.PUT("/:id", commentHandler.Update)              // 更新评论
+				comments.DELETE("/:id", commentHandler.Delete)           // 删除评论
 				comments.PUT("/:id/resolve", commentHandler.Resolve)     // 标记为已解决
 				comments.PUT("/:id/unresolve", commentHandler.Unresolve) // 标记为未解决
 			}

@@ -596,6 +596,14 @@ export interface SceneAudioListResponse {
   data: SceneAudio[];
 }
 
+export interface GenerateSceneAudioPayload {
+  text: string;
+  referenceAudioKey: string;
+  emotionPromptKey?: string;
+  emotionVector?: number[];
+  emotionAlpha?: number;
+}
+
 export const audioApi = {
   list: (sceneId: number) => request<SceneAudioListResponse>(`/api/scenes/${sceneId}/audios`),
   create: (sceneId: number, payload: { role: string; index: number }) =>
@@ -616,6 +624,11 @@ export const audioApi = {
     request<AudioVersion>(`/api/scenes/${sceneId}/audios/${audioId}/upload`, {
       method: 'PUT',
       body: JSON.stringify({ audioUrl }),
+    }),
+  generate: (sceneId: number, audioId: number, payload: GenerateSceneAudioPayload) =>
+    request<AudioVersion>(`/api/scenes/${sceneId}/audios/${audioId}/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   listVersions: (sceneId: number, audioId: number) =>
     request<AudioVersionListResponse>(`/api/scenes/${sceneId}/audios/${audioId}/versions`),

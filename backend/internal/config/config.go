@@ -2,6 +2,7 @@ package config
 
 import (
 	"manju-flow/utils"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,7 @@ type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	OSS      OSSConfig
+	TTS      TTSConfig
 	App      AppConfig
 	CORS     CORSConfig
 	Auth     AuthConfig
@@ -39,6 +41,13 @@ type OSSConfig struct {
 	AccessKeyID     string
 	AccessKeySecret string
 	BucketName      string
+}
+
+// TTSConfig 音频合成服务配置
+type TTSConfig struct {
+	APIURL           string
+	JWTPrivateKey    string
+	JWTExpireSeconds int
 }
 
 // ServerConfig 服务器配置
@@ -84,6 +93,11 @@ func Load() *Config {
 			AccessKeySecret: utils.GetEnv("OSS_ACCESS_KEY_SECRET", ""),
 			BucketName:      utils.GetEnv("OSS_BUCKET_NAME", ""),
 		},
+		TTS: TTSConfig{
+			APIURL:           utils.GetEnv("TTS_API_URL", "http://localhost:8000/api/v1/tts"),
+			JWTPrivateKey:    strings.ReplaceAll(utils.GetEnv("TTS_JWT_PRIVATE_KEY", ""), `\n`, "\n"),
+			JWTExpireSeconds: parseIntEnv("TTS_JWT_EXPIRE_SECONDS", 60),
+		},
 		CORS: CORSConfig{
 			AllowOrigins: parseOrigins(utils.GetEnv("CORS_ORIGINS", "*")),
 		},
@@ -113,6 +127,20 @@ func parseOrigins(origins string) []string {
 		return []string{"*"}
 	}
 	return result
+}
+
+func parseIntEnv(key string, defaultValue int) int {
+	raw := strings.TrimSpace(utils.GetEnv(key, ""))
+	if raw == "" {
+		return defaultValue
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultValue
+	}
+
+	return parsed
 }
 
 // parseWhitelist 解析注册白名单
