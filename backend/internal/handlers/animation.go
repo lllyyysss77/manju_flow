@@ -87,6 +87,13 @@ type arkTaskStatusResponse struct {
 	} `json:"content"`
 }
 
+type resolvedAnimationReferenceAsset struct {
+	Source    string
+	Name      string
+	MimeType  string
+	SignedURL string
+}
+
 func (h *AnimationHandler) findOwnedFile(db *gorm.DB, userID uint, key string) (*models.File, error) {
 	normalizedKey := strings.TrimSpace(key)
 	if normalizedKey == "" {
@@ -133,6 +140,61 @@ func (h *AnimationHandler) resolveReferenceURLs(db *gorm.DB, userID uint, rawIte
 		urls = append(urls, signedURL)
 	}
 	return urls, nil
+}
+
+func buildAssetNameFromSource(source string, fallback string) string {
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		return fallback
+	}
+	if parsed, err := url.Parse(trimmed); err == nil && parsed.Path != "" {
+		if base := path.Base(parsed.Path); base != "." && base != "/" && base != "" {
+			return base
+		}
+	}
+	if base := path.Base(trimmed); base != "." && base != "/" && base != "" {
+		return base
+	}
+	return fallback
+}
+
+func (h *AnimationHandler) resolveReferenceAssets(
+	db *gorm.DB,
+	userID uint,
+	rawItems []string,
+	fallbackPrefix string,
+) ([]resolvedAnimationReferenceAsset, error) {
+	assets := make([]resolvedAnimationReferenceAsset, 0, len(rawItems))
+	for idx, raw := range rawItems {
+		normalized := strings.TrimSpace(raw)
+		if normalized == "" {
+			continue
+		}
+		if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+			assets = append(assets, resolvedAnimationReferenceAsset{
+				Source:    normalized,
+				Name:      buildAssetNameFromSource(normalized, fmt.Sprintf("%s %d", fallbackPrefix, idx+1)),
+				SignedURL: normalized,
+			})
+			continue
+		}
+
+		file, err := h.findOwnedFile(db, userID, normalized)
+		if err != nil {
+			return nil, err
+		}
+		signedURL, err := h.buildSignedFileURL(file)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, resolvedAnimationReferenceAsset{
+			Source:    normalized,
+			Name:      strings.TrimSpace(file.OriginalName),
+			MimeType:  strings.TrimSpace(file.MimeType),
+			SignedURL: signedURL,
+		})
+	}
+	return assets, nil
 }
 
 func (h *AnimationHandler) buildArkTaskURL(taskID string) string {
@@ -276,13 +338,69 @@ func decodeStringSlice(raw string) []string {
 	return values
 }
 
+func encodeReferenceAssets(values []models.AnimationTaskReferenceAsset) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+func decodeReferenceAssets(raw string) []models.AnimationTaskReferenceAsset {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []models.AnimationTaskReferenceAsset{}
+	}
+	var values []models.AnimationTaskReferenceAsset
+	if err := json.Unmarshal([]byte(trimmed), &values); err != nil {
+		return []models.AnimationTaskReferenceAsset{}
+	}
+	return values
+}
+
 func hydrateAnimationTask(task *models.SceneAnimationGenerationTask) {
 	if task == nil {
 		return
 	}
-	task.ReferenceImageKeys = decodeStringSlice(task.ReferenceImageKeysJSON)
-	task.ReferenceAudioKeys = decodeStringSlice(task.ReferenceAudioKeysJSON)
-	task.ReferenceVideoKeys = decodeStringSlice(task.ReferenceVideoKeysJSON)
+	task.ReferenceImageAssets = decodeReferenceAssets(task.ReferenceImageAssetsJSON)
+	task.ReferenceAudioAssets = decodeReferenceAssets(task.ReferenceAudioAssetsJSON)
+	task.ReferenceVideoAssets = decodeReferenceAssets(task.ReferenceVideoAssetsJSON)
+
+	if len(task.ReferenceImageAssets) > 0 {
+		task.ReferenceImageKeys = make([]string, 0, len(task.ReferenceImageAssets))
+		for _, item := range task.ReferenceImageAssets {
+			if strings.TrimSpace(item.Source) != "" {
+				task.ReferenceImageKeys = append(task.ReferenceImageKeys, item.Source)
+			}
+		}
+	} else {
+		task.ReferenceImageKeys = decodeStringSlice(task.ReferenceImageKeysJSON)
+	}
+
+	if len(task.ReferenceAudioAssets) > 0 {
+		task.ReferenceAudioKeys = make([]string, 0, len(task.ReferenceAudioAssets))
+		for _, item := range task.ReferenceAudioAssets {
+			if strings.TrimSpace(item.Source) != "" {
+				task.ReferenceAudioKeys = append(task.ReferenceAudioKeys, item.Source)
+			}
+		}
+	} else {
+		task.ReferenceAudioKeys = decodeStringSlice(task.ReferenceAudioKeysJSON)
+	}
+
+	if len(task.ReferenceVideoAssets) > 0 {
+		task.ReferenceVideoKeys = make([]string, 0, len(task.ReferenceVideoAssets))
+		for _, item := range task.ReferenceVideoAssets {
+			if strings.TrimSpace(item.Source) != "" {
+				task.ReferenceVideoKeys = append(task.ReferenceVideoKeys, item.Source)
+			}
+		}
+	} else {
+		task.ReferenceVideoKeys = decodeStringSlice(task.ReferenceVideoKeysJSON)
+	}
 }
 
 func hydrateAnimationTasks(tasks []models.SceneAnimationGenerationTask) {
@@ -942,34 +1060,62 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		return
 	}
 
-	referenceImageURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceImageKeys)
+	referenceImageAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceImageKeys, "图片参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference image not found"})
 		return
 	}
-	referenceAudioURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceAudioKeys)
+	referenceAudioAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceAudioKeys, "音频参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference audio not found"})
 		return
 	}
-	referenceVideoURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceVideoKeys)
+	referenceVideoAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceVideoKeys, "视频参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference video not found"})
 		return
 	}
 
+	imageTaskAssets := make([]models.AnimationTaskReferenceAsset, 0, len(referenceImageAssets))
+	for _, item := range referenceImageAssets {
+		imageTaskAssets = append(imageTaskAssets, models.AnimationTaskReferenceAsset{
+			Source:   item.Source,
+			Name:     item.Name,
+			MimeType: item.MimeType,
+		})
+	}
+	audioTaskAssets := make([]models.AnimationTaskReferenceAsset, 0, len(referenceAudioAssets))
+	for _, item := range referenceAudioAssets {
+		audioTaskAssets = append(audioTaskAssets, models.AnimationTaskReferenceAsset{
+			Source:   item.Source,
+			Name:     item.Name,
+			MimeType: item.MimeType,
+		})
+	}
+	videoTaskAssets := make([]models.AnimationTaskReferenceAsset, 0, len(referenceVideoAssets))
+	for _, item := range referenceVideoAssets {
+		videoTaskAssets = append(videoTaskAssets, models.AnimationTaskReferenceAsset{
+			Source:   item.Source,
+			Name:     item.Name,
+			MimeType: item.MimeType,
+		})
+	}
+
 	task := models.SceneAnimationGenerationTask{
-		SceneID:                scene.ID,
-		SceneAnimationID:       animation.ID,
-		Status:                 models.AnimationTaskStatusPending,
-		Text:                   text,
-		Ratio:                  req.Ratio,
-		Duration:               req.Duration,
-		Model:                  req.Model,
-		ReferenceImageKeysJSON: encodeStringSlice(req.ReferenceImageKeys),
-		ReferenceAudioKeysJSON: encodeStringSlice(req.ReferenceAudioKeys),
-		ReferenceVideoKeysJSON: encodeStringSlice(req.ReferenceVideoKeys),
-		CreatedBy:              userID,
+		SceneID:                  scene.ID,
+		SceneAnimationID:         animation.ID,
+		Status:                   models.AnimationTaskStatusPending,
+		Text:                     text,
+		Ratio:                    req.Ratio,
+		Duration:                 req.Duration,
+		Model:                    req.Model,
+		ReferenceImageKeysJSON:   encodeStringSlice(req.ReferenceImageKeys),
+		ReferenceAudioKeysJSON:   encodeStringSlice(req.ReferenceAudioKeys),
+		ReferenceVideoKeysJSON:   encodeStringSlice(req.ReferenceVideoKeys),
+		ReferenceImageAssetsJSON: encodeReferenceAssets(imageTaskAssets),
+		ReferenceAudioAssetsJSON: encodeReferenceAssets(audioTaskAssets),
+		ReferenceVideoAssetsJSON: encodeReferenceAssets(videoTaskAssets),
+		CreatedBy:                userID,
 	}
 	if err := db.Create(&task).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create generation task"})
@@ -980,24 +1126,24 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		Type: "text",
 		Text: text,
 	}}
-	for _, itemURL := range referenceImageURLs {
+	for _, item := range referenceImageAssets {
 		content = append(content, arkGenerationContentItem{
 			Type:     "image_url",
-			ImageURL: &arkMediaURL{URL: itemURL},
+			ImageURL: &arkMediaURL{URL: item.SignedURL},
 			Role:     "reference_image",
 		})
 	}
-	for _, itemURL := range referenceVideoURLs {
+	for _, item := range referenceVideoAssets {
 		content = append(content, arkGenerationContentItem{
 			Type:     "video_url",
-			VideoURL: &arkMediaURL{URL: itemURL},
+			VideoURL: &arkMediaURL{URL: item.SignedURL},
 			Role:     "reference_video",
 		})
 	}
-	for _, itemURL := range referenceAudioURLs {
+	for _, item := range referenceAudioAssets {
 		content = append(content, arkGenerationContentItem{
 			Type:     "audio_url",
-			AudioURL: &arkMediaURL{URL: itemURL},
+			AudioURL: &arkMediaURL{URL: item.SignedURL},
 			Role:     "reference_audio",
 		})
 	}

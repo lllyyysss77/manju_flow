@@ -16,6 +16,13 @@ const (
 	AnimationTaskStatusFailed     AnimationTaskStatus = "FAILED"
 )
 
+// AnimationTaskReferenceAsset 动画任务参考素材
+type AnimationTaskReferenceAsset struct {
+	Source   string `json:"source"`
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType,omitempty"`
+}
+
 // SceneAnimation 场景动画模型 - 每个场景可以有多个动画
 type SceneAnimation struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`
@@ -61,31 +68,37 @@ func (SceneAnimationVersion) TableName() string {
 
 // SceneAnimationGenerationTask 动画生成任务模型
 type SceneAnimationGenerationTask struct {
-	ID                     uint                `gorm:"primaryKey" json:"id"`
-	SceneID                uint                `gorm:"not null;index" json:"sceneId"`
-	SceneAnimationID       uint                `gorm:"not null;index" json:"sceneAnimationId"`
-	ArkTaskID              string              `gorm:"size:100;index" json:"arkTaskId"`
-	Status                 AnimationTaskStatus `gorm:"size:20;not null;default:'PENDING';index" json:"status"`
-	Text                   string              `gorm:"type:text;not null" json:"text"`
-	Ratio                  string              `gorm:"size:20;not null" json:"ratio"`
-	Duration               int                 `gorm:"not null" json:"duration"`
-	Model                  string              `gorm:"size:100;not null" json:"model"`
-	ReferenceImageKeysJSON string              `gorm:"column:reference_image_keys;type:text" json:"-"`
-	ReferenceAudioKeysJSON string              `gorm:"column:reference_audio_keys;type:text" json:"-"`
-	ReferenceVideoKeysJSON string              `gorm:"column:reference_video_keys;type:text" json:"-"`
-	ResultVideoUrl         string              `gorm:"type:text" json:"resultVideoUrl"`
-	OutputVersion          int                 `gorm:"default:0" json:"outputVersion"`
-	ErrorMessage           string              `gorm:"type:text" json:"errorMessage"`
-	LastPolledAt           *time.Time          `json:"lastPolledAt"`
-	CompletedAt            *time.Time          `json:"completedAt"`
-	CreatedBy              uint                `gorm:"not null;index" json:"createdBy"`
-	CreatedAt              time.Time           `json:"createdAt"`
-	UpdatedAt              time.Time           `json:"updatedAt"`
-	DeletedAt              gorm.DeletedAt      `gorm:"index" json:"-"`
+	ID                       uint                `gorm:"primaryKey" json:"id"`
+	SceneID                  uint                `gorm:"not null;index" json:"sceneId"`
+	SceneAnimationID         uint                `gorm:"not null;index" json:"sceneAnimationId"`
+	ArkTaskID                string              `gorm:"size:100;index" json:"arkTaskId"`
+	Status                   AnimationTaskStatus `gorm:"size:20;not null;default:'PENDING';index" json:"status"`
+	Text                     string              `gorm:"type:text;not null" json:"text"`
+	Ratio                    string              `gorm:"size:20;not null" json:"ratio"`
+	Duration                 int                 `gorm:"not null" json:"duration"`
+	Model                    string              `gorm:"size:100;not null" json:"model"`
+	ReferenceImageKeysJSON   string              `gorm:"column:reference_image_keys;type:text" json:"-"`
+	ReferenceAudioKeysJSON   string              `gorm:"column:reference_audio_keys;type:text" json:"-"`
+	ReferenceVideoKeysJSON   string              `gorm:"column:reference_video_keys;type:text" json:"-"`
+	ReferenceImageAssetsJSON string              `gorm:"column:reference_image_assets;type:text" json:"-"`
+	ReferenceAudioAssetsJSON string              `gorm:"column:reference_audio_assets;type:text" json:"-"`
+	ReferenceVideoAssetsJSON string              `gorm:"column:reference_video_assets;type:text" json:"-"`
+	ResultVideoUrl           string              `gorm:"type:text" json:"resultVideoUrl"`
+	OutputVersion            int                 `gorm:"default:0" json:"outputVersion"`
+	ErrorMessage             string              `gorm:"type:text" json:"errorMessage"`
+	LastPolledAt             *time.Time          `json:"lastPolledAt"`
+	CompletedAt              *time.Time          `json:"completedAt"`
+	CreatedBy                uint                `gorm:"not null;index" json:"createdBy"`
+	CreatedAt                time.Time           `json:"createdAt"`
+	UpdatedAt                time.Time           `json:"updatedAt"`
+	DeletedAt                gorm.DeletedAt      `gorm:"index" json:"-"`
 
-	ReferenceImageKeys []string `gorm:"-" json:"referenceImageKeys"`
-	ReferenceAudioKeys []string `gorm:"-" json:"referenceAudioKeys"`
-	ReferenceVideoKeys []string `gorm:"-" json:"referenceVideoKeys"`
+	ReferenceImageKeys   []string                      `gorm:"-" json:"referenceImageKeys"`
+	ReferenceAudioKeys   []string                      `gorm:"-" json:"referenceAudioKeys"`
+	ReferenceVideoKeys   []string                      `gorm:"-" json:"referenceVideoKeys"`
+	ReferenceImageAssets []AnimationTaskReferenceAsset `gorm:"-" json:"referenceImageAssets"`
+	ReferenceAudioAssets []AnimationTaskReferenceAsset `gorm:"-" json:"referenceAudioAssets"`
+	ReferenceVideoAssets []AnimationTaskReferenceAsset `gorm:"-" json:"referenceVideoAssets"`
 }
 
 // TableName 指定表名

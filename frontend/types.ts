@@ -141,6 +141,12 @@ export interface SceneAnimationVersion {
 
 export type AnimationTaskStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
 
+export interface AnimationTaskReferenceAsset {
+  source: string;
+  name: string;
+  mimeType?: string;
+}
+
 export interface SceneAnimationGenerationTask {
   id: number;
   sceneId: number;
@@ -154,6 +160,9 @@ export interface SceneAnimationGenerationTask {
   referenceImageKeys?: string[];
   referenceAudioKeys?: string[];
   referenceVideoKeys?: string[];
+  referenceImageAssets?: AnimationTaskReferenceAsset[];
+  referenceAudioAssets?: AnimationTaskReferenceAsset[];
+  referenceVideoAssets?: AnimationTaskReferenceAsset[];
   resultVideoUrl?: string;
   outputVersion?: number;
   errorMessage?: string;

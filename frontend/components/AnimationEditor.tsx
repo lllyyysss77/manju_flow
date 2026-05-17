@@ -253,6 +253,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   }, [activeSceneIndex, sortedScenes.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const directVideoInputRef = useRef<HTMLInputElement>(null);
   const imageReferenceInputRef = useRef<HTMLInputElement>(null);
   const audioReferenceInputRef = useRef<HTMLInputElement>(null);
   const videoReferenceInputRef = useRef<HTMLInputElement>(null);
@@ -261,6 +262,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [versionMap, setVersionMap] = useState<Record<number, SceneAnimationVersion[]>>({});
   const [loadingAnimation, setLoadingAnimation] = useState(false);
   const [animationError, setAnimationError] = useState<string | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingReferenceType, setUploadingReferenceType] = useState<ReferenceMediaType | null>(null);
   const [referenceMedia, setReferenceMedia] = useState<Record<ReferenceMediaType, UploadedReferenceMedia[]>>({
     image: [],
@@ -660,16 +662,58 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }));
   };
 
+  const handleUploadVideo = async (file?: File | null) => {
+    if (!file || !activeScene?.id || !selectedAnimationId) return;
+    setUploadingVideo(true);
+    setAnimationError(null);
+    try {
+      const uploaded = await fileApi.upload(file, 'private');
+      const rawUrl = uploaded.key || uploaded.url;
+      const version = await animationApi.upload(activeScene.id, selectedAnimationId, rawUrl || '');
+      setAnimations(prev =>
+        prev.map(animation =>
+          animation.id === selectedAnimationId
+            ? { ...animation, animationUrl: version.videoUrl, animationVersion: version.version }
+            : animation
+        )
+      );
+      const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
+      await resolveVersions(selectedAnimationId, versionsRes.data || []);
+      setPreviewSource(null);
+      showToast(`视频已上传并保存为版本 #${version.version}`, 'success');
+    } catch (err) {
+      console.error('Upload animation failed', err);
+      setAnimationError(err instanceof Error ? err.message : '上传失败，请重试');
+      showToast('上传失败，请重试', 'error');
+    } finally {
+      setUploadingVideo(false);
+      if (directVideoInputRef.current) directVideoInputRef.current.value = '';
+    }
+  };
+
   const buildReferenceMediaFromKeys = useCallback(
-    (type: ReferenceMediaType, keys?: string[]) =>
-      (keys || [])
-        .filter(Boolean)
-        .map((key, index) => ({
-          id: `reuse-${type}-${index}-${key}`,
-          key,
-          name: buildReferenceMediaName(key, `${REFERENCE_LABELS[type]} ${index + 1}`),
-          url: getFileUrl(key) || key,
-          mimeType: '',
+    (
+      type: ReferenceMediaType,
+      keys?: string[],
+      assets?: Array<{ source: string; name: string; mimeType?: string }>
+    ) =>
+      ((assets && assets.length
+        ? assets.map((asset, index) => ({
+            source: asset.source,
+            name: asset.name || buildReferenceMediaName(asset.source, `${REFERENCE_LABELS[type]} ${index + 1}`),
+            mimeType: asset.mimeType || '',
+          }))
+        : (keys || []).filter(Boolean).map((key, index) => ({
+            source: key,
+            name: buildReferenceMediaName(key, `${REFERENCE_LABELS[type]} ${index + 1}`),
+            mimeType: '',
+          }))) || [])
+        .map((item, index) => ({
+          id: `reuse-${type}-${index}-${item.source}`,
+          key: item.source,
+          name: item.name,
+          url: getFileUrl(item.source) || item.source,
+          mimeType: item.mimeType,
           type,
         })),
     []
@@ -687,9 +731,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setGenerationDuration(task.duration || DEFAULT_VIDEO_DURATION);
       setGenerationModel(task.model || DEFAULT_VIDEO_MODEL);
       setReferenceMedia({
-        image: buildReferenceMediaFromKeys('image', task.referenceImageKeys),
-        audio: buildReferenceMediaFromKeys('audio', task.referenceAudioKeys),
-        video: buildReferenceMediaFromKeys('video', task.referenceVideoKeys),
+        image: buildReferenceMediaFromKeys('image', task.referenceImageKeys, task.referenceImageAssets),
+        audio: buildReferenceMediaFromKeys('audio', task.referenceAudioKeys, task.referenceAudioAssets),
+        video: buildReferenceMediaFromKeys('video', task.referenceVideoKeys, task.referenceVideoAssets),
       });
       showToast('已复用该版本的创作参数与参考媒体', 'success');
     } catch (err) {
@@ -1331,6 +1375,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     >
                       <Plus size={12} /> 新建片段
                     </button>
+                    <input
+                      ref={directVideoInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={e => handleUploadVideo(e.target.files?.[0])}
+                    />
+                    <button
+                      onClick={() => directVideoInputRef.current?.click()}
+                      disabled={!selectedAnimationId || uploadingVideo}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-[11px] rounded-lg border border-white/10 flex items-center gap-1 transition-all disabled:opacity-50"
+                    >
+                      <UploadCloud size={12} /> {uploadingVideo ? '上传中...' : '上传现成视频'}
+                    </button>
                   </div>
                 </div>
 
@@ -1527,6 +1585,18 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                                 复用创作参数
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                directVideoInputRef.current?.click();
+                              }}
+                              disabled={uploadingVideo}
+                              className="px-3 py-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80 text-[11px] disabled:opacity-50"
+                              title="直接上传新视频版本"
+                            >
+                              {uploadingVideo ? '上传中...' : '上传视频版本'}
+                            </button>
                             {playbackUrl && (
                               <button
                                 type="button"
@@ -1555,7 +1625,15 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           </div>
                           <div className="text-center">
                             <p className="text-sm font-bold text-white/40 mb-1">当前片段还没有生成结果</p>
-                            <p className="text-[10px] text-white/20 uppercase tracking-widest">填写提示词与参考媒体后，生成视频会自动归档为新版本</p>
+                            <p className="text-[10px] text-white/20 uppercase tracking-widest">可直接上传现成视频，或填写提示词与参考媒体生成新版本</p>
+                            <button
+                              type="button"
+                              onClick={() => directVideoInputRef.current?.click()}
+                              disabled={uploadingVideo}
+                              className="mt-4 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[12px] border border-white/10 disabled:opacity-50"
+                            >
+                              {uploadingVideo ? '上传中...' : '上传现成视频'}
+                            </button>
                           </div>
                         </div>
                       )}
