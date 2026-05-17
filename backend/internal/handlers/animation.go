@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"manju-flow/internal/config"
@@ -22,10 +24,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
-	arkTaskCreatePath = "/api/plan/v3/contents/generations/tasks"
+	arkTaskCreatePath               = "/api/plan/v3/contents/generations/tasks"
+	animationTaskPollInterval       = 10 * time.Second
+	animationTaskPollBatchSize      = 20
+	animationTaskPollRequestTimeout = 30 * time.Second
+	animationVersionDownloadTimeout = 2 * time.Minute
 )
 
 var (
@@ -37,6 +44,7 @@ var (
 		"doubao-seedance-2-0-260128":      {},
 		"doubao-seedance-2-0-fast-260128": {},
 	}
+	animationTaskPollerRunning atomic.Bool
 )
 
 // AnimationHandler 动画处理器
@@ -449,7 +457,7 @@ func (h *AnimationHandler) saveAnimationVersion(
 		return nil
 	}
 
-	httpClient := &http.Client{Timeout: 2 * time.Minute}
+	httpClient := &http.Client{Timeout: animationVersionDownloadTimeout}
 	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, sourceVideoURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create generated video download request")
@@ -529,6 +537,21 @@ func (h *AnimationHandler) saveAnimationVersion(
 
 	now := time.Now()
 	tx := db.Begin()
+	var lockedTask models.SceneAnimationGenerationTask
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedTask, task.ID).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to lock generation task")
+	}
+	if lockedTask.OutputVersion > 0 && strings.TrimSpace(lockedTask.ResultVideoUrl) != "" {
+		tx.Rollback()
+		task.ResultVideoUrl = lockedTask.ResultVideoUrl
+		task.OutputVersion = lockedTask.OutputVersion
+		task.CompletedAt = lockedTask.CompletedAt
+		task.ErrorMessage = lockedTask.ErrorMessage
+		animation.AnimationUrl = lockedTask.ResultVideoUrl
+		animation.AnimationVersion = lockedTask.OutputVersion
+		return nil
+	}
 	if err := tx.Create(&fileRecord).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to save generated video file")
@@ -564,6 +587,187 @@ func (h *AnimationHandler) saveAnimationVersion(
 	animation.AnimationUrl = objectKey
 	animation.AnimationVersion = newVersion
 	return nil
+}
+
+func (h *AnimationHandler) applyRemoteGenerationTaskStatus(
+	db *gorm.DB,
+	task *models.SceneAnimationGenerationTask,
+	remoteStatus *arkTaskStatusResponse,
+) error {
+	if task == nil || remoteStatus == nil {
+		return nil
+	}
+
+	now := time.Now()
+	nextStatus := mapArkStatusToAnimationTaskStatus(remoteStatus.Status)
+	updates := map[string]any{
+		"status":         nextStatus,
+		"last_polled_at": &now,
+	}
+
+	switch nextStatus {
+	case models.AnimationTaskStatusFailed:
+		message := firstNonEmpty(remoteStatus.Message, stringifyAny(remoteStatus.LastError), stringifyAny(remoteStatus.Error), "Ark video generation failed")
+		updates["error_message"] = message
+		updates["completed_at"] = &now
+	case models.AnimationTaskStatusSucceeded:
+		if strings.TrimSpace(remoteStatus.Content.VideoURL) == "" {
+			updates["status"] = models.AnimationTaskStatusFailed
+			updates["error_message"] = "Ark task succeeded but returned empty video URL"
+			updates["completed_at"] = &now
+			break
+		}
+
+		var scene models.Scene
+		if err := db.First(&scene, task.SceneID).Error; err != nil {
+			return fmt.Errorf("failed to load generation task scene")
+		}
+
+		var animation models.SceneAnimation
+		if err := db.Where("id = ? AND scene_id = ?", task.SceneAnimationID, task.SceneID).First(&animation).Error; err != nil {
+			return fmt.Errorf("failed to load generation task animation")
+		}
+
+		var creator models.User
+		if err := db.First(&creator, task.CreatedBy).Error; err != nil {
+			return fmt.Errorf("failed to load generation task creator")
+		}
+
+		if err := h.saveAnimationVersion(db, task, &scene, &animation, &creator, task.CreatedBy, remoteStatus.Content.VideoURL); err != nil {
+			retryUpdates := map[string]any{
+				"status":         models.AnimationTaskStatusProcessing,
+				"last_polled_at": &now,
+				"error_message":  err.Error(),
+			}
+			if err := db.Model(task).Updates(retryUpdates).Error; err != nil {
+				return fmt.Errorf("failed to update generation task retry state")
+			}
+			task.Status = models.AnimationTaskStatusProcessing
+			task.LastPolledAt = &now
+			task.ErrorMessage = err.Error()
+			return nil
+		}
+
+		updates["status"] = models.AnimationTaskStatusSucceeded
+		updates["error_message"] = ""
+		updates["completed_at"] = task.CompletedAt
+	default:
+		updates["error_message"] = ""
+	}
+
+	if err := db.Model(task).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update generation task")
+	}
+
+	if err := db.First(task, task.ID).Error; err != nil {
+		return fmt.Errorf("failed to reload generation task")
+	}
+
+	return nil
+}
+
+func (h *AnimationHandler) pollGenerationTaskOnce(
+	ctx context.Context,
+	db *gorm.DB,
+	httpClient *http.Client,
+	task *models.SceneAnimationGenerationTask,
+) error {
+	if task == nil {
+		return nil
+	}
+	if task.Status == models.AnimationTaskStatusSucceeded || task.Status == models.AnimationTaskStatusFailed {
+		return nil
+	}
+	if strings.TrimSpace(task.ArkTaskID) == "" {
+		return nil
+	}
+
+	remoteStatus, err := h.fetchArkTaskStatus(ctx, httpClient, task.ArkTaskID)
+	if err != nil {
+		return err
+	}
+
+	return h.applyRemoteGenerationTaskStatus(db, task, remoteStatus)
+}
+
+func (h *AnimationHandler) pollPendingGenerationTasksOnce(ctx context.Context) {
+	if !animationTaskPollerRunning.CompareAndSwap(false, true) {
+		return
+	}
+	defer animationTaskPollerRunning.Store(false)
+
+	db := database.GetDB()
+	if db == nil {
+		return
+	}
+
+	httpClient := &http.Client{Timeout: animationTaskPollRequestTimeout}
+	var lastTaskID uint
+
+	for {
+		var tasks []models.SceneAnimationGenerationTask
+		query := db.Where("status IN ?", []models.AnimationTaskStatus{
+			models.AnimationTaskStatusPending,
+			models.AnimationTaskStatusProcessing,
+		})
+		if lastTaskID > 0 {
+			query = query.Where("id > ?", lastTaskID)
+		}
+		if err := query.
+			Order("id ASC").
+			Order("updated_at ASC").
+			Limit(animationTaskPollBatchSize).
+			Find(&tasks).Error; err != nil {
+			log.Printf("animation task poller: failed to query pending tasks: %v", err)
+			return
+		}
+
+		if len(tasks) == 0 {
+			return
+		}
+
+		for idx := range tasks {
+			task := &tasks[idx]
+			if err := h.pollGenerationTaskOnce(ctx, db, httpClient, task); err != nil {
+				log.Printf("animation task poller: failed to poll task %d (ark=%s): %v", task.ID, task.ArkTaskID, err)
+			}
+		}
+		lastTaskID = tasks[len(tasks)-1].ID
+
+		if len(tasks) < animationTaskPollBatchSize {
+			return
+		}
+	}
+}
+
+func (h *AnimationHandler) StartGenerationTaskPoller(ctx context.Context) {
+	if strings.TrimSpace(config.Cfg.Ark.APIKey) == "" {
+		log.Println("animation task poller disabled: Ark video generation service is not configured")
+		return
+	}
+	if oss.GetClient() == nil {
+		log.Println("animation task poller disabled: file service is not configured")
+		return
+	}
+
+	log.Printf("animation task poller started, interval=%s", animationTaskPollInterval)
+
+	go func() {
+		h.pollPendingGenerationTasksOnce(ctx)
+
+		ticker := time.NewTicker(animationTaskPollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("animation task poller stopped")
+				return
+			case <-ticker.C:
+				h.pollPendingGenerationTasksOnce(ctx)
+			}
+		}
+	}()
 }
 
 // List 获取场景的所有动画
@@ -1322,67 +1526,15 @@ func (h *AnimationHandler) PollGenerationTask(c *gin.Context) {
 		return
 	}
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	httpClient := &http.Client{Timeout: animationTaskPollRequestTimeout}
 	remoteStatus, err := h.fetchArkTaskStatus(c.Request.Context(), httpClient, task.ArkTaskID)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 
-	now := time.Now()
-	nextStatus := mapArkStatusToAnimationTaskStatus(remoteStatus.Status)
-	updates := map[string]any{
-		"status":         nextStatus,
-		"last_polled_at": &now,
-	}
-
-	switch nextStatus {
-	case models.AnimationTaskStatusFailed:
-		message := firstNonEmpty(remoteStatus.Message, stringifyAny(remoteStatus.LastError), stringifyAny(remoteStatus.Error), "Ark video generation failed")
-		updates["error_message"] = message
-		updates["completed_at"] = &now
-	case models.AnimationTaskStatusSucceeded:
-		if strings.TrimSpace(remoteStatus.Content.VideoURL) == "" {
-			updates["status"] = models.AnimationTaskStatusFailed
-			updates["error_message"] = "Ark task succeeded but returned empty video URL"
-			updates["completed_at"] = &now
-		} else {
-			var creator models.User
-			if err := db.First(&creator, task.CreatedBy).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load generation task creator"})
-				return
-			}
-			if err := h.saveAnimationVersion(db, &task, scene, animation, &creator, task.CreatedBy, remoteStatus.Content.VideoURL); err != nil {
-				if err := db.Model(&task).Updates(map[string]any{
-					"status":         models.AnimationTaskStatusProcessing,
-					"last_polled_at": &now,
-					"error_message":  err.Error(),
-				}).Error; err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update generation task retry state"})
-					return
-				}
-				task.Status = models.AnimationTaskStatusProcessing
-				task.LastPolledAt = &now
-				task.ErrorMessage = err.Error()
-				hydrateAnimationTask(&task)
-				c.JSON(http.StatusOK, task)
-				return
-			}
-			updates["status"] = models.AnimationTaskStatusSucceeded
-			updates["error_message"] = ""
-			updates["completed_at"] = task.CompletedAt
-		}
-	default:
-		updates["error_message"] = ""
-	}
-
-	if err := db.Model(&task).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update generation task"})
-		return
-	}
-
-	if err := db.First(&task, task.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload generation task"})
+	if err := h.applyRemoteGenerationTaskStatus(db, &task, remoteStatus); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

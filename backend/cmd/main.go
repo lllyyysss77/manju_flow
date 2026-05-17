@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"manju-flow/internal/config"
 	"manju-flow/internal/database"
+	"manju-flow/internal/handlers"
 	"manju-flow/internal/oss"
 	"manju-flow/internal/routes"
 	"manju-flow/utils"
@@ -54,6 +56,9 @@ func main() {
 
 	// 创建 Gin 引擎
 	r := gin.Default()
+
+	// 启动后台动画生成任务轮询器，避免页面关闭后任务长时间无人轮询而过期
+	handlers.NewAnimationHandler().StartGenerationTaskPoller(context.Background())
 
 	// 配置路由
 	routes.Setup(r)
