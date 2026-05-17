@@ -14,6 +14,7 @@ type Config struct {
 	Database DatabaseConfig
 	OSS      OSSConfig
 	TTS      TTSConfig
+	Ark      ArkConfig
 	App      AppConfig
 	CORS     CORSConfig
 	Auth     AuthConfig
@@ -48,6 +49,12 @@ type TTSConfig struct {
 	APIURL           string
 	JWTPrivateKey    string
 	JWTExpireSeconds int
+}
+
+// ArkConfig 火山引擎内容生成服务配置
+type ArkConfig struct {
+	APIBaseURL string
+	APIKey     string
 }
 
 // ServerConfig 服务器配置
@@ -97,6 +104,10 @@ func Load() *Config {
 			APIURL:           utils.GetEnv("TTS_API_URL", "http://localhost:8000/api/v1/tts"),
 			JWTPrivateKey:    strings.ReplaceAll(utils.GetEnv("TTS_JWT_PRIVATE_KEY", ""), `\n`, "\n"),
 			JWTExpireSeconds: parseIntEnv("TTS_JWT_EXPIRE_SECONDS", 60),
+		},
+		Ark: ArkConfig{
+			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com"),
+			APIKey:     utils.GetEnv("ARK_API_KEY", ""),
 		},
 		CORS: CORSConfig{
 			AllowOrigins: parseOrigins(utils.GetEnv("CORS_ORIGINS", "*")),

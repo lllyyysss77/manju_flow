@@ -132,10 +132,36 @@ export interface SceneAnimation {
 export interface SceneAnimationVersion {
   id: number;
   sceneAnimationId: number;
+  generationTaskId?: number;
   videoUrl: string;
   version: number;
   createdBy?: number;
   createdAt?: string;
+}
+
+export type AnimationTaskStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
+
+export interface SceneAnimationGenerationTask {
+  id: number;
+  sceneId: number;
+  sceneAnimationId: number;
+  arkTaskId?: string;
+  status: AnimationTaskStatus;
+  text: string;
+  ratio: '16:9' | '9:16';
+  duration: number;
+  model: 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128';
+  referenceImageKeys?: string[];
+  referenceAudioKeys?: string[];
+  referenceVideoKeys?: string[];
+  resultVideoUrl?: string;
+  outputVersion?: number;
+  errorMessage?: string;
+  lastPolledAt?: string;
+  completedAt?: string;
+  createdBy?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type VideoStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';

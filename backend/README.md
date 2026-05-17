@@ -47,6 +47,11 @@ docker-compose up -d
 | OSS_ACCESS_KEY_ID | OSS AccessKey ID | - |
 | OSS_ACCESS_KEY_SECRET | OSS AccessKey Secret | - |
 | OSS_BUCKET_NAME | OSS Bucket 名称 | - |
+| TTS_API_URL | 音频克隆服务地址 | - |
+| TTS_JWT_PRIVATE_KEY | 音频克隆服务 JWT 私钥 | - |
+| TTS_JWT_EXPIRE_SECONDS | 音频克隆服务 JWT 时长 | 60 |
+| ARK_API_BASE_URL | 火山引擎 Ark 服务地址 | https://ark.cn-beijing.volces.com |
+| ARK_API_KEY | 火山引擎 Ark API Key | - |
 
 ## API 接口
 

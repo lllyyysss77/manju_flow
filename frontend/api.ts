@@ -266,6 +266,7 @@ import {
   SceneFrameSet,
   SceneFrameSetVersion,
   SceneAnimation,
+  SceneAnimationGenerationTask,
   SceneAnimationVersion,
   Character,
   Lora,
@@ -526,6 +527,11 @@ export interface SceneAnimationVersionListResponse {
   data: SceneAnimationVersion[];
 }
 
+export interface SceneAnimationGenerationTaskListResponse {
+  total: number;
+  data: SceneAnimationGenerationTask[];
+}
+
 export interface CreateAnimationPayload {
   name: string;
   index: number;
@@ -534,6 +540,16 @@ export interface CreateAnimationPayload {
 export interface UpdateAnimationPayload {
   name?: string;
   index?: number;
+}
+
+export interface GenerateAnimationPayload {
+  text: string;
+  ratio: '16:9' | '9:16';
+  duration: number;
+  model: 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128';
+  referenceImageKeys?: string[];
+  referenceAudioKeys?: string[];
+  referenceVideoKeys?: string[];
 }
 
 export const animationApi = {
@@ -557,6 +573,26 @@ export const animationApi = {
       method: 'PUT',
       body: JSON.stringify({ videoUrl }),
     }),
+  listGenerationTasks: (sceneId: number, animationId: number) =>
+    request<SceneAnimationGenerationTaskListResponse>(
+      `/api/scenes/${sceneId}/animations/${animationId}/generation-tasks`
+    ),
+  createGenerationTask: (sceneId: number, animationId: number, payload: GenerateAnimationPayload) =>
+    request<SceneAnimationGenerationTask>(`/api/scenes/${sceneId}/animations/${animationId}/generation-tasks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getGenerationTask: (sceneId: number, animationId: number, taskId: number) =>
+    request<SceneAnimationGenerationTask>(
+      `/api/scenes/${sceneId}/animations/${animationId}/generation-tasks/${taskId}`
+    ),
+  pollGenerationTask: (sceneId: number, animationId: number, taskId: number) =>
+    request<SceneAnimationGenerationTask>(
+      `/api/scenes/${sceneId}/animations/${animationId}/generation-tasks/${taskId}/poll`,
+      {
+        method: 'POST',
+      }
+    ),
   listVersions: (sceneId: number, animationId: number) =>
     request<SceneAnimationVersionListResponse>(`/api/scenes/${sceneId}/animations/${animationId}/versions`),
   revert: (sceneId: number, animationId: number, version: number) =>

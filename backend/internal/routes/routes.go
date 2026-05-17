@@ -122,14 +122,18 @@ func Setup(r *gin.Engine) {
 			animationHandler := handlers.NewAnimationHandler()
 			animations := authorized.Group("/scenes/:sceneId/animations")
 			{
-				animations.GET("", animationHandler.List)                                // 获取动画列表
-				animations.POST("", animationHandler.Create)                             // 创建动画
-				animations.GET("/:animationId", animationHandler.GetByID)                // 获取动画详情
-				animations.PUT("/:animationId", animationHandler.Update)                 // 更新动画信息
-				animations.DELETE("/:animationId", animationHandler.Delete)              // 删除动画
-				animations.PUT("/:animationId/upload", animationHandler.Upload)          // 上传新版本动画
-				animations.GET("/:animationId/versions", animationHandler.ListVersions)  // 动画版本历史
-				animations.PUT("/:animationId/revert/:version", animationHandler.Revert) // 回滚动画
+				animations.GET("", animationHandler.List)                                                           // 获取动画列表
+				animations.POST("", animationHandler.Create)                                                        // 创建动画
+				animations.GET("/:animationId", animationHandler.GetByID)                                           // 获取动画详情
+				animations.PUT("/:animationId", animationHandler.Update)                                            // 更新动画信息
+				animations.DELETE("/:animationId", animationHandler.Delete)                                         // 删除动画
+				animations.PUT("/:animationId/upload", animationHandler.Upload)                                     // 上传新版本动画
+				animations.GET("/:animationId/generation-tasks", animationHandler.ListGenerationTasks)              // 获取生成任务列表
+				animations.POST("/:animationId/generation-tasks", animationHandler.CreateGenerationTask)            // 创建生成任务
+				animations.GET("/:animationId/generation-tasks/:taskId", animationHandler.GetGenerationTask)        // 获取生成任务详情
+				animations.POST("/:animationId/generation-tasks/:taskId/poll", animationHandler.PollGenerationTask) // 轮询生成任务状态
+				animations.GET("/:animationId/versions", animationHandler.ListVersions)                             // 动画版本历史
+				animations.PUT("/:animationId/revert/:version", animationHandler.Revert)                            // 回滚动画
 			}
 
 			// 音频轨道路由（支持多音频）

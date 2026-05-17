@@ -45,19 +45,20 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.Book{},
 		&models.Chapter{},
 		&models.Scene{},
-		&models.SceneReference{},        // 场景参考资料（一对多）
+		&models.SceneReference{}, // 场景参考资料（一对多）
 		&models.File{},
-		&models.SceneFrameSet{},         // 场景帧集（支持多套首尾帧）
-		&models.SceneFrameSetVersion{},  // 帧集版本历史
-		&models.SceneAnimation{},        // 场景动画（支持多套动画）
-		&models.SceneAnimationVersion{}, // 动画版本历史
-		&models.SceneAudio{},            // 场景音频轨道（支持多音频）
-		&models.SceneAudioVersion{},     // 音频版本历史
-		&models.ChapterVideo{},          // 章节交付视频
-		&models.ChapterVideoVersion{},   // 视频版本历史
-		&models.Comment{},               // 评论
-		&models.Character{},             // 角色人设
-		&models.Lora{},                  // LoRA 库
+		&models.SceneFrameSet{},                // 场景帧集（支持多套首尾帧）
+		&models.SceneFrameSetVersion{},         // 帧集版本历史
+		&models.SceneAnimation{},               // 场景动画（支持多套动画）
+		&models.SceneAnimationVersion{},        // 动画版本历史
+		&models.SceneAnimationGenerationTask{}, // 动画生成任务
+		&models.SceneAudio{},                   // 场景音频轨道（支持多音频）
+		&models.SceneAudioVersion{},            // 音频版本历史
+		&models.ChapterVideo{},                 // 章节交付视频
+		&models.ChapterVideoVersion{},          // 视频版本历史
+		&models.Comment{},                      // 评论
+		&models.Character{},                    // 角色人设
+		&models.Lora{},                         // LoRA 库
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

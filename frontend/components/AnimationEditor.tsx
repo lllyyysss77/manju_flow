@@ -1,12 +1,13 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Episode, Scene, SceneAnimation, SceneAnimationVersion, SceneFrameSet } from '../types';
+import { Episode, Scene, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
 import { fileApi, animationApi, storyboardApi, commentApi, getFileUrl, downloadFile } from '../api';
 import {
   MessageSquare,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Image as ImageIcon,
   Info,
   Play,
   Film,
@@ -19,7 +20,11 @@ import {
   Trash2,
   X,
   CheckCircle2,
-  Download
+  Download,
+  Sparkles,
+  UploadCloud,
+  Loader2,
+  Music
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -45,6 +50,51 @@ interface ResolvedSceneFrameSet extends SceneFrameSet {
   resolvedStartFrameUrl?: string;
   resolvedEndFrameUrl?: string;
 }
+
+type ReferenceMediaType = 'image' | 'audio' | 'video';
+type SeedanceModel = 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128';
+type SeedanceRatio = '16:9' | '9:16';
+
+interface UploadedReferenceMedia {
+  id: string;
+  key: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  type: ReferenceMediaType;
+}
+
+const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
+  image: '图片参考',
+  audio: '音频参考',
+  video: '视频参考',
+};
+
+const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-260128';
+const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
+const DEFAULT_VIDEO_DURATION = 8;
+
+const buildDefaultVideoPrompt = (scene?: Scene) =>
+  [scene?.description, scene?.cameraMovement ? `镜头运动：${scene.cameraMovement}` : '', scene?.dialogue ? `对白/旁白：${scene.dialogue}` : '']
+    .map(item => (item || '').trim())
+    .filter(Boolean)
+    .join('\n');
+
+const buildReferenceMediaName = (raw: string, fallback: string) => {
+  const normalized = (raw || '').trim();
+  if (!normalized) return fallback;
+  try {
+    const maybeUrl = normalized.startsWith('http://') || normalized.startsWith('https://')
+      ? new URL(normalized)
+      : null;
+    const pathname = maybeUrl ? maybeUrl.pathname : normalized;
+    const segments = pathname.split('/').filter(Boolean);
+    return decodeURIComponent(segments[segments.length - 1] || fallback);
+  } catch {
+    const segments = normalized.split('/').filter(Boolean);
+    return segments[segments.length - 1] || fallback;
+  }
+};
 
 const StoryboardReferenceCard: React.FC<{
   frameSet: ResolvedSceneFrameSet;
@@ -203,14 +253,27 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   }, [activeSceneIndex, sortedScenes.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const imageReferenceInputRef = useRef<HTMLInputElement>(null);
+  const audioReferenceInputRef = useRef<HTMLInputElement>(null);
+  const videoReferenceInputRef = useRef<HTMLInputElement>(null);
   const [animations, setAnimations] = useState<SceneAnimation[]>([]);
   const [selectedAnimationId, setSelectedAnimationId] = useState<number | null>(null);
   const [versionMap, setVersionMap] = useState<Record<number, SceneAnimationVersion[]>>({});
   const [loadingAnimation, setLoadingAnimation] = useState(false);
   const [animationError, setAnimationError] = useState<string | null>(null);
-  const [uploadingVideo, setUploadingVideo] = useState(false);
-  const [videoDragOver, setVideoDragOver] = useState(false);
+  const [uploadingReferenceType, setUploadingReferenceType] = useState<ReferenceMediaType | null>(null);
+  const [referenceMedia, setReferenceMedia] = useState<Record<ReferenceMediaType, UploadedReferenceMedia[]>>({
+    image: [],
+    audio: [],
+    video: [],
+  });
+  const [generationPrompt, setGenerationPrompt] = useState('');
+  const [generationRatio, setGenerationRatio] = useState<SeedanceRatio>(DEFAULT_VIDEO_RATIO);
+  const [generationDuration, setGenerationDuration] = useState(DEFAULT_VIDEO_DURATION);
+  const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
+  const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
@@ -249,6 +312,17 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   } = useSceneComments(activeScene?.id, 'animation');
   const activeSceneComments = activeScene?.id ? sceneCommentList : [];
   const hasScene = sortedScenes.length > 0;
+  const resetGenerationDraft = useCallback((scene?: Scene) => {
+    setReferenceMedia({
+      image: [],
+      audio: [],
+      video: [],
+    });
+    setGenerationPrompt(buildDefaultVideoPrompt(scene));
+    setGenerationRatio(DEFAULT_VIDEO_RATIO);
+    setGenerationDuration(DEFAULT_VIDEO_DURATION);
+    setGenerationModel(DEFAULT_VIDEO_MODEL);
+  }, []);
 
   useEffect(() => {
     if (!isResizingLeft) return;
@@ -302,15 +376,20 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setAnimations([]);
       setSelectedAnimationId(null);
       setVersionMap({});
+      setGenerationTaskMap({});
+      setPollingTaskId(null);
       setPreviewSource(null);
       setAnimationError(null);
       setLoadingAnimation(false);
       setRenameDraft('');
       setCreatingClip(false);
       setNewClipName('');
+      resetGenerationDraft(undefined);
       return;
     }
     setVersionMap({});
+    setGenerationTaskMap({});
+    setPollingTaskId(null);
     setSelectedAnimationId(null);
     setPreviewSource(null);
     setVersionMenuOpen(false);
@@ -318,6 +397,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setRenameDraft('');
     setCreatingClip(false);
     setNewClipName('');
+    resetGenerationDraft(activeScene);
     let cancelled = false;
     const load = async () => {
       setLoadingAnimation(true);
@@ -344,7 +424,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id]);
+  }, [activeScene, resetGenerationDraft]);
 
   useEffect(() => {
     if (!activeScene?.id) return;
@@ -437,6 +517,33 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   }, [activeScene?.id, selectedAnimationId, animations, resolveVersions]);
 
   useEffect(() => {
+    if (!activeScene?.id || !selectedAnimationId) return;
+    let cancelled = false;
+    const loadTasks = async () => {
+      try {
+        const res = await animationApi.listGenerationTasks(activeScene.id, selectedAnimationId);
+        if (cancelled) return;
+        const tasks = (res.data || []).sort((a, b) => b.id - a.id);
+        setGenerationTaskMap(prev => ({
+          ...prev,
+          [selectedAnimationId]: tasks,
+        }));
+        const latestRunningTask = tasks.find(task => task.status === 'PENDING' || task.status === 'PROCESSING');
+        if (latestRunningTask) {
+          setPollingTaskId(latestRunningTask.id);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to load generation tasks', err);
+      }
+    };
+    loadTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScene?.id, selectedAnimationId]);
+
+  useEffect(() => {
     const current = animations.find(a => a.id === selectedAnimationId);
     setRenameDraft(current?.name || '');
   }, [selectedAnimationId, animations]);
@@ -447,7 +554,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       previewVideoRef.current.currentTime = 0;
     }
     setPreviewSource(null);
-  }, [selectedAnimationId]);
+    setPollingTaskId(null);
+    resetGenerationDraft(activeScene);
+  }, [activeScene, resetGenerationDraft, selectedAnimationId]);
 
   useEffect(() => {
     if (!selectedAnimationId && versionMenuOpen) {
@@ -471,6 +580,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const selectedAnimation = animations.find(a => a.id === selectedAnimationId) || null;
   const currentVersions = selectedAnimation ? versionMap[selectedAnimation.id] || [] : [];
+  const currentGenerationTasks = selectedAnimation ? generationTaskMap[selectedAnimation.id] || [] : [];
+  const activeGenerationTask =
+    (pollingTaskId ? currentGenerationTasks.find(task => task.id === pollingTaskId) : undefined) ||
+    currentGenerationTasks.find(task => task.status === 'PENDING' || task.status === 'PROCESSING') ||
+    currentGenerationTasks[0];
   const normalizedVersionNumber =
     selectedAnimation?.animationVersion && selectedAnimation.animationVersion > 0
       ? selectedAnimation.animationVersion
@@ -483,6 +597,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const currentVersionLabel = normalizedVersionNumber ?? '—';
   const storyboardReferenceList = activeScene?.id ? framePreviewCache[activeScene.id] || [] : [];
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
+  const canGenerateVideo =
+    Boolean(selectedAnimationId) &&
+    Boolean(generationPrompt.trim()) &&
+    !generatingVideo &&
+    !uploadingReferenceType;
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.pause();
@@ -490,48 +609,220 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setIsPlaying(false);
   }, [playbackUrl]);
 
-  const handleUploadVideo = async (file?: File | null) => {
-    if (!file || !activeScene?.id || !selectedAnimationId) return;
-    setUploadingVideo(true);
+  const clearReferenceInput = (type: ReferenceMediaType) => {
+    const refMap = {
+      image: imageReferenceInputRef,
+      audio: audioReferenceInputRef,
+      video: videoReferenceInputRef,
+    };
+    const targetRef = refMap[type];
+    if (targetRef.current) targetRef.current.value = '';
+  };
+
+  const handleUploadReferenceMedia = async (type: ReferenceMediaType, files?: FileList | null) => {
+    if (!files?.length) return;
+    setUploadingReferenceType(type);
     setAnimationError(null);
     try {
-      const uploaded = await fileApi.upload(file, 'private');
-      const rawUrl = uploaded.key || uploaded.url;
-      const version = await animationApi.upload(activeScene.id, selectedAnimationId, rawUrl || '');
-      setAnimations(prev =>
-        prev.map(a =>
-          a.id === selectedAnimationId
-            ? { ...a, animationUrl: version.videoUrl, animationVersion: version.version }
-            : a
-        )
-      );
-      const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
-      await resolveVersions(selectedAnimationId, versionsRes.data || []);
-      showToast('新动画版本已上传', 'success');
-      setPreviewSource(null);
+      const uploadedItems: UploadedReferenceMedia[] = [];
+      for (const file of Array.from(files)) {
+        const uploaded = await fileApi.upload(file, 'private');
+        const key = uploaded.key || '';
+        const url = getFileUrl(key || uploaded.url) || uploaded.url;
+        uploadedItems.push({
+          id: `${type}-${key || uploaded.url}-${Date.now()}-${uploadedItems.length}`,
+          key,
+          name: file.name,
+          url,
+          mimeType: file.type || uploaded.mimeType || '',
+          type,
+        });
+      }
+      setReferenceMedia(prev => ({
+        ...prev,
+        [type]: [...prev[type], ...uploadedItems],
+      }));
+      showToast(`${REFERENCE_LABELS[type]}已上传`, 'success');
     } catch (err) {
-      console.error('Upload animation failed', err);
-      setAnimationError(err instanceof Error ? err.message : '上传失败，请重试');
-      showToast('上传失败，请重试', 'error');
+      console.error('Upload reference media failed', err);
+      setAnimationError(err instanceof Error ? err.message : '参考媒体上传失败');
+      showToast('参考媒体上传失败，请重试', 'error');
     } finally {
-      setUploadingVideo(false);
-      if (videoInputRef.current) videoInputRef.current.value = '';
+      setUploadingReferenceType(null);
+      clearReferenceInput(type);
     }
   };
 
-  const handleVideoDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (uploadingVideo) {
-      setVideoDragOver(false);
+  const handleRemoveReferenceMedia = (type: ReferenceMediaType, mediaId: string) => {
+    setReferenceMedia(prev => ({
+      ...prev,
+      [type]: prev[type].filter(item => item.id !== mediaId),
+    }));
+  };
+
+  const buildReferenceMediaFromKeys = useCallback(
+    (type: ReferenceMediaType, keys?: string[]) =>
+      (keys || [])
+        .filter(Boolean)
+        .map((key, index) => ({
+          id: `reuse-${type}-${index}-${key}`,
+          key,
+          name: buildReferenceMediaName(key, `${REFERENCE_LABELS[type]} ${index + 1}`),
+          url: getFileUrl(key) || key,
+          mimeType: '',
+          type,
+        })),
+    []
+  );
+
+  const handleReuseGenerationTaskParams = async (taskId: number) => {
+    if (!activeScene?.id || !selectedAnimationId) return;
+    try {
+      const task =
+        currentGenerationTasks.find(item => item.id === taskId) ||
+        await animationApi.getGenerationTask(activeScene.id, selectedAnimationId, taskId);
+
+      setGenerationPrompt(task.text || '');
+      setGenerationRatio(task.ratio || DEFAULT_VIDEO_RATIO);
+      setGenerationDuration(task.duration || DEFAULT_VIDEO_DURATION);
+      setGenerationModel(task.model || DEFAULT_VIDEO_MODEL);
+      setReferenceMedia({
+        image: buildReferenceMediaFromKeys('image', task.referenceImageKeys),
+        audio: buildReferenceMediaFromKeys('audio', task.referenceAudioKeys),
+        video: buildReferenceMediaFromKeys('video', task.referenceVideoKeys),
+      });
+      showToast('已复用该版本的创作参数与参考媒体', 'success');
+    } catch (err) {
+      console.error('Reuse generation task params failed', err);
+      showToast('复用创作参数失败，请重试', 'error');
+    }
+  };
+
+  const handleGenerateVideo = async () => {
+    if (!activeScene?.id || !selectedAnimationId) return;
+    const text = generationPrompt.trim();
+    if (!text) {
+      showToast('请输入视频提示词', 'error');
       return;
     }
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleUploadVideo(file);
+    setGeneratingVideo(true);
+    setAnimationError(null);
+    try {
+      const task = await animationApi.createGenerationTask(activeScene.id, selectedAnimationId, {
+        text,
+        ratio: generationRatio,
+        duration: generationDuration,
+        model: generationModel,
+        referenceImageKeys: referenceMedia.image.map(item => item.key).filter(Boolean),
+        referenceAudioKeys: referenceMedia.audio.map(item => item.key).filter(Boolean),
+        referenceVideoKeys: referenceMedia.video.map(item => item.key).filter(Boolean),
+      });
+      setGenerationTaskMap(prev => {
+        const existing = prev[selectedAnimationId] || [];
+        return {
+          ...prev,
+          [selectedAnimationId]: [task, ...existing.filter(item => item.id !== task.id)].sort((a, b) => b.id - a.id),
+        };
+      });
+      setPollingTaskId(task.id);
+      setPreviewSource(null);
+      if (task.status === 'FAILED') {
+        setAnimationError(task.errorMessage || '视频任务创建失败');
+        showToast(task.errorMessage || '视频任务创建失败', 'error');
+      } else {
+        showToast('视频生成任务已创建，后台将持续轮询状态', 'success');
+      }
+    } catch (err) {
+      console.error('Generate animation failed', err);
+      setAnimationError(err instanceof Error ? err.message : '视频生成失败');
+      showToast(err instanceof Error ? err.message : '视频生成失败，请重试', 'error');
+    } finally {
+      setGeneratingVideo(false);
     }
-    setVideoDragOver(false);
   };
+
+  useEffect(() => {
+    if (!activeScene?.id || !selectedAnimationId || !pollingTaskId) return;
+    const task = currentGenerationTasks.find(item => item.id === pollingTaskId);
+    if (!task || (task.status !== 'PENDING' && task.status !== 'PROCESSING')) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const scheduleNext = (delay = 10000) => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        pollTask();
+      }, delay);
+    };
+
+    const pollTask = async () => {
+      try {
+        const nextTask = await animationApi.pollGenerationTask(activeScene.id, selectedAnimationId, pollingTaskId);
+        if (cancelled) return;
+
+        setGenerationTaskMap(prev => {
+          const existing = prev[selectedAnimationId] || [];
+          return {
+            ...prev,
+            [selectedAnimationId]: [nextTask, ...existing.filter(item => item.id !== nextTask.id)].sort((a, b) => b.id - a.id),
+          };
+        });
+
+        if (nextTask.status === 'SUCCEEDED') {
+          setPollingTaskId(null);
+          if (nextTask.outputVersion && nextTask.resultVideoUrl) {
+            setAnimations(prev =>
+              prev.map(animation =>
+                animation.id === selectedAnimationId
+                  ? {
+                      ...animation,
+                      animationUrl: nextTask.resultVideoUrl,
+                      animationVersion: nextTask.outputVersion,
+                    }
+                  : animation
+              )
+            );
+          }
+          const versionsRes = await animationApi.listVersions(activeScene.id, selectedAnimationId);
+          if (cancelled) return;
+          await resolveVersions(selectedAnimationId, versionsRes.data || []);
+          setPreviewSource(null);
+          if (task.status !== 'SUCCEEDED') {
+            showToast(
+              nextTask.outputVersion
+                ? `视频已生成并保存为版本 #${nextTask.outputVersion}`
+                : '视频任务已完成',
+              'success'
+            );
+          }
+          return;
+        }
+
+        if (nextTask.status === 'FAILED') {
+          setPollingTaskId(null);
+          setAnimationError(nextTask.errorMessage || '视频生成失败');
+          if (task.status !== 'FAILED') {
+            showToast(nextTask.errorMessage || '视频生成失败', 'error');
+          }
+          return;
+        }
+
+        scheduleNext();
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Poll generation task failed', err);
+        scheduleNext(10000);
+      }
+    };
+
+    scheduleNext(10000);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeScene?.id, currentGenerationTasks, pollingTaskId, resolveVersions, selectedAnimationId, showToast]);
 
   const handlePreviewVersion = async (version: number) => {
     if (!selectedAnimationId) return;
@@ -588,7 +879,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setCreatingClip(false);
       setVersionMenuOpen(false);
       setPreviewSource(null);
-      showToast('已创建动画片段，上传版本以开始', 'success');
+      showToast('已创建动画片段，配置参考媒体后即可生成视频', 'success');
     } catch (err) {
       console.error('Create animation failed', err);
       setAnimationError(err instanceof Error ? err.message : '创建动画片段失败');
@@ -624,6 +915,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       const nextList = animations.filter(a => a.id !== animationId);
       setAnimations(nextList);
       setVersionMap(prev => {
+        const copy = { ...prev };
+        delete copy[animationId];
+        return copy;
+      });
+      setGenerationTaskMap(prev => {
         const copy = { ...prev };
         delete copy[animationId];
         return copy;
@@ -683,6 +979,97 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       previewVideoRef.current.currentTime = 0;
     }
     setPreviewSource(null);
+  };
+
+  const renderReferenceMediaSection = (
+    type: ReferenceMediaType,
+    options: {
+      title: string;
+      description: string;
+      accept: string;
+      icon: React.ReactNode;
+    }
+  ) => {
+    const inputRefMap = {
+      image: imageReferenceInputRef,
+      audio: audioReferenceInputRef,
+      video: videoReferenceInputRef,
+    };
+    const items = referenceMedia[type];
+    const isUploading = uploadingReferenceType === type;
+    const inputRef = inputRefMap[type];
+
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-white/5 text-white/70">{options.icon}</div>
+            <div>
+              <div className="text-sm font-semibold text-white">{options.title}</div>
+              <p className="text-[11px] text-white/40">{options.description}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={isUploading}
+            className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[11px] text-white/80 transition-all disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {isUploading ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+            {isUploading ? '上传中...' : `添加${options.title}`}
+          </button>
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={options.accept}
+          multiple
+          className="hidden"
+          onChange={e => handleUploadReferenceMedia(type, e.target.files)}
+        />
+
+        {items.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {items.map(item => (
+              <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10">
+                  <div className="min-w-0">
+                    <p className="text-sm text-white truncate">{item.name}</p>
+                    <p className="text-[10px] text-white/35">{REFERENCE_LABELS[type]}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveReferenceMedia(type, item.id)}
+                    className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                <div className="p-3">
+                  {type === 'image' ? (
+                    <button
+                      type="button"
+                      onClick={() => openImagePreview(item.url, item.name)}
+                      className="w-full rounded-lg overflow-hidden border border-white/10 bg-black"
+                    >
+                      <img src={item.url} alt={item.name} className="w-full aspect-video object-contain bg-black" />
+                    </button>
+                  ) : type === 'audio' ? (
+                    <audio controls src={item.url} className="w-full h-10" />
+                  ) : (
+                    <video controls src={item.url} className="w-full aspect-video rounded-lg bg-black object-contain" />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-4 py-8 text-center text-[12px] text-white/35">
+            暂无{options.title}，可按需上传多个文件作为生成参考
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!hasChapters) {
@@ -799,10 +1186,16 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             </div>
           </div>
         )}
-        {hasScene && (loadingAnimation || resolvingVersion) && (
+        {hasScene && (loadingAnimation || resolvingVersion || generatingVideo || Boolean(activeGenerationTask && (activeGenerationTask.status === 'PENDING' || activeGenerationTask.status === 'PROCESSING'))) && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-black/60 border border-white/10 rounded-lg text-white/70 text-sm backdrop-blur-sm">
-              {loadingAnimation ? '正在同步动画数据...' : '正在解析历史版本...'}
+              {loadingAnimation
+                ? '正在同步动画数据...'
+                : resolvingVersion
+                  ? '正在解析历史版本...'
+                  : generatingVideo
+                    ? '正在创建 Seedance 视频任务...'
+                    : 'Seedance 任务进行中，可稍后继续回来轮询状态...'}
             </div>
           </div>
         )}
@@ -917,30 +1310,15 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                 </div>
               </div>
 
-              <div
-                className={`bg-[#111111] rounded-2xl border p-5 space-y-5 shadow-xl transition-colors ${
-                  videoDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
-                }`}
-                onDragOver={e => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'copy';
-                  setVideoDragOver(true);
-                }}
-                onDragEnter={e => {
-                  e.preventDefault();
-                  setVideoDragOver(true);
-                }}
-                onDragLeave={() => setVideoDragOver(false)}
-                onDrop={handleVideoDrop}
-              >
+              <div className="bg-[#111111] rounded-2xl border border-white/5 p-5 space-y-5 shadow-xl">
                 <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-purple-600/20 text-purple-300">
-                      <Film size={18} />
+                    <div className="p-2 rounded-lg bg-blue-600/20 text-blue-200">
+                      <Sparkles size={18} />
                     </div>
                     <div>
-                      <span className="text-sm font-bold text-white">动画片段</span>
-                      <p className="text-[11px] text-white/40">为场景拆分多段动画，独立留存版本</p>
+                      <span className="text-sm font-bold text-white">视频制作工作台</span>
+                      <p className="text-[11px] text-white/40">使用 Seedance 2.0 生成视频，结果自动沉淀为版本历史</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 relative flex-wrap">
@@ -953,13 +1331,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     >
                       <Plus size={12} /> 新建片段
                     </button>
-                    <input
-                      ref={videoInputRef}
-                      type="file"
-                      accept="video/*"
-                      className="hidden"
-                      onChange={e => handleUploadVideo(e.target.files?.[0])}
-                    />
                   </div>
                 </div>
 
@@ -1130,7 +1501,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                       </div>
                     </div>
 
-                    <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-white/5 bg-zinc-900 overflow-hidden relative group shadow-lg">
+                    <div className="aspect-video w-full rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden relative group shadow-lg">
                       {displayClipUrl ? (
                         <>
                           <video
@@ -1143,6 +1514,19 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           />
                           {/* 右上角工具栏 */}
                           <div className="absolute top-3 right-3 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {currentVersionData?.generationTaskId && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReuseGenerationTaskParams(currentVersionData.generationTaskId!);
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80 text-[11px]"
+                                title="复用本版本的 Seedance 创作参数"
+                              >
+                                复用创作参数
+                              </button>
+                            )}
                             {playbackUrl && (
                               <button
                                 type="button"
@@ -1153,17 +1537,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                                 <Download size={14} />
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                videoInputRef.current?.click();
-                              }}
-                              disabled={uploadingVideo}
-                              className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
-                            >
-                              {uploadingVideo ? '上传中...' : '重新上传'}
-                            </button>
                           </div>
                           {!isPlaying && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer" onClick={togglePlay}>
@@ -1175,18 +1548,228 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         </>
                       ) : (
                         <div
-                          className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors cursor-pointer"
-                          onClick={() => videoInputRef.current?.click()}
+                          className="w-full h-full flex flex-col items-center justify-center gap-4 group-hover:bg-white/5 transition-colors"
                         >
                           <div className="p-6 rounded-full bg-white/5 text-white/20 group-hover:bg-blue-600 group-hover:text-white transition-all">
                             <MonitorPlay size={48} />
                           </div>
                           <div className="text-center">
-                            <p className="text-sm font-bold text-white/40 mb-1">拖拽或点击上传动画片段</p>
-                            <p className="text-[10px] text-white/20 uppercase tracking-widest">上传后全组成员均可即时查看</p>
+                            <p className="text-sm font-bold text-white/40 mb-1">当前片段还没有生成结果</p>
+                            <p className="text-[10px] text-white/20 uppercase tracking-widest">填写提示词与参考媒体后，生成视频会自动归档为新版本</p>
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5 space-y-5">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-200">
+                            <Film size={18} />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-semibold text-white">Seedance 视频制作 Block</h3>
+                            <p className="text-[11px] text-white/45">支持图片 / 音频 / 视频参考，`generate_audio` 固定开启，`watermark` 固定关闭。</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-white/35 uppercase tracking-[0.2em]">
+                          <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">Auto Save Version</span>
+                          <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">Async Task</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
+                          <button
+                            type="button"
+                            onClick={() => setGenerationPrompt(buildDefaultVideoPrompt(activeScene))}
+                            className="text-[11px] text-white/45 hover:text-white transition-colors"
+                          >
+                            重新带入场景信息
+                          </button>
+                        </div>
+                        <textarea
+                          value={generationPrompt}
+                          onChange={e => setGenerationPrompt(e.target.value)}
+                          placeholder="描述镜头构图、时序动作、氛围、运镜方式，以及如何使用各个参考媒体..."
+                          className="w-full min-h-[180px] rounded-2xl border border-white/10 bg-[#111111] px-4 py-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500/40 resize-none leading-relaxed"
+                        />
+                        <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
+                          <span>建议在提示词中明确提及“图片 1 / 音频 1 / 视频 1”等引用顺序，便于模型理解。</span>
+                          <span>{generationPrompt.trim().length} chars</span>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-3">
+                        {renderReferenceMediaSection('image', {
+                          title: '图片参考',
+                          description: '可上传角色定帧、分镜首尾帧或视觉风格图。',
+                          accept: 'image/*',
+                          icon: <ImageIcon size={16} />,
+                        })}
+                        {renderReferenceMediaSection('audio', {
+                          title: '音频参考',
+                          description: '可上传背景音乐、声线或节奏样本，上传后可直接试听。',
+                          accept: 'audio/*',
+                          icon: <Music size={16} />,
+                        })}
+                        {renderReferenceMediaSection('video', {
+                          title: '视频参考',
+                          description: '可上传动作、镜头语言或节奏参考视频，上传后可直接预览。',
+                          accept: 'video/*',
+                          icon: <MonitorPlay size={16} />,
+                        })}
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-[1.2fr_1.2fr_0.9fr]">
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频模型</div>
+                          <div className="grid gap-2">
+                            {[
+                              { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
+                              { value: 'doubao-seedance-2-0-fast-260128' as SeedanceModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
+                            ].map(option => {
+                              const active = generationModel === option.value;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setGenerationModel(option.value)}
+                                  className={`rounded-xl border p-3 text-left transition-all ${
+                                    active
+                                      ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.12)]'
+                                      : 'border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.04]'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-medium text-white">{option.label}</p>
+                                    <span className="text-[10px] text-white/35">{option.value}</span>
+                                  </div>
+                                  <p className="mt-1 text-[11px] text-white/40">{option.desc}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">画面比例</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(['16:9', '9:16'] as SeedanceRatio[]).map(ratio => {
+                              const active = generationRatio === ratio;
+                              return (
+                                <button
+                                  key={ratio}
+                                  type="button"
+                                  onClick={() => setGenerationRatio(ratio)}
+                                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+                                    active
+                                      ? 'border-blue-500/60 bg-blue-500/12 text-white'
+                                      : 'border-white/10 bg-black/20 text-white/60 hover:border-white/25 hover:text-white'
+                                  }`}
+                                >
+                                  {ratio}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="pt-2 space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频时长</div>
+                              <div className="text-sm font-semibold text-white">{generationDuration}s</div>
+                            </div>
+                            <input
+                              type="range"
+                              min={5}
+                              max={15}
+                              step={1}
+                              value={generationDuration}
+                              onChange={e => setGenerationDuration(Number(e.target.value))}
+                              className="w-full accent-blue-500"
+                            />
+                            <div className="flex items-center justify-between text-[11px] text-white/30">
+                              <span>5s</span>
+                              <span>15s</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/10 via-cyan-500/5 to-transparent p-4 flex flex-col justify-between gap-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-blue-200">
+                              <Sparkles size={16} />
+                              <span className="text-[10px] font-bold uppercase tracking-[0.22em]">生成设置</span>
+                            </div>
+                            <div className="space-y-2 text-[12px] text-white/60">
+                              <div className="flex items-center justify-between gap-2">
+                                <span>图片参考</span>
+                                <span>{referenceMedia.image.length}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span>音频参考</span>
+                                <span>{referenceMedia.audio.length}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span>视频参考</span>
+                                <span>{referenceMedia.video.length}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span>输出时长</span>
+                                <span>{generationDuration}s</span>
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-[0.18em] text-white/35">最新任务</span>
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                    activeGenerationTask?.status === 'SUCCEEDED'
+                                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                                      : activeGenerationTask?.status === 'FAILED'
+                                        ? 'border-red-500/40 bg-red-500/15 text-red-200'
+                                        : activeGenerationTask
+                                          ? 'border-amber-500/40 bg-amber-500/15 text-amber-100'
+                                          : 'border-white/10 bg-white/5 text-white/40'
+                                  }`}
+                                >
+                                  {activeGenerationTask?.status || 'IDLE'}
+                                </span>
+                              </div>
+                              {activeGenerationTask ? (
+                                <div className="space-y-1 text-[11px] text-white/45">
+                                  <div className="break-all">Task #{activeGenerationTask.id}{activeGenerationTask.arkTaskId ? ` · ${activeGenerationTask.arkTaskId}` : ''}</div>
+                                  {activeGenerationTask.outputVersion ? (
+                                    <div>已落库为版本 #{activeGenerationTask.outputVersion}</div>
+                                  ) : activeGenerationTask.errorMessage ? (
+                                    <div className="text-red-200/80">{activeGenerationTask.errorMessage}</div>
+                                  ) : (
+                                    <div>任务创建后可离开页面，稍后回来继续轮询。</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-white/35">尚未创建生成任务</div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={handleGenerateVideo}
+                              disabled={!canGenerateVideo}
+                              className="w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/35 disabled:border-white/10 text-white text-sm font-semibold border border-blue-500/60 shadow-lg transition-all flex items-center justify-center gap-2"
+                            >
+                              {generatingVideo ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                              {generatingVideo ? '正在生成视频...' : '生成并保存为新版本'}
+                            </button>
+                            <p className="text-[11px] text-white/35 leading-relaxed">
+                              生成请求会自动轮询任务状态，完成后把结果视频保存进当前片段版本历史。
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1196,7 +1779,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     </div>
                     <div className="space-y-1">
                       <p className="text-white font-semibold text-sm">当前场景还没有动画片段</p>
-                      <p className="text-white/50 text-[12px]">为不同镜头创建独立片段，独立管理版本</p>
+                      <p className="text-white/50 text-[12px]">先创建片段，再配置 Seedance 参考媒体和提示词</p>
                     </div>
                     <button
                       onClick={() => {
@@ -1217,20 +1800,27 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             {animations.length === 0 ? (
               <div className="flex items-center gap-2 text-white/40">
                 <Info size={14} className="text-amber-300" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景还没有动画片段 · 先创建片段再上传版本</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景还没有动画片段 · 先创建片段再生成 Seedance 视频</span>
+              </div>
+            ) : activeGenerationTask && (activeGenerationTask.status === 'PENDING' || activeGenerationTask.status === 'PROCESSING') ? (
+              <div className="flex items-center gap-2 text-white/40">
+                <Info size={14} className="text-blue-300" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">
+                  {selectedAnimation?.name || '动画片段'} 任务进行中 · Task #{activeGenerationTask.id} 可稍后继续轮询
+                </span>
               </div>
             ) : displayClipUrl ? (
               <div className="flex items-center gap-2 text-white/30">
                 <CheckCircle2 size={14} className="text-green-500/50" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">
-                  {selectedAnimation?.name || '动画片段'} 已发布 (实时审核模式已开启)
+                  {selectedAnimation?.name || '动画片段'} 已生成当前版本 · 可继续追加新版本
                 </span>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-white/40">
                 <Info size={14} className="text-amber-300" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">
-                  {selectedAnimation?.name || '动画片段'} 暂无视频 · 上传后即可预览
+                  {selectedAnimation?.name || '动画片段'} 暂无视频 · 填写参数后即可生成
                 </span>
               </div>
             )}

@@ -6,6 +6,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// AnimationTaskStatus 动画生成任务状态
+type AnimationTaskStatus string
+
+const (
+	AnimationTaskStatusPending    AnimationTaskStatus = "PENDING"
+	AnimationTaskStatusProcessing AnimationTaskStatus = "PROCESSING"
+	AnimationTaskStatusSucceeded  AnimationTaskStatus = "SUCCEEDED"
+	AnimationTaskStatusFailed     AnimationTaskStatus = "FAILED"
+)
+
 // SceneAnimation 场景动画模型 - 每个场景可以有多个动画
 type SceneAnimation struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`
@@ -31,6 +41,7 @@ func (SceneAnimation) TableName() string {
 type SceneAnimationVersion struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`
 	SceneAnimationID uint           `gorm:"not null;index" json:"sceneAnimationId"`
+	GenerationTaskID *uint          `gorm:"index" json:"generationTaskId"`
 	VideoUrl         string         `gorm:"type:text;not null" json:"videoUrl"` // 视频URL
 	Version          int            `gorm:"not null" json:"version"`            // 版本号，从1开始递增
 	CreatedBy        uint           `gorm:"not null" json:"createdBy"`          // 创建者ID
@@ -38,13 +49,48 @@ type SceneAnimationVersion struct {
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联（无外键约束，通过业务逻辑保证数据完整性）
-	SceneAnimation SceneAnimation `gorm:"foreignKey:SceneAnimationID;constraint:false" json:"-"`
-	Creator        User           `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
+	SceneAnimation SceneAnimation               `gorm:"foreignKey:SceneAnimationID;constraint:false" json:"-"`
+	GenerationTask SceneAnimationGenerationTask `gorm:"foreignKey:GenerationTaskID;constraint:false" json:"-"`
+	Creator        User                         `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
 }
 
 // TableName 指定表名
 func (SceneAnimationVersion) TableName() string {
 	return "scene_animation_versions"
+}
+
+// SceneAnimationGenerationTask 动画生成任务模型
+type SceneAnimationGenerationTask struct {
+	ID                     uint                `gorm:"primaryKey" json:"id"`
+	SceneID                uint                `gorm:"not null;index" json:"sceneId"`
+	SceneAnimationID       uint                `gorm:"not null;index" json:"sceneAnimationId"`
+	ArkTaskID              string              `gorm:"size:100;index" json:"arkTaskId"`
+	Status                 AnimationTaskStatus `gorm:"size:20;not null;default:'PENDING';index" json:"status"`
+	Text                   string              `gorm:"type:text;not null" json:"text"`
+	Ratio                  string              `gorm:"size:20;not null" json:"ratio"`
+	Duration               int                 `gorm:"not null" json:"duration"`
+	Model                  string              `gorm:"size:100;not null" json:"model"`
+	ReferenceImageKeysJSON string              `gorm:"column:reference_image_keys;type:text" json:"-"`
+	ReferenceAudioKeysJSON string              `gorm:"column:reference_audio_keys;type:text" json:"-"`
+	ReferenceVideoKeysJSON string              `gorm:"column:reference_video_keys;type:text" json:"-"`
+	ResultVideoUrl         string              `gorm:"type:text" json:"resultVideoUrl"`
+	OutputVersion          int                 `gorm:"default:0" json:"outputVersion"`
+	ErrorMessage           string              `gorm:"type:text" json:"errorMessage"`
+	LastPolledAt           *time.Time          `json:"lastPolledAt"`
+	CompletedAt            *time.Time          `json:"completedAt"`
+	CreatedBy              uint                `gorm:"not null;index" json:"createdBy"`
+	CreatedAt              time.Time           `json:"createdAt"`
+	UpdatedAt              time.Time           `json:"updatedAt"`
+	DeletedAt              gorm.DeletedAt      `gorm:"index" json:"-"`
+
+	ReferenceImageKeys []string `gorm:"-" json:"referenceImageKeys"`
+	ReferenceAudioKeys []string `gorm:"-" json:"referenceAudioKeys"`
+	ReferenceVideoKeys []string `gorm:"-" json:"referenceVideoKeys"`
+}
+
+// TableName 指定表名
+func (SceneAnimationGenerationTask) TableName() string {
+	return "scene_animation_generation_tasks"
 }
 
 // SceneAnimationListResponse 动画列表响应
@@ -57,6 +103,12 @@ type SceneAnimationListResponse struct {
 type SceneAnimationVersionListResponse struct {
 	Total int64                   `json:"total"`
 	Data  []SceneAnimationVersion `json:"data"`
+}
+
+// SceneAnimationGenerationTaskListResponse 生成任务列表响应
+type SceneAnimationGenerationTaskListResponse struct {
+	Total int64                          `json:"total"`
+	Data  []SceneAnimationGenerationTask `json:"data"`
 }
 
 // CreateSceneAnimationRequest 创建动画请求
@@ -74,4 +126,15 @@ type UpdateSceneAnimationRequest struct {
 // UploadAnimationRequest 上传动画请求
 type UploadAnimationRequest struct {
 	VideoUrl string `json:"videoUrl" binding:"required"`
+}
+
+// GenerateSceneAnimationRequest 使用视频模型生成动画请求
+type GenerateSceneAnimationRequest struct {
+	Text               string   `json:"text" binding:"required"`
+	Ratio              string   `json:"ratio" binding:"required"`
+	Duration           int      `json:"duration" binding:"required"`
+	Model              string   `json:"model" binding:"required"`
+	ReferenceImageKeys []string `json:"referenceImageKeys"`
+	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
+	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
 }

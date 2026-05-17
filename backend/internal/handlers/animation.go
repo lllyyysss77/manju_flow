@@ -1,13 +1,42 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"net/url"
+	"path"
 	"strconv"
+	"strings"
+	"time"
 
+	"manju-flow/internal/config"
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
+	"manju-flow/internal/oss"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+const (
+	arkTaskCreatePath = "/api/plan/v3/contents/generations/tasks"
+)
+
+var (
+	allowedAnimationRatios = map[string]struct{}{
+		"16:9": {},
+		"9:16": {},
+	}
+	allowedAnimationModels = map[string]struct{}{
+		"doubao-seedance-2-0-260128":      {},
+		"doubao-seedance-2-0-fast-260128": {},
+	}
 )
 
 // AnimationHandler 动画处理器
@@ -16,6 +45,407 @@ type AnimationHandler struct{}
 // NewAnimationHandler 创建动画处理器
 func NewAnimationHandler() *AnimationHandler {
 	return &AnimationHandler{}
+}
+
+type arkMediaURL struct {
+	URL string `json:"url"`
+}
+
+type arkGenerationContentItem struct {
+	Type     string       `json:"type"`
+	Text     string       `json:"text,omitempty"`
+	ImageURL *arkMediaURL `json:"image_url,omitempty"`
+	VideoURL *arkMediaURL `json:"video_url,omitempty"`
+	AudioURL *arkMediaURL `json:"audio_url,omitempty"`
+	Role     string       `json:"role,omitempty"`
+}
+
+type arkGenerationRequest struct {
+	Model         string                     `json:"model"`
+	Content       []arkGenerationContentItem `json:"content"`
+	GenerateAudio bool                       `json:"generate_audio"`
+	Ratio         string                     `json:"ratio"`
+	Duration      int                        `json:"duration"`
+	Watermark     bool                       `json:"watermark"`
+}
+
+type arkTaskCreateResponse struct {
+	ID      string `json:"id"`
+	Error   any    `json:"error"`
+	Message string `json:"message"`
+}
+
+type arkTaskStatusResponse struct {
+	ID        string `json:"id"`
+	Model     string `json:"model"`
+	Status    string `json:"status"`
+	Error     any    `json:"error"`
+	Message   string `json:"message"`
+	LastError any    `json:"last_error"`
+	Content   struct {
+		VideoURL string `json:"video_url"`
+	} `json:"content"`
+}
+
+func (h *AnimationHandler) findOwnedFile(db *gorm.DB, userID uint, key string) (*models.File, error) {
+	normalizedKey := strings.TrimSpace(key)
+	if normalizedKey == "" {
+		return nil, fmt.Errorf("file key is required")
+	}
+
+	var file models.File
+	if err := db.Where("`key` = ? AND uploader_id = ?", normalizedKey, userID).First(&file).Error; err != nil {
+		return nil, err
+	}
+
+	return &file, nil
+}
+
+func (h *AnimationHandler) buildSignedFileURL(file *models.File) (string, error) {
+	ossClient := oss.GetClient()
+	if ossClient == nil {
+		return "", fmt.Errorf("file service not configured")
+	}
+
+	return ossClient.GetSignedURL(file.Key, 3600)
+}
+
+func (h *AnimationHandler) resolveReferenceURLs(db *gorm.DB, userID uint, rawItems []string) ([]string, error) {
+	urls := make([]string, 0, len(rawItems))
+	for _, raw := range rawItems {
+		normalized := strings.TrimSpace(raw)
+		if normalized == "" {
+			continue
+		}
+		if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+			urls = append(urls, normalized)
+			continue
+		}
+
+		file, err := h.findOwnedFile(db, userID, normalized)
+		if err != nil {
+			return nil, err
+		}
+		signedURL, err := h.buildSignedFileURL(file)
+		if err != nil {
+			return nil, err
+		}
+		urls = append(urls, signedURL)
+	}
+	return urls, nil
+}
+
+func (h *AnimationHandler) buildArkTaskURL(taskID string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(config.Cfg.Ark.APIBaseURL), "/")
+	if taskID == "" {
+		return baseURL + arkTaskCreatePath
+	}
+	return baseURL + arkTaskCreatePath + "/" + taskID
+}
+
+func (h *AnimationHandler) buildArkRequest(ctx context.Context, method string, endpoint string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(config.Cfg.Ark.APIKey))
+	return req, nil
+}
+
+func (h *AnimationHandler) parseArkErrorResponse(resp *http.Response) string {
+	raw, _ := io.ReadAll(resp.Body)
+	message := strings.TrimSpace(string(raw))
+	if message == "" {
+		return ""
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err == nil {
+		for _, key := range []string{"message", "error", "detail"} {
+			if next := stringifyAny(payload[key]); next != "" {
+				return next
+			}
+		}
+	}
+
+	return message
+}
+
+func (h *AnimationHandler) fetchArkTaskStatus(ctx context.Context, client *http.Client, taskID string) (*arkTaskStatusResponse, error) {
+	endpoint := h.buildArkTaskURL(taskID)
+	req, err := h.buildArkRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		message := h.parseArkErrorResponse(resp)
+		resp.Body.Close()
+		if message == "" {
+			message = "Failed to query Ark task status"
+		}
+		return nil, errors.New(message)
+	}
+
+	var payload arkTaskStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		resp.Body.Close()
+		return nil, fmt.Errorf("failed to decode Ark task status: %w", err)
+	}
+	resp.Body.Close()
+
+	return &payload, nil
+}
+
+func stringifyAny(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			return strings.TrimSpace(fmt.Sprint(typed))
+		}
+		return strings.TrimSpace(string(encoded))
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func pickVideoExtension(contentType string, sourceURL string) string {
+	if exts, err := mime.ExtensionsByType(contentType); err == nil {
+		for _, ext := range exts {
+			if ext != "" {
+				return ext
+			}
+		}
+	}
+
+	if parsed, err := url.Parse(sourceURL); err == nil {
+		if ext := path.Ext(parsed.Path); ext != "" {
+			return ext
+		}
+	}
+
+	return ".mp4"
+}
+
+func encodeStringSlice(values []string) string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	if len(filtered) == 0 {
+		return "[]"
+	}
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+func decodeStringSlice(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+	var values []string
+	if err := json.Unmarshal([]byte(trimmed), &values); err != nil {
+		return []string{}
+	}
+	return values
+}
+
+func hydrateAnimationTask(task *models.SceneAnimationGenerationTask) {
+	if task == nil {
+		return
+	}
+	task.ReferenceImageKeys = decodeStringSlice(task.ReferenceImageKeysJSON)
+	task.ReferenceAudioKeys = decodeStringSlice(task.ReferenceAudioKeysJSON)
+	task.ReferenceVideoKeys = decodeStringSlice(task.ReferenceVideoKeysJSON)
+}
+
+func hydrateAnimationTasks(tasks []models.SceneAnimationGenerationTask) {
+	for idx := range tasks {
+		hydrateAnimationTask(&tasks[idx])
+	}
+}
+
+func mapArkStatusToAnimationTaskStatus(status string) models.AnimationTaskStatus {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "succeeded":
+		return models.AnimationTaskStatusSucceeded
+	case "failed", "canceled", "cancelled", "expired":
+		return models.AnimationTaskStatusFailed
+	case "submitted", "queued", "pending":
+		return models.AnimationTaskStatusPending
+	default:
+		return models.AnimationTaskStatusProcessing
+	}
+}
+
+func (h *AnimationHandler) getSceneAndAnimation(db *gorm.DB, sceneID string, animationID string) (*models.Scene, *models.SceneAnimation, error) {
+	var scene models.Scene
+	if err := db.First(&scene, sceneID).Error; err != nil {
+		return nil, nil, fmt.Errorf("scene")
+	}
+
+	var animation models.SceneAnimation
+	if err := db.Where("id = ? AND scene_id = ?", animationID, scene.ID).First(&animation).Error; err != nil {
+		return &scene, nil, fmt.Errorf("animation")
+	}
+
+	return &scene, &animation, nil
+}
+
+func (h *AnimationHandler) saveAnimationVersion(
+	db *gorm.DB,
+	task *models.SceneAnimationGenerationTask,
+	scene *models.Scene,
+	animation *models.SceneAnimation,
+	currentUser *models.User,
+	userID uint,
+	sourceVideoURL string,
+) error {
+	if task.OutputVersion > 0 && strings.TrimSpace(task.ResultVideoUrl) != "" {
+		return nil
+	}
+
+	httpClient := &http.Client{Timeout: 2 * time.Minute}
+	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, sourceVideoURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create generated video download request")
+	}
+	downloadResp, err := httpClient.Do(downloadReq)
+	if err != nil {
+		return fmt.Errorf("failed to download generated video")
+	}
+	defer downloadResp.Body.Close()
+
+	if downloadResp.StatusCode >= http.StatusBadRequest {
+		message := strings.TrimSpace(h.parseArkErrorResponse(downloadResp))
+		if message == "" {
+			message = "Failed to download generated video"
+		}
+		return errors.New(message)
+	}
+
+	videoBytes, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read generated video")
+	}
+	if len(videoBytes) == 0 {
+		return fmt.Errorf("generated video is empty")
+	}
+
+	var maxVersion int
+	db.Model(&models.SceneAnimationVersion{}).
+		Where("scene_animation_id = ?", animation.ID).
+		Select("COALESCE(MAX(version), 0)").
+		Scan(&maxVersion)
+
+	newVersion := maxVersion + 1
+	contentType := strings.TrimSpace(downloadResp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = "video/mp4"
+	}
+	fileName := fmt.Sprintf(
+		"scene-%d-animation-%d-v%d%s",
+		scene.ID,
+		animation.ID,
+		newVersion,
+		pickVideoExtension(contentType, sourceVideoURL),
+	)
+	objectKey, contentBytes, err := oss.GenerateKeyFromContent(bytes.NewReader(videoBytes), fileName)
+	if err != nil {
+		return fmt.Errorf("failed to process generated video")
+	}
+
+	ossClient := oss.GetClient()
+	exists, err := ossClient.Exists(objectKey)
+	if err != nil {
+		return fmt.Errorf("failed to check generated video file")
+	}
+	if !exists {
+		if err := ossClient.UploadBytes(objectKey, contentBytes, contentType); err != nil {
+			return fmt.Errorf("failed to store generated video")
+		}
+	}
+
+	fileRecord := models.File{
+		Key:          objectKey,
+		OriginalName: fileName,
+		Size:         int64(len(contentBytes)),
+		MimeType:     contentType,
+		UploaderID:   currentUser.ID,
+		Visibility:   models.FileVisibilityPrivate,
+	}
+
+	version := models.SceneAnimationVersion{
+		SceneAnimationID: animation.ID,
+		GenerationTaskID: &task.ID,
+		VideoUrl:         objectKey,
+		Version:          newVersion,
+		CreatedBy:        userID,
+	}
+
+	now := time.Now()
+	tx := db.Begin()
+	if err := tx.Create(&fileRecord).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to save generated video file")
+	}
+	if err := tx.Create(&version).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to create generated video version")
+	}
+	if err := tx.Model(animation).Updates(map[string]any{
+		"animation_url":     objectKey,
+		"animation_version": newVersion,
+	}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to update animation")
+	}
+	if err := tx.Model(task).Updates(map[string]any{
+		"result_video_url": objectKey,
+		"output_version":   newVersion,
+		"completed_at":     &now,
+		"error_message":    "",
+	}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to update generation task result")
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to finalize generated video version")
+	}
+
+	task.ResultVideoUrl = objectKey
+	task.OutputVersion = newVersion
+	task.CompletedAt = &now
+	task.ErrorMessage = ""
+	animation.AnimationUrl = objectKey
+	animation.AnimationVersion = newVersion
+	return nil
 }
 
 // List 获取场景的所有动画
@@ -265,6 +695,14 @@ func (h *AnimationHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	if err := tx.Where("scene_animation_id = ?", animation.ID).Delete(&models.SceneAnimationGenerationTask{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete animation generation tasks",
+		})
+		return
+	}
+
 	// 删除动画
 	if err := tx.Delete(&animation).Error; err != nil {
 		tx.Rollback()
@@ -387,6 +825,423 @@ func (h *AnimationHandler) Upload(c *gin.Context) {
 	tx.Commit()
 
 	c.JSON(http.StatusOK, version)
+}
+
+// ListGenerationTasks 获取动画生成任务列表
+func (h *AnimationHandler) ListGenerationTasks(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+	animationId := c.Param("animationId")
+
+	db := database.GetDB()
+	scene, animation, err := h.getSceneAndAnimation(db, sceneId, animationId)
+	if err != nil {
+		if err.Error() == "scene" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animation not found"})
+		return
+	}
+
+	var tasks []models.SceneAnimationGenerationTask
+	if err := db.Where("scene_id = ? AND scene_animation_id = ?", scene.ID, animation.ID).
+		Order("created_at DESC").
+		Find(&tasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch generation tasks"})
+		return
+	}
+
+	hydrateAnimationTasks(tasks)
+	c.JSON(http.StatusOK, models.SceneAnimationGenerationTaskListResponse{
+		Total: int64(len(tasks)),
+		Data:  tasks,
+	})
+}
+
+// GetGenerationTask 获取单个动画生成任务
+func (h *AnimationHandler) GetGenerationTask(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+	animationId := c.Param("animationId")
+	taskId := c.Param("taskId")
+
+	db := database.GetDB()
+	scene, animation, err := h.getSceneAndAnimation(db, sceneId, animationId)
+	if err != nil {
+		if err.Error() == "scene" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animation not found"})
+		return
+	}
+
+	var task models.SceneAnimationGenerationTask
+	if err := db.Where("id = ? AND scene_id = ? AND scene_animation_id = ?", taskId, scene.ID, animation.ID).
+		First(&task).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Generation task not found"})
+		return
+	}
+
+	hydrateAnimationTask(&task)
+	c.JSON(http.StatusOK, task)
+}
+
+// CreateGenerationTask 创建动画生成任务
+func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+	animationId := c.Param("animationId")
+
+	userIDValue, userIDExists := c.Get("userId")
+	if !userIDExists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := userIDValue.(uint)
+
+	if strings.TrimSpace(config.Cfg.Ark.APIKey) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ark video generation service is not configured"})
+		return
+	}
+	if oss.GetClient() == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "File service is not configured"})
+		return
+	}
+
+	db := database.GetDB()
+	scene, animation, err := h.getSceneAndAnimation(db, sceneId, animationId)
+	if err != nil {
+		if err.Error() == "scene" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animation not found"})
+		return
+	}
+
+	var req models.GenerateSceneAnimationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "text is required"})
+		return
+	}
+	if _, ok := allowedAnimationRatios[req.Ratio]; !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ratio must be one of: 16:9, 9:16"})
+		return
+	}
+	if req.Duration < 5 || req.Duration > 15 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "duration must be between 5 and 15 seconds"})
+		return
+	}
+	if _, ok := allowedAnimationModels[req.Model]; !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model is not supported"})
+		return
+	}
+
+	referenceImageURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceImageKeys)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference image not found"})
+		return
+	}
+	referenceAudioURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceAudioKeys)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference audio not found"})
+		return
+	}
+	referenceVideoURLs, err := h.resolveReferenceURLs(db, userID, req.ReferenceVideoKeys)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference video not found"})
+		return
+	}
+
+	task := models.SceneAnimationGenerationTask{
+		SceneID:                scene.ID,
+		SceneAnimationID:       animation.ID,
+		Status:                 models.AnimationTaskStatusPending,
+		Text:                   text,
+		Ratio:                  req.Ratio,
+		Duration:               req.Duration,
+		Model:                  req.Model,
+		ReferenceImageKeysJSON: encodeStringSlice(req.ReferenceImageKeys),
+		ReferenceAudioKeysJSON: encodeStringSlice(req.ReferenceAudioKeys),
+		ReferenceVideoKeysJSON: encodeStringSlice(req.ReferenceVideoKeys),
+		CreatedBy:              userID,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create generation task"})
+		return
+	}
+
+	content := []arkGenerationContentItem{{
+		Type: "text",
+		Text: text,
+	}}
+	for _, itemURL := range referenceImageURLs {
+		content = append(content, arkGenerationContentItem{
+			Type:     "image_url",
+			ImageURL: &arkMediaURL{URL: itemURL},
+			Role:     "reference_image",
+		})
+	}
+	for _, itemURL := range referenceVideoURLs {
+		content = append(content, arkGenerationContentItem{
+			Type:     "video_url",
+			VideoURL: &arkMediaURL{URL: itemURL},
+			Role:     "reference_video",
+		})
+	}
+	for _, itemURL := range referenceAudioURLs {
+		content = append(content, arkGenerationContentItem{
+			Type:     "audio_url",
+			AudioURL: &arkMediaURL{URL: itemURL},
+			Role:     "reference_audio",
+		})
+	}
+
+	arkReqBody, err := json.Marshal(arkGenerationRequest{
+		Model:         req.Model,
+		Content:       content,
+		GenerateAudio: true,
+		Ratio:         req.Ratio,
+		Duration:      req.Duration,
+		Watermark:     false,
+	})
+	if err != nil {
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": "Failed to encode Ark request",
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = "Failed to encode Ark request"
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+
+	httpClient := &http.Client{Timeout: 2 * time.Minute}
+	createReq, err := h.buildArkRequest(c.Request.Context(), http.MethodPost, h.buildArkTaskURL(""), bytes.NewReader(arkReqBody))
+	if err != nil {
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": "Failed to create Ark request",
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = "Failed to create Ark request"
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+
+	createResp, err := httpClient.Do(createReq)
+	if err != nil {
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": "Ark video generation service is unavailable",
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = "Ark video generation service is unavailable"
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+	defer createResp.Body.Close()
+
+	if createResp.StatusCode >= http.StatusBadRequest {
+		message := h.parseArkErrorResponse(createResp)
+		if message == "" {
+			message = "Ark video generation request failed"
+		}
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": message,
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = message
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+
+	var taskResp arkTaskCreateResponse
+	if err := json.NewDecoder(createResp.Body).Decode(&taskResp); err != nil {
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": "Failed to decode Ark task response",
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = "Failed to decode Ark task response"
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+
+	arkTaskID := strings.TrimSpace(taskResp.ID)
+	if arkTaskID == "" {
+		message := firstNonEmpty(taskResp.Message, stringifyAny(taskResp.Error), "Ark task ID is empty")
+		now := time.Now()
+		db.Model(&task).Updates(map[string]any{
+			"status":        models.AnimationTaskStatusFailed,
+			"error_message": message,
+			"completed_at":  &now,
+		})
+		task.Status = models.AnimationTaskStatusFailed
+		task.ErrorMessage = message
+		task.CompletedAt = &now
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusCreated, task)
+		return
+	}
+
+	if err := db.Model(&task).Updates(map[string]any{
+		"ark_task_id":   arkTaskID,
+		"status":        models.AnimationTaskStatusProcessing,
+		"error_message": "",
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update generation task"})
+		return
+	}
+
+	task.ArkTaskID = arkTaskID
+	task.Status = models.AnimationTaskStatusProcessing
+	task.ErrorMessage = ""
+	hydrateAnimationTask(&task)
+	c.JSON(http.StatusCreated, task)
+}
+
+// PollGenerationTask 轮询动画生成任务状态
+func (h *AnimationHandler) PollGenerationTask(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+	animationId := c.Param("animationId")
+	taskId := c.Param("taskId")
+
+	if _, userIDExists := c.Get("userId"); !userIDExists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	if strings.TrimSpace(config.Cfg.Ark.APIKey) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ark video generation service is not configured"})
+		return
+	}
+	if oss.GetClient() == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "File service is not configured"})
+		return
+	}
+
+	db := database.GetDB()
+	scene, animation, err := h.getSceneAndAnimation(db, sceneId, animationId)
+	if err != nil {
+		if err.Error() == "scene" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "Animation not found"})
+		return
+	}
+
+	var task models.SceneAnimationGenerationTask
+	if err := db.Where("id = ? AND scene_id = ? AND scene_animation_id = ?", taskId, scene.ID, animation.ID).
+		First(&task).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Generation task not found"})
+		return
+	}
+
+	if task.Status == models.AnimationTaskStatusSucceeded || task.Status == models.AnimationTaskStatusFailed {
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusOK, task)
+		return
+	}
+	if strings.TrimSpace(task.ArkTaskID) == "" {
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusOK, task)
+		return
+	}
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	remoteStatus, err := h.fetchArkTaskStatus(c.Request.Context(), httpClient, task.ArkTaskID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	now := time.Now()
+	nextStatus := mapArkStatusToAnimationTaskStatus(remoteStatus.Status)
+	updates := map[string]any{
+		"status":         nextStatus,
+		"last_polled_at": &now,
+	}
+
+	switch nextStatus {
+	case models.AnimationTaskStatusFailed:
+		message := firstNonEmpty(remoteStatus.Message, stringifyAny(remoteStatus.LastError), stringifyAny(remoteStatus.Error), "Ark video generation failed")
+		updates["error_message"] = message
+		updates["completed_at"] = &now
+	case models.AnimationTaskStatusSucceeded:
+		if strings.TrimSpace(remoteStatus.Content.VideoURL) == "" {
+			updates["status"] = models.AnimationTaskStatusFailed
+			updates["error_message"] = "Ark task succeeded but returned empty video URL"
+			updates["completed_at"] = &now
+		} else {
+			var creator models.User
+			if err := db.First(&creator, task.CreatedBy).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load generation task creator"})
+				return
+			}
+			if err := h.saveAnimationVersion(db, &task, scene, animation, &creator, task.CreatedBy, remoteStatus.Content.VideoURL); err != nil {
+				if err := db.Model(&task).Updates(map[string]any{
+					"status":         models.AnimationTaskStatusProcessing,
+					"last_polled_at": &now,
+					"error_message":  err.Error(),
+				}).Error; err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update generation task retry state"})
+					return
+				}
+				task.Status = models.AnimationTaskStatusProcessing
+				task.LastPolledAt = &now
+				task.ErrorMessage = err.Error()
+				hydrateAnimationTask(&task)
+				c.JSON(http.StatusOK, task)
+				return
+			}
+			updates["status"] = models.AnimationTaskStatusSucceeded
+			updates["error_message"] = ""
+			updates["completed_at"] = task.CompletedAt
+		}
+	default:
+		updates["error_message"] = ""
+	}
+
+	if err := db.Model(&task).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update generation task"})
+		return
+	}
+
+	if err := db.First(&task, task.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload generation task"})
+		return
+	}
+
+	hydrateAnimationTask(&task)
+	c.JSON(http.StatusOK, task)
 }
 
 // ListVersions 获取动画版本历史
