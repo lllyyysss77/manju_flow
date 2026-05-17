@@ -104,12 +104,16 @@ func (h *CharacterHandler) Create(c *gin.Context) {
 	}
 
 	character := models.Character{
-		BookID:            uint(bookIdUint),
-		Name:              req.Name,
-		Description:       req.Description,
-		ReferenceImageUrl: req.ReferenceImageUrl,
-		VoiceAudioUrl:     req.VoiceAudioUrl,
-		Index:             req.Index,
+		BookID:                uint(bookIdUint),
+		Name:                  req.Name,
+		Description:           req.Description,
+		ReferenceImageUrl:     req.ReferenceImageUrl,
+		HalfBodyFrontImageUrl: req.HalfBodyFrontImageUrl,
+		FullBodyFrontImageUrl: req.FullBodyFrontImageUrl,
+		FullBodySideImageUrl:  req.FullBodySideImageUrl,
+		FullBodyBackImageUrl:  req.FullBodyBackImageUrl,
+		VoiceAudioUrl:         req.VoiceAudioUrl,
+		Index:                 req.Index,
 	}
 
 	if err := db.Create(&character).Error; err != nil {
@@ -212,6 +216,18 @@ func (h *CharacterHandler) Update(c *gin.Context) {
 	}
 	if req.ReferenceImageUrl != nil {
 		character.ReferenceImageUrl = *req.ReferenceImageUrl
+	}
+	if req.HalfBodyFrontImageUrl != nil {
+		character.HalfBodyFrontImageUrl = *req.HalfBodyFrontImageUrl
+	}
+	if req.FullBodyFrontImageUrl != nil {
+		character.FullBodyFrontImageUrl = *req.FullBodyFrontImageUrl
+	}
+	if req.FullBodySideImageUrl != nil {
+		character.FullBodySideImageUrl = *req.FullBodySideImageUrl
+	}
+	if req.FullBodyBackImageUrl != nil {
+		character.FullBodyBackImageUrl = *req.FullBodyBackImageUrl
 	}
 	if req.VoiceAudioUrl != nil {
 		character.VoiceAudioUrl = *req.VoiceAudioUrl

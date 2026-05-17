@@ -206,6 +206,10 @@ export interface Character {
   name: string;
   description: string;
   referenceImageUrl?: string;
+  halfBodyFrontImageUrl?: string;
+  fullBodyFrontImageUrl?: string;
+  fullBodySideImageUrl?: string;
+  fullBodyBackImageUrl?: string;
   voiceAudioUrl?: string;
   index: number;
   createdAt?: string;

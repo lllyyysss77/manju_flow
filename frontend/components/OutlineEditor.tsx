@@ -3,14 +3,12 @@ import { Character } from '../types';
 import {
   Plus,
   Save,
-  AlertCircle,
   Upload,
   X,
   Trash2,
   Users,
   BookOpen,
   Image as ImageIcon,
-  ChevronDown,
   GripVertical,
   Download,
   Mic,
@@ -27,13 +25,56 @@ interface OutlineEditorProps {
   onCharactersChange?: (characters: Character[]) => void;
 }
 
+type CharacterImageField =
+  | 'referenceImageUrl'
+  | 'halfBodyFrontImageUrl'
+  | 'fullBodyFrontImageUrl'
+  | 'fullBodySideImageUrl'
+  | 'fullBodyBackImageUrl';
+
+type CharacterImageSlot = {
+  field: CharacterImageField;
+  label: string;
+  description: string;
+};
+
+const CHARACTER_IMAGE_SLOTS: CharacterImageSlot[] = [
+  {
+    field: 'referenceImageUrl',
+    label: 'Preview 预览图',
+    description: '角色主视觉预览图，用于总览展示。',
+  },
+  {
+    field: 'halfBodyFrontImageUrl',
+    label: '半身正面',
+    description: '聚焦上半身的标准正面视角。',
+  },
+  {
+    field: 'fullBodyFrontImageUrl',
+    label: '全身正面',
+    description: '展示角色完整正面比例与服装细节。',
+  },
+  {
+    field: 'fullBodySideImageUrl',
+    label: '全身侧视图',
+    description: '展示角色完整侧面轮廓与结构。',
+  },
+  {
+    field: 'fullBodyBackImageUrl',
+    label: '全身后视图',
+    description: '展示角色背面造型与发型服装细节。',
+  },
+];
+
 // 参考图组件（与分镜模块保持一致的交互）
 const ReferenceImageSection: React.FC<{
+  label: string;
+  description: string;
   initialImage?: string;
   onUpload: (file: File) => Promise<void>;
   onRemove: () => void;
   isUploading?: boolean;
-}> = ({ initialImage, onUpload, onRemove, isUploading = false }) => {
+}> = ({ label, description, initialImage, onUpload, onRemove, isUploading = false }) => {
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -117,13 +158,17 @@ const ReferenceImageSection: React.FC<{
   if (initialImage) {
     return (
       <>
-        <div className="relative">
+        <div className="relative rounded-2xl border border-white/10 bg-[#141414] p-4">
+          <div className="mb-3">
+            <div className="text-sm font-semibold text-white">{label}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-white/45">{description}</div>
+          </div>
           <div className="flex items-center justify-center p-4 bg-black/20 rounded-xl border border-white/10 min-h-[200px]">
             <img
               src={initialImage}
               className="max-w-full max-h-[300px] object-contain rounded-lg shadow-lg cursor-zoom-in"
-              alt="角色参考图"
-              onClick={() => setImagePreview({ url: initialImage, title: '角色参考图' })}
+              alt={label}
+              onClick={() => setImagePreview({ url: initialImage, title: label })}
             />
           </div>
           {/* 右上角工具栏（与分镜模块一致） */}
@@ -196,7 +241,7 @@ const ReferenceImageSection: React.FC<{
 
   return (
     <div
-      className={`relative bg-[#1a1a1a] border rounded-xl overflow-hidden transition-all ${
+      className={`relative rounded-2xl border bg-[#141414] p-4 transition-all ${
         isDragOver ? 'border-blue-500 bg-blue-900/10' : 'border-white/10'
       }`}
       onDrop={handleDrop}
@@ -206,6 +251,10 @@ const ReferenceImageSection: React.FC<{
       onPaste={handlePaste}
       tabIndex={0}
     >
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-white">{label}</div>
+        <div className="mt-1 text-[11px] leading-relaxed text-white/45">{description}</div>
+      </div>
       <div className="flex flex-col items-center justify-center gap-3 p-8">
         <div className="p-3 rounded-full bg-white/5 text-white/40">
           <ImageIcon size={24} />
@@ -532,11 +581,17 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const activeCharacter = characters.find(c => c.id === activeCharacterId) || null;
 
+  const getCharacterImageValue = (char: Character, field: CharacterImageField) => char[field];
+
   const getCharacterSignature = (char: Character) =>
     JSON.stringify({
       name: char.name,
       description: char.description,
       referenceImageUrl: char.referenceImageUrl,
+      halfBodyFrontImageUrl: char.halfBodyFrontImageUrl,
+      fullBodyFrontImageUrl: char.fullBodyFrontImageUrl,
+      fullBodySideImageUrl: char.fullBodySideImageUrl,
+      fullBodyBackImageUrl: char.fullBodyBackImageUrl,
       voiceAudioUrl: char.voiceAudioUrl,
       index: char.index,
     });
@@ -625,6 +680,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         name: char.name,
         description: char.description,
         referenceImageUrl: char.referenceImageUrl,
+        halfBodyFrontImageUrl: char.halfBodyFrontImageUrl,
+        fullBodyFrontImageUrl: char.fullBodyFrontImageUrl,
+        fullBodySideImageUrl: char.fullBodySideImageUrl,
+        fullBodyBackImageUrl: char.fullBodyBackImageUrl,
         voiceAudioUrl: char.voiceAudioUrl,
         index: char.index,
       });
@@ -703,12 +762,13 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   };
 
   // 上传参考图
-  const handleUploadReference = async (file: File) => {
+  const handleUploadReference = async (field: CharacterImageField, file: File) => {
     setIsUploadingReference(true);
     try {
       const res = await fileApi.upload(file, 'private');
-      updateActiveCharacter(c => ({ ...c, referenceImageUrl: res.key }));
-      setToast({ message: '参考图已上传', tone: 'success' });
+      updateActiveCharacter(c => ({ ...c, [field]: res.key }));
+      const slot = CHARACTER_IMAGE_SLOTS.find(item => item.field === field);
+      setToast({ message: `${slot?.label || '参考图'}已上传`, tone: 'success' });
     } catch (err) {
       console.error('Failed to upload reference', err);
       throw err;
@@ -717,8 +777,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     }
   };
 
-  const handleRemoveReference = () => {
-    updateActiveCharacter(c => ({ ...c, referenceImageUrl: undefined }));
+  const handleRemoveReference = (field: CharacterImageField) => {
+    updateActiveCharacter(c => ({ ...c, [field]: undefined }));
   };
 
   // 上传音色音频
@@ -1001,12 +1061,19 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 {/* 参考图 */}
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">角色参考图</label>
-                  <ReferenceImageSection
-                    initialImage={getFileUrl(activeCharacter.referenceImageUrl) || undefined}
-                    onUpload={handleUploadReference}
-                    onRemove={handleRemoveReference}
-                    isUploading={isUploadingReference}
-                  />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {CHARACTER_IMAGE_SLOTS.map((slot) => (
+                      <ReferenceImageSection
+                        key={slot.field}
+                        label={slot.label}
+                        description={slot.description}
+                        initialImage={getFileUrl(getCharacterImageValue(activeCharacter, slot.field)) || undefined}
+                        onUpload={(file) => handleUploadReference(slot.field, file)}
+                        onRemove={() => handleRemoveReference(slot.field)}
+                        isUploading={isUploadingReference}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 {/* 音色音频 */}
