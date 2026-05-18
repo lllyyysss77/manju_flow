@@ -70,7 +70,7 @@ const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
   video: '视频参考',
 };
 
-const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-260128';
+const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-fast-260128';
 const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
 
@@ -1705,8 +1705,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频模型</div>
                           <div className="grid gap-2">
                             {[
-                              { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
                               { value: 'doubao-seedance-2-0-fast-260128' as SeedanceModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
+                              { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
                             ].map(option => {
                               const active = generationModel === option.value;
                               return (
