@@ -28,7 +28,11 @@ import (
 )
 
 const (
-	arkTaskCreatePath               = "/api/plan/v3/contents/generations/tasks"
+	// 下面是agent plan 的api
+	// arkTaskCreatePath = "/api/plan/v3/contents/generations/tasks"
+	// 下面是非agent plan 的api
+	arkTaskCreatePath = "/api/v3/contents/generations/tasks"
+
 	animationTaskPollInterval       = 10 * time.Second
 	animationTaskPollBatchSize      = 20
 	animationTaskPollRequestTimeout = 30 * time.Second
@@ -41,6 +45,9 @@ var (
 		"9:16": {},
 	}
 	allowedAnimationModels = map[string]struct{}{
+		// 下面是agent plan 的model id
+		// "doubao-seedance-2.0":      {},
+		// "doubao-seedance-2.0-fast": {},
 		"doubao-seedance-2-0-260128":      {},
 		"doubao-seedance-2-0-fast-260128": {},
 	}
