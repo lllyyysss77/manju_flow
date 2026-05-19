@@ -77,6 +77,7 @@ type SceneAnimationGenerationTask struct {
 	Ratio                    string              `gorm:"size:20;not null" json:"ratio"`
 	Duration                 int                 `gorm:"not null" json:"duration"`
 	Model                    string              `gorm:"size:100;not null" json:"model"`
+	ActualModel              string              `gorm:"column:actual_model;size:100" json:"actualModel"`
 	ReferenceImageKeysJSON   string              `gorm:"column:reference_image_keys;type:text" json:"-"`
 	ReferenceAudioKeysJSON   string              `gorm:"column:reference_audio_keys;type:text" json:"-"`
 	ReferenceVideoKeysJSON   string              `gorm:"column:reference_video_keys;type:text" json:"-"`

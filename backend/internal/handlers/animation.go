@@ -604,6 +604,9 @@ func (h *AnimationHandler) applyRemoteGenerationTaskStatus(
 		"status":         nextStatus,
 		"last_polled_at": &now,
 	}
+	if actualModel := strings.TrimSpace(remoteStatus.Model); actualModel != "" {
+		updates["actual_model"] = actualModel
+	}
 
 	switch nextStatus {
 	case models.AnimationTaskStatusFailed:
@@ -639,12 +642,18 @@ func (h *AnimationHandler) applyRemoteGenerationTaskStatus(
 				"last_polled_at": &now,
 				"error_message":  err.Error(),
 			}
+			if actualModel := strings.TrimSpace(remoteStatus.Model); actualModel != "" {
+				retryUpdates["actual_model"] = actualModel
+			}
 			if err := db.Model(task).Updates(retryUpdates).Error; err != nil {
 				return fmt.Errorf("failed to update generation task retry state")
 			}
 			task.Status = models.AnimationTaskStatusProcessing
 			task.LastPolledAt = &now
 			task.ErrorMessage = err.Error()
+			if actualModel := strings.TrimSpace(remoteStatus.Model); actualModel != "" {
+				task.ActualModel = actualModel
+			}
 			return nil
 		}
 
