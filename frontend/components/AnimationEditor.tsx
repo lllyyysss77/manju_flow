@@ -1044,6 +1044,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const isUploading = uploadingReferenceType === type;
     const inputRef = inputRefMap[type];
     const usesHorizontalRail = type === 'image' || type === 'video';
+    const usesVerticalScrollableList = type === 'audio';
 
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
@@ -1127,6 +1128,40 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                 </div>
               </div>
               <p className="px-1 text-[10px] text-white/28">左右滑动查看更多{options.title}</p>
+            </div>
+          ) : usesVerticalScrollableList ? (
+            <div className="space-y-2">
+              <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
+                {items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-white/10 bg-black/20 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex shrink-0 items-center rounded-full border border-blue-400/25 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold tracking-[0.16em] text-blue-200">
+                            {index + 1}
+                          </span>
+                          <p className="text-sm text-white truncate">{item.name}</p>
+                        </div>
+                        <p className="mt-1 text-[10px] text-white/35">{REFERENCE_LABELS[type]}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReferenceMedia(type, item.id)}
+                        className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    <div className="p-3">
+                      <audio controls src={item.url} className="w-full h-10" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="px-1 text-[10px] text-white/28">上下滑动查看更多{options.title}</p>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
