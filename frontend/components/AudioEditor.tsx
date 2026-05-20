@@ -228,6 +228,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<SceneAudioTrack | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
+  const [isCommentPanelCollapsed, setIsCommentPanelCollapsed] = useState(true);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   // 场景评论数映射 (sceneId -> count)
@@ -1875,99 +1876,127 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           </div>
         </div>
 
-          <div
-            className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
-            onMouseDown={e => {
-              e.preventDefault();
-              setIsResizingRight(true);
-            }}
-          />
-
-          {/* 右侧：修改意见 */}
-          <div
-            style={{ width: rightPanelWidth }}
-            className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
-          >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
-              <span className="text-xs font-bold text-white/40 uppercase tracking-widest">音频修正意见</span>
-              <MessageSquare size={16} className="text-white/20" />
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {commentError ? (
-                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                  加载评论失败：{commentError}
-                </div>
-              ) : loadingComments ? (
-                <div className="h-full flex items-center justify-center text-white/40 text-sm">
-                  评论加载中...
-                </div>
-              ) : activeScene ? (
-                activeSceneComments.length ? (
-                  activeSceneComments.map(c => (
-                    <CommentItem
-                      key={c.id}
-                      comment={c}
-                      onUpdate={async (id, content) => {
-                        await updateComment(id, content);
-                      }}
-                      onDelete={async (id) => {
-                        const target = activeSceneComments.find(cm => cm.id === id);
-                        await deleteComment(id);
-                        if (activeScene?.id) {
-                          setSceneCommentCounts(prev => ({
-                            ...prev,
-                            [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                          }));
-                          if (target?.status === 'unresolved') {
-                            setSceneUnresolvedCounts(prev => ({
-                              ...prev,
-                              [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                            }));
-                          }
-                        }
-                      }}
-                      onResolve={async (id) => {
-                        await resolveComment(id);
-                        if (activeScene?.id) {
-                          setSceneUnresolvedCounts(prev => ({
-                            ...prev,
-                            [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                          }));
-                        }
-                      }}
-                      onUnresolve={async (id) => {
-                        await unresolveComment(id);
-                        if (activeScene?.id) {
-                          setSceneUnresolvedCounts(prev => ({
-                            ...prev,
-                            [activeScene.id]: (prev[activeScene.id] || 0) + 1
-                          }));
-                        }
-                      }}
-                    />
-                  ))
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-                    <Volume2 size={32} />
-                    <p className="text-xs">暂无音频反馈</p>
-                  </div>
-                )
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-                  <Volume2 size={32} />
-                  <p className="text-xs">请选择场景查看评论</p>
-                </div>
+          {isCommentPanelCollapsed ? (
+            <button
+              type="button"
+              onClick={() => setIsCommentPanelCollapsed(false)}
+              className="w-12 border-l border-white/5 bg-[#121212] flex flex-col items-center justify-center gap-3 text-white/40 hover:bg-[#171717] hover:text-white transition-colors"
+              title="展开评论区"
+            >
+              <ChevronLeft size={16} />
+              <MessageSquare size={16} />
+              {activeSceneComments.length > 0 && (
+                <span className="min-w-5 px-1.5 py-0.5 rounded-full bg-blue-500/15 text-[10px] font-bold text-blue-100 border border-blue-400/30">
+                  {activeSceneComments.length}
+                </span>
               )}
-            </div>
+            </button>
+          ) : (
+            <>
+              <div
+                className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  setIsResizingRight(true);
+                }}
+              />
 
-          <CommentInput
-            onSubmit={handleSubmitComment}
-            disabled={!activeScene}
-            posting={postingComment}
-            placeholder="添加修改意见或反馈..."
-          />
-        </div>
+              <div
+                style={{ width: rightPanelWidth }}
+                className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
+              >
+                <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest">音频修正意见</span>
+                  <div className="flex items-center gap-2">
+                    <MessageSquare size={16} className="text-white/20" />
+                    <button
+                      type="button"
+                      onClick={() => setIsCommentPanelCollapsed(true)}
+                      className="p-1 rounded-lg text-white/35 hover:text-white hover:bg-white/5 transition-colors"
+                      title="收起评论区"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {commentError ? (
+                    <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                      加载评论失败：{commentError}
+                    </div>
+                  ) : loadingComments ? (
+                    <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                      评论加载中...
+                    </div>
+                  ) : activeScene ? (
+                    activeSceneComments.length ? (
+                      activeSceneComments.map(c => (
+                        <CommentItem
+                          key={c.id}
+                          comment={c}
+                          onUpdate={async (id, content) => {
+                            await updateComment(id, content);
+                          }}
+                          onDelete={async (id) => {
+                            const target = activeSceneComments.find(cm => cm.id === id);
+                            await deleteComment(id);
+                            if (activeScene?.id) {
+                              setSceneCommentCounts(prev => ({
+                                ...prev,
+                                [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                              }));
+                              if (target?.status === 'unresolved') {
+                                setSceneUnresolvedCounts(prev => ({
+                                  ...prev,
+                                  [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                                }));
+                              }
+                            }
+                          }}
+                          onResolve={async (id) => {
+                            await resolveComment(id);
+                            if (activeScene?.id) {
+                              setSceneUnresolvedCounts(prev => ({
+                                ...prev,
+                                [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                              }));
+                            }
+                          }}
+                          onUnresolve={async (id) => {
+                            await unresolveComment(id);
+                            if (activeScene?.id) {
+                              setSceneUnresolvedCounts(prev => ({
+                                ...prev,
+                                [activeScene.id]: (prev[activeScene.id] || 0) + 1
+                              }));
+                            }
+                          }}
+                        />
+                      ))
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                        <Volume2 size={32} />
+                        <p className="text-xs">暂无音频反馈</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                      <Volume2 size={32} />
+                      <p className="text-xs">请选择场景查看评论</p>
+                    </div>
+                  )}
+                </div>
+
+                <CommentInput
+                  onSubmit={handleSubmitComment}
+                  disabled={!activeScene}
+                  posting={postingComment}
+                  placeholder="添加修改意见或反馈..."
+                />
+              </div>
+            </>
+          )}
         </>
         )}
       </div>

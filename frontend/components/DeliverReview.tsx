@@ -4,6 +4,8 @@ import {
   Pause,
   FastForward,
   Rewind,
+  ChevronLeft,
+  ChevronRight,
   MessageSquare,
   Send,
   AlertCircle,
@@ -74,6 +76,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentFilter, setCommentFilter] = useState<'all' | 'unresolved'>('all');
+  const [isCommentPanelCollapsed, setIsCommentPanelCollapsed] = useState(true);
   const [loadingComments, setLoadingComments] = useState(false);
   const [postingComment, setPostingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -1005,147 +1008,173 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
               </div>
             </div>
 
-            {/* 评论侧边栏 */}
-            <div className="w-80 border-l border-white/5 flex flex-col bg-[#111111]">
-              <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">时间轴反馈</span>
-                <div className="flex items-center gap-1 text-[11px] bg-white/5 border border-white/10 rounded-lg px-1">
-                  <button
-                    className={`px-2 py-1 rounded-md transition-all ${
-                      commentFilter === 'all'
-                        ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                    onClick={() => setCommentFilter('all')}
-                  >
-                    全部
-                  </button>
-                  <button
-                    className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
-                      commentFilter === 'unresolved'
-                        ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                    onClick={() => setCommentFilter('unresolved')}
-                  >
-                    未解决
-                    {unresolvedCount > 0 && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/30">
-                        {unresolvedCount}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {commentError ? (
-                  <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                    评论加载失败：{commentError}
-                  </div>
-                ) : loadingComments ? (
-                  <div className="h-full flex items-center justify-center text-white/40 text-sm">
-                    评论加载中...
-                  </div>
-                ) : filteredComments.length ? (
-                  filteredComments.map((c) => (
-                    <CommentItem
-                      key={c.id}
-                      comment={c}
-                      onUpdate={handleUpdateComment}
-                      onDelete={handleDeleteComment}
-                      onResolve={handleResolveComment}
-                      onUnresolve={handleUnresolveComment}
-                      authorColorClass="text-white/60"
-                      extraBadge={
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-mono border border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]">
-                          @{c.timeLabel || '—'}
-                        </span>
-                      }
-                      onClick={typeof c.timeSeconds === 'number' ? () => handleSeek(c.timeSeconds!) : undefined}
-                      onEditContentChange={handleEditContentChange}
-                    />
-                  ))
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center gap-3 opacity-40 italic">
-                    <MessageSquare size={32} />
-                    <p className="text-xs">
-                      {commentFilter === 'unresolved' ? '暂无未解决的反馈' : '暂无时间轴反馈'}
-                    </p>
-                  </div>
+            {isCommentPanelCollapsed ? (
+              <button
+                type="button"
+                onClick={() => setIsCommentPanelCollapsed(false)}
+                className="w-12 border-l border-white/5 bg-[#111111] flex flex-col items-center justify-center gap-3 text-white/40 hover:bg-[#171717] hover:text-white transition-colors"
+                title="展开评论区"
+              >
+                <ChevronLeft size={16} />
+                <MessageSquare size={16} />
+                {reviewComments.length > 0 && (
+                  <span className="min-w-5 px-1.5 py-0.5 rounded-full bg-blue-500/15 text-[10px] font-bold text-blue-100 border border-blue-400/30">
+                    {reviewComments.length}
+                  </span>
                 )}
-              </div>
+              </button>
+            ) : (
+              <div className="w-80 border-l border-white/5 flex flex-col bg-[#111111]">
+                <div className="p-4 border-b border-white/5 flex items-center justify-between gap-3">
+                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest">时间轴反馈</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 text-[11px] bg-white/5 border border-white/10 rounded-lg px-1">
+                      <button
+                        className={`px-2 py-1 rounded-md transition-all ${
+                          commentFilter === 'all'
+                            ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                            : 'text-white/60 hover:text-white'
+                        }`}
+                        onClick={() => setCommentFilter('all')}
+                      >
+                        全部
+                      </button>
+                      <button
+                        className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                          commentFilter === 'unresolved'
+                            ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(59,130,246,0.35)]'
+                            : 'text-white/60 hover:text-white'
+                        }`}
+                        onClick={() => setCommentFilter('unresolved')}
+                      >
+                        未解决
+                        {unresolvedCount > 0 && (
+                          <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/30">
+                            {unresolvedCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCommentPanelCollapsed(true)}
+                      className="p-1 rounded-lg text-white/35 hover:text-white hover:bg-white/5 transition-colors"
+                      title="收起评论区"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
 
-              <div className="p-4 bg-[#161616] border-t border-white/5">
-                {/* 图片预览区 */}
-                {pendingImage && (
-                  <div className="mb-3 relative inline-block">
-                    <img
-                      src={pendingImage.preview}
-                      alt="待上传图片"
-                      className="max-h-32 rounded-lg border border-white/10"
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {commentError ? (
+                    <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                      评论加载失败：{commentError}
+                    </div>
+                  ) : loadingComments ? (
+                    <div className="h-full flex items-center justify-center text-white/40 text-sm">
+                      评论加载中...
+                    </div>
+                  ) : filteredComments.length ? (
+                    filteredComments.map((c) => (
+                      <CommentItem
+                        key={c.id}
+                        comment={c}
+                        onUpdate={handleUpdateComment}
+                        onDelete={handleDeleteComment}
+                        onResolve={handleResolveComment}
+                        onUnresolve={handleUnresolveComment}
+                        authorColorClass="text-white/60"
+                        extraBadge={
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-mono border border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]">
+                            @{c.timeLabel || '—'}
+                          </span>
+                        }
+                        onClick={typeof c.timeSeconds === 'number' ? () => handleSeek(c.timeSeconds!) : undefined}
+                        onEditContentChange={handleEditContentChange}
+                      />
+                    ))
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center gap-3 opacity-40 italic">
+                      <MessageSquare size={32} />
+                      <p className="text-xs">
+                        {commentFilter === 'unresolved' ? '暂无未解决的反馈' : '暂无时间轴反馈'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 bg-[#161616] border-t border-white/5">
+                  {/* 图片预览区 */}
+                  {pendingImage && (
+                    <div className="mb-3 relative inline-block">
+                      <img
+                        src={pendingImage.preview}
+                        alt="待上传图片"
+                        className="max-h-32 rounded-lg border border-white/10"
+                      />
+                      <button
+                        onClick={handleRemoveCommentImage}
+                        className="absolute -top-2 -right-2 p-1 rounded-full bg-red-500 text-white hover:bg-red-400 transition-colors"
+                        title="移除图片"
+                      >
+                        <X size={12} />
+                      </button>
+                      {uploadingImage && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                          <Loader2 size={20} className="animate-spin text-white" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* 上传错误提示 */}
+                  {uploadError && (
+                    <div className="mb-2 text-xs text-red-400">{uploadError}</div>
+                  )}
+                  <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
+                    {/* 图片按钮 */}
+                    <button
+                      onClick={() => commentFileInputRef.current?.click()}
+                      disabled={postingComment || uploadingImage}
+                      className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
+                      title="添加图片"
+                    >
+                      <ImageIcon size={16} />
+                    </button>
+                    <input
+                      ref={commentFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCommentFileSelect}
+                    />
+                    <input
+                      className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                      placeholder={`新评论 @ ${formatTime(currentTime)}`}
+                      value={commentDraft}
+                      onChange={(e) => handleCommentDraftChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSubmitComment();
+                        }
+                      }}
+                      onPaste={handleCommentPaste}
                     />
                     <button
-                      onClick={handleRemoveCommentImage}
-                      className="absolute -top-2 -right-2 p-1 rounded-full bg-red-500 text-white hover:bg-red-400 transition-colors"
-                      title="移除图片"
+                      onClick={handleSubmitComment}
+                      disabled={postingComment || uploadingImage || (!commentDraft.trim() && !pendingImage) || !activeChapter}
+                      className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
                     >
-                      <X size={12} />
+                      {postingComment || uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                     </button>
-                    {uploadingImage && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-                        <Loader2 size={20} className="animate-spin text-white" />
-                      </div>
-                    )}
                   </div>
-                )}
-                {/* 上传错误提示 */}
-                {uploadError && (
-                  <div className="mb-2 text-xs text-red-400">{uploadError}</div>
-                )}
-                <div className="flex items-center gap-2 bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2">
-                  {/* 图片按钮 */}
-                  <button
-                    onClick={() => commentFileInputRef.current?.click()}
-                    disabled={postingComment || uploadingImage}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40"
-                    title="添加图片"
-                  >
-                    <ImageIcon size={16} />
-                  </button>
-                  <input
-                    ref={commentFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleCommentFileSelect}
-                  />
-                  <input
-                    className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
-                    placeholder={`新评论 @ ${formatTime(currentTime)}`}
-                    value={commentDraft}
-                    onChange={(e) => handleCommentDraftChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSubmitComment();
-                      }
-                    }}
-                    onPaste={handleCommentPaste}
-                  />
-                  <button
-                    onClick={handleSubmitComment}
-                    disabled={postingComment || uploadingImage || (!commentDraft.trim() && !pendingImage) || !activeChapter}
-                    className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60"
-                  >
-                    {postingComment || uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  </button>
+                  <p className="mt-1.5 text-[10px] text-white/20">
+                    输入 @ 自动插入时间点 · 支持粘贴图片 · Enter 发送
+                  </p>
                 </div>
-                <p className="mt-1.5 text-[10px] text-white/20">
-                  输入 @ 自动插入时间点 · 支持粘贴图片 · Enter 发送
-                </p>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>

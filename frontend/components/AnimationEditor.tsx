@@ -70,7 +70,7 @@ const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
   video: '视频参考',
 };
 
-const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-fast-260128';
+const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-260128';
 const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
 
@@ -289,6 +289,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
+  const [isCommentPanelCollapsed, setIsCommentPanelCollapsed] = useState(true);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   // 场景评论数映射 (sceneId -> count)
@@ -1042,6 +1043,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const items = referenceMedia[type];
     const isUploading = uploadingReferenceType === type;
     const inputRef = inputRefMap[type];
+    const usesHorizontalRail = type === 'image' || type === 'video';
 
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
@@ -1073,40 +1075,83 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         />
 
         {items.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {items.map(item => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10">
-                  <div className="min-w-0">
-                    <p className="text-sm text-white truncate">{item.name}</p>
-                    <p className="text-[10px] text-white/35">{REFERENCE_LABELS[type]}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveReferenceMedia(type, item.id)}
-                    className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/10 transition-colors"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-                <div className="p-3">
-                  {type === 'image' ? (
-                    <button
-                      type="button"
-                      onClick={() => openImagePreview(item.url, item.name)}
-                      className="w-full rounded-lg overflow-hidden border border-white/10 bg-black"
+          usesHorizontalRail ? (
+            <div className="space-y-2">
+              <div className="rounded-[28px] border border-white/10 bg-black/20 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {items.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="group relative w-[230px] shrink-0 snap-start rounded-[24px] border border-white/10 bg-[#171717] p-2 shadow-[0_18px_35px_rgba(0,0,0,0.28)]"
                     >
-                      <img src={item.url} alt={item.name} className="w-full aspect-video object-contain bg-black" />
-                    </button>
-                  ) : type === 'audio' ? (
-                    <audio controls src={item.url} className="w-full h-10" />
-                  ) : (
-                    <video controls src={item.url} className="w-full aspect-video rounded-lg bg-black object-contain" />
-                  )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReferenceMedia(type, item.id)}
+                        className="absolute right-4 top-4 z-10 rounded-full border border-white/10 bg-black/50 p-1.5 text-white/55 backdrop-blur hover:text-white hover:bg-black/75 transition-colors"
+                        title={`删除${item.name}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+
+                      <div className="overflow-hidden rounded-[18px] border border-white/10 bg-black">
+                        {type === 'image' ? (
+                          <button
+                            type="button"
+                            onClick={() => openImagePreview(item.url, item.name)}
+                            className="block w-full text-left"
+                          >
+                            <img
+                              src={item.url}
+                              alt={item.name}
+                              className="h-36 w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                            />
+                          </button>
+                        ) : (
+                          <video
+                            controls
+                            preload="metadata"
+                            src={item.url}
+                            className="h-36 w-full bg-black object-cover"
+                          />
+                        )}
+                      </div>
+
+                      <div className="px-1 pb-1 pt-3">
+                        <p className="truncate text-sm font-medium text-white/90">{item.name}</p>
+                        <p className="mt-1 text-[10px] text-white/35">
+                          {REFERENCE_LABELS[type]} {index + 1}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+              <p className="px-1 text-[10px] text-white/28">左右滑动查看更多{options.title}</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {items.map(item => (
+                <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10">
+                    <div className="min-w-0">
+                      <p className="text-sm text-white truncate">{item.name}</p>
+                      <p className="text-[10px] text-white/35">{REFERENCE_LABELS[type]}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveReferenceMedia(type, item.id)}
+                      className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/10 transition-colors"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <div className="p-3">
+                    <audio controls src={item.url} className="w-full h-10" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : (
           <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-4 py-8 text-center text-[12px] text-white/35">
             暂无{options.title}，可按需上传多个文件作为生成参考
@@ -1700,76 +1745,84 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         })}
                       </div>
 
-                      <div className="grid gap-4 lg:grid-cols-[1.2fr_1.2fr_0.9fr]">
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
-                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频模型</div>
-                          <div className="grid gap-2">
-                            {[
-                              { value: 'doubao-seedance-2-0-fast-260128' as SeedanceModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
-                              { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
-                            ].map(option => {
-                              const active = generationModel === option.value;
-                              return (
-                                <button
-                                  key={option.value}
-                                  type="button"
-                                  onClick={() => setGenerationModel(option.value)}
-                                  className={`rounded-xl border p-3 text-left transition-all ${
-                                    active
-                                      ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.12)]'
-                                      : 'border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.04]'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-sm font-medium text-white">{option.label}</p>
-                                    <span className="text-[10px] text-white/35">{option.value}</span>
-                                  </div>
-                                  <p className="mt-1 text-[11px] text-white/40">{option.desc}</p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
+                      <div className="grid gap-4 lg:grid-cols-[1.8fr_0.9fr]">
                         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
-                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">画面比例</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['16:9', '9:16'] as SeedanceRatio[]).map(ratio => {
-                              const active = generationRatio === ratio;
-                              return (
-                                <button
-                                  key={ratio}
-                                  type="button"
-                                  onClick={() => setGenerationRatio(ratio)}
-                                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
-                                    active
-                                      ? 'border-blue-500/60 bg-blue-500/12 text-white'
-                                      : 'border-white/10 bg-black/20 text-white/60 hover:border-white/25 hover:text-white'
-                                  }`}
-                                >
-                                  {ratio}
-                                </button>
-                              );
-                            })}
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">生成参数</div>
+                              <p className="mt-1 text-[11px] text-white/40">模型、画幅和时长放在同一块，调参更顺手。</p>
+                            </div>
                           </div>
 
-                          <div className="pt-2 space-y-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频时长</div>
-                              <div className="text-sm font-semibold text-white">{generationDuration}s</div>
+                          <div className="space-y-4 rounded-xl border border-white/8 bg-black/20 p-3">
+                            <div className="space-y-3">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频模型</div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {[
+                                  { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
+                                  { value: 'doubao-seedance-2-0-fast-260128' as SeedanceModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
+                                ].map(option => {
+                                  const active = generationModel === option.value;
+                                  return (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => setGenerationModel(option.value)}
+                                      className={`rounded-xl border p-3 text-left transition-all ${
+                                        active
+                                          ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.12)]'
+                                          : 'border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.04]'
+                                      }`}
+                                    >
+                                      <p className="text-sm font-medium text-white">{option.label}</p>
+                                      <p className="mt-1 text-[11px] text-white/40">{option.desc}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <input
-                              type="range"
-                              min={5}
-                              max={15}
-                              step={1}
-                              value={generationDuration}
-                              onChange={e => setGenerationDuration(Number(e.target.value))}
-                              className="w-full accent-blue-500"
-                            />
-                            <div className="flex items-center justify-between text-[11px] text-white/30">
-                              <span>5s</span>
-                              <span>15s</span>
+
+                            <div className="space-y-3 border-t border-white/8 pt-3">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">画面比例</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {(['16:9', '9:16'] as SeedanceRatio[]).map(ratio => {
+                                  const active = generationRatio === ratio;
+                                  return (
+                                    <button
+                                      key={ratio}
+                                      type="button"
+                                      onClick={() => setGenerationRatio(ratio)}
+                                      className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+                                        active
+                                          ? 'border-blue-500/60 bg-blue-500/12 text-white'
+                                          : 'border-white/10 bg-black/20 text-white/60 hover:border-white/25 hover:text-white'
+                                      }`}
+                                    >
+                                      {ratio}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="space-y-3 border-t border-white/8 pt-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频时长</div>
+                                <div className="text-sm font-semibold text-white">{generationDuration}s</div>
+                              </div>
+                              <input
+                                type="range"
+                                min={5}
+                                max={15}
+                                step={1}
+                                value={generationDuration}
+                                onChange={e => setGenerationDuration(Number(e.target.value))}
+                                className="w-full accent-blue-500"
+                              />
+                              <div className="flex items-center justify-between text-[11px] text-white/30">
+                                <span>5s</span>
+                                <span>15s</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1905,100 +1958,128 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           </div>
         </div>
 
-        <div
-          className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
-          onMouseDown={e => {
-            e.preventDefault();
-            setIsResizingRight(true);
-          }}
-        />
-
-        {/* 右侧：审核互动区 */}
-        <div
-          style={{ width: rightPanelWidth }}
-          className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
-        >
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <span className="text-xs font-bold text-white/40 uppercase tracking-widest">修改历史与讨论</span>
-            <MessageSquare size={16} className="text-white/20" />
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {commentError ? (
-              <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                加载评论失败：{commentError}
-              </div>
-            ) : loadingComments ? (
-              <div className="h-full flex flex-col items-center justify-center gap-3 text-white/40 text-sm">
-                评论加载中...
-              </div>
-            ) : activeScene ? (
-              activeSceneComments.length ? (
-                activeSceneComments.map(c => (
-                  <CommentItem
-                    key={c.id}
-                    comment={c}
-                    authorColorClass="text-red-400"
-                    onUpdate={async (id, content) => {
-                      await updateComment(id, content);
-                    }}
-                    onDelete={async (id) => {
-                      const target = activeSceneComments.find(cm => cm.id === id);
-                      await deleteComment(id);
-                      if (activeScene?.id) {
-                        setSceneCommentCounts(prev => ({
-                          ...prev,
-                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                        }));
-                        if (target?.status === 'unresolved') {
-                          setSceneUnresolvedCounts(prev => ({
-                            ...prev,
-                            [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                          }));
-                        }
-                      }
-                    }}
-                    onResolve={async (id) => {
-                      await resolveComment(id);
-                      if (activeScene?.id) {
-                        setSceneUnresolvedCounts(prev => ({
-                          ...prev,
-                          [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
-                        }));
-                      }
-                    }}
-                    onUnresolve={async (id) => {
-                      await unresolveComment(id);
-                      if (activeScene?.id) {
-                        setSceneUnresolvedCounts(prev => ({
-                          ...prev,
-                          [activeScene.id]: (prev[activeScene.id] || 0) + 1
-                        }));
-                      }
-                    }}
-                  />
-                ))
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-                  <AlertCircle size={32} />
-                  <p className="text-xs">暂无审核反馈</p>
-                </div>
-              )
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
-                <AlertCircle size={32} />
-                <p className="text-xs">请选择场景查看反馈</p>
-              </div>
+        {isCommentPanelCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setIsCommentPanelCollapsed(false)}
+            className="w-12 border-l border-white/5 bg-[#121212] flex flex-col items-center justify-center gap-3 text-white/40 hover:bg-[#171717] hover:text-white transition-colors"
+            title="展开评论区"
+          >
+            <ChevronLeft size={16} />
+            <MessageSquare size={16} />
+            {activeSceneComments.length > 0 && (
+              <span className="min-w-5 px-1.5 py-0.5 rounded-full bg-blue-500/15 text-[10px] font-bold text-blue-100 border border-blue-400/30">
+                {activeSceneComments.length}
+              </span>
             )}
-          </div>
+          </button>
+        ) : (
+          <>
+            <div
+              className={`w-2 cursor-col-resize bg-transparent hover:bg-white/10 transition-colors ${isResizingRight ? 'bg-white/20' : ''}`}
+              onMouseDown={e => {
+                e.preventDefault();
+                setIsResizingRight(true);
+              }}
+            />
 
-          <CommentInput
-            onSubmit={handleSubmitComment}
-            disabled={!activeScene}
-            posting={postingComment}
-            placeholder="添加修改意见或反馈..."
-          />
-        </div>
+            <div
+              style={{ width: rightPanelWidth }}
+              className="border-l border-white/5 bg-[#121212] flex flex-col min-w-[260px] max-w-[520px]"
+            >
+              <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">修改历史与讨论</span>
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={16} className="text-white/20" />
+                  <button
+                    type="button"
+                    onClick={() => setIsCommentPanelCollapsed(true)}
+                    className="p-1 rounded-lg text-white/35 hover:text-white hover:bg-white/5 transition-colors"
+                    title="收起评论区"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {commentError ? (
+                  <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                    加载评论失败：{commentError}
+                  </div>
+                ) : loadingComments ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-white/40 text-sm">
+                    评论加载中...
+                  </div>
+                ) : activeScene ? (
+                  activeSceneComments.length ? (
+                    activeSceneComments.map(c => (
+                      <CommentItem
+                        key={c.id}
+                        comment={c}
+                        authorColorClass="text-red-400"
+                        onUpdate={async (id, content) => {
+                          await updateComment(id, content);
+                        }}
+                        onDelete={async (id) => {
+                          const target = activeSceneComments.find(cm => cm.id === id);
+                          await deleteComment(id);
+                          if (activeScene?.id) {
+                            setSceneCommentCounts(prev => ({
+                              ...prev,
+                              [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                            }));
+                            if (target?.status === 'unresolved') {
+                              setSceneUnresolvedCounts(prev => ({
+                                ...prev,
+                                [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                              }));
+                            }
+                          }
+                        }}
+                        onResolve={async (id) => {
+                          await resolveComment(id);
+                          if (activeScene?.id) {
+                            setSceneUnresolvedCounts(prev => ({
+                              ...prev,
+                              [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
+                            }));
+                          }
+                        }}
+                        onUnresolve={async (id) => {
+                          await unresolveComment(id);
+                          if (activeScene?.id) {
+                            setSceneUnresolvedCounts(prev => ({
+                              ...prev,
+                              [activeScene.id]: (prev[activeScene.id] || 0) + 1
+                            }));
+                          }
+                        }}
+                      />
+                    ))
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                      <AlertCircle size={32} />
+                      <p className="text-xs">暂无审核反馈</p>
+                    </div>
+                  )
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 italic">
+                    <AlertCircle size={32} />
+                    <p className="text-xs">请选择场景查看反馈</p>
+                  </div>
+                )}
+              </div>
+
+              <CommentInput
+                onSubmit={handleSubmitComment}
+                disabled={!activeScene}
+                posting={postingComment}
+                placeholder="添加修改意见或反馈..."
+              />
+            </div>
+          </>
+        )}
         </>
         )}
       </div>
