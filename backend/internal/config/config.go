@@ -106,7 +106,7 @@ func Load() *Config {
 			JWTExpireSeconds: parseIntEnv("TTS_JWT_EXPIRE_SECONDS", 60),
 		},
 		Ark: ArkConfig{
-			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com"),
+			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com/api"),
 			APIKey:     utils.GetEnv("ARK_API_KEY", ""),
 		},
 		CORS: CORSConfig{

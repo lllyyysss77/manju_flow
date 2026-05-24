@@ -18,7 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  Download
+  Download,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
 import { useSceneComments } from './useSceneComments';
@@ -59,7 +61,8 @@ const ReferenceSection: React.FC<{
   onRemove: () => void;
   isUploading?: boolean;
   onUploadError?: (msg: string) => void;
-}> = ({ initialImage, onUpload, onRemove, isUploading = false, onUploadError }) => {
+  readOnly?: boolean;
+}> = ({ initialImage, onUpload, onRemove, isUploading = false, onUploadError, readOnly = false }) => {
   const [mode, setMode] = useState<'NONE' | 'DRAW' | 'VIEW'>(initialImage ? 'VIEW' : 'NONE');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [color, setColor] = useState('#000000');
@@ -173,7 +176,7 @@ const ReferenceSection: React.FC<{
     setDragOverUpload(false);
   };
 
-  const busy = isUploading || localUploading;
+  const busy = isUploading || localUploading || readOnly;
 
   // 图片预览状态
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
@@ -422,7 +425,8 @@ const ReferenceWithDescriptionSection: React.FC<{
   onDescriptionChange: (desc: string) => void;
   isUploading?: boolean;
   onUploadError?: (msg: string) => void;
-}> = ({ initialImage, description, onUpload, onRemove, onDescriptionChange, isUploading = false, onUploadError }) => {
+  readOnly?: boolean;
+}> = ({ initialImage, description, onUpload, onRemove, onDescriptionChange, isUploading = false, onUploadError, readOnly = false }) => {
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -430,7 +434,7 @@ const ReferenceWithDescriptionSection: React.FC<{
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const busy = isUploading || localUploading;
+  const busy = isUploading || localUploading || readOnly;
 
   // ESC 键关闭预览
   useEffect(() => {
@@ -666,7 +670,8 @@ const ReferenceCard: React.FC<{
   onDelete: () => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
   isUploading?: boolean;
-}> = ({ reference, index, resolvedImageUrl, onUpdate, onDelete, onUploadImage, isUploading = false }) => {
+  readOnly?: boolean;
+}> = ({ reference, index, resolvedImageUrl, onUpdate, onDelete, onUploadImage, isUploading = false, readOnly = false }) => {
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -676,7 +681,7 @@ const ReferenceCard: React.FC<{
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const busy = isUploading || localUploading;
+  const busy = isUploading || localUploading || readOnly;
 
   // ESC 键关闭预览
   useEffect(() => {
@@ -695,6 +700,7 @@ const ReferenceCard: React.FC<{
 
   // 防抖保存描述
   useEffect(() => {
+    if (readOnly) return;
     if (description === (reference.description || '')) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
@@ -703,9 +709,10 @@ const ReferenceCard: React.FC<{
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [description, reference, onUpdate]);
+  }, [description, reference, onUpdate, readOnly]);
 
   const handleUpload = async (file: File) => {
+    if (readOnly) return;
     if (!file.type.startsWith('image/')) {
       setError('只支持上传图片文件');
       return;
@@ -732,12 +739,13 @@ const ReferenceCard: React.FC<{
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    if (busy) return;
+    if (busy || readOnly) return;
     const file = e.dataTransfer.files?.[0];
     if (file) handleUpload(file);
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
+    if (readOnly) return;
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -751,6 +759,7 @@ const ReferenceCard: React.FC<{
   };
 
   const handleDelete = async () => {
+    if (readOnly) return;
     setIsDeleting(true);
     try {
       await onDelete();
@@ -767,7 +776,7 @@ const ReferenceCard: React.FC<{
         isDragOver ? 'border-blue-500 bg-blue-900/10' : 'border-white/10'
       }`}
       onDrop={handleDrop}
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setIsDragOver(true); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = readOnly ? 'none' : 'copy'; if (!readOnly) setIsDragOver(true); }}
       onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
       onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
     >
@@ -799,30 +808,34 @@ const ReferenceCard: React.FC<{
             >
               <Download size={14} />
             </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
-              disabled={busy}
-            >
-              {busy ? '上传中...' : '重新上传'}
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300 disabled:opacity-60"
-              title="删除此参考"
-            >
-              {isDeleting ? (
-                <div className="w-3.5 h-3.5 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-              ) : (
-                <Trash2 size={14} />
-              )}
-            </button>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 text-[11px] rounded-lg bg-black/70 text-white/90 border border-white/10 shadow disabled:opacity-60 hover:bg-black/80"
+                  disabled={busy}
+                >
+                  {busy ? '上传中...' : '重新上传'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300 disabled:opacity-60"
+                  title="删除此参考"
+                >
+                  {isDeleting ? (
+                    <div className="w-3.5 h-3.5 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </div>
-      ) : (
+      ) : !readOnly ? (
         <button
           onClick={() => !busy && fileInputRef.current?.click()}
           disabled={busy}
@@ -837,6 +850,11 @@ const ReferenceCard: React.FC<{
           </div>
           <span className="text-xs text-white/40">{busy ? '上传中...' : '点击上传图片'}</span>
         </button>
+      ) : (
+        <div className="w-full flex flex-col items-center justify-center gap-2 p-6 min-h-[120px] border-b border-white/5 text-white/25">
+          <ImageIcon size={20} />
+          <span className="text-xs">暂无图片</span>
+        </div>
       )}
 
       {/* 描述输入区域 */}
@@ -846,6 +864,7 @@ const ReferenceCard: React.FC<{
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onPaste={handlePaste}
+          readOnly={readOnly}
           placeholder="添加参考说明..."
         />
       </div>
@@ -915,11 +934,13 @@ const MultipleReferencesSection: React.FC<{
   sceneId: number;
   references: SceneReference[];
   onReferencesChange: (refs: SceneReference[]) => void;
-}> = ({ sceneId, references, onReferencesChange }) => {
+  readOnly?: boolean;
+}> = ({ sceneId, references, onReferencesChange, readOnly = false }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleAddReference = async () => {
+    if (readOnly) return;
     setIsAdding(true);
     setError(null);
     try {
@@ -937,6 +958,7 @@ const MultipleReferencesSection: React.FC<{
   };
 
   const handleUpdateReference = async (ref: SceneReference) => {
+    if (readOnly) return;
     try {
       const updated = await sceneReferenceApi.update(sceneId, ref.id, {
         index: ref.index,
@@ -950,11 +972,13 @@ const MultipleReferencesSection: React.FC<{
   };
 
   const handleDeleteReference = async (refId: number) => {
+    if (readOnly) return;
     await sceneReferenceApi.delete(sceneId, refId);
     onReferencesChange(references.filter(r => r.id !== refId));
   };
 
   const handleUploadImage = async (file: File): Promise<string> => {
+    if (readOnly) throw new Error('只读模式下不能上传参考图');
     const res = await fileApi.upload(file, 'private');
     return res.key;
   };
@@ -975,6 +999,7 @@ const MultipleReferencesSection: React.FC<{
               onUpdate={handleUpdateReference}
               onDelete={() => handleDeleteReference(ref.id)}
               onUploadImage={handleUploadImage}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -987,7 +1012,7 @@ const MultipleReferencesSection: React.FC<{
       )}
 
       {/* 添加按钮 */}
-      <button
+      {!readOnly && <button
         onClick={handleAddReference}
         disabled={isAdding}
         className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 hover:border-blue-500/30 text-white/60 hover:text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60"
@@ -1003,7 +1028,7 @@ const MultipleReferencesSection: React.FC<{
             <span>添加参考资料</span>
           </>
         )}
-      </button>
+      </button>}
 
       {error && (
         <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
@@ -1071,6 +1096,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // ============ 保留的独立 useState (表单输入 + UI 状态) ============
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [isCommentPanelCollapsed, setIsCommentPanelCollapsed] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(false);
   // 场景评论数映射 (sceneId -> count)
   const [sceneCommentCounts, setSceneCommentCounts] = useState<Record<number, number>>({});
   // 场景未解决评论数映射 (sceneId -> count)
@@ -1090,6 +1116,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const [loadingReferences, setLoadingReferences] = useState(false);
   // 本地备份恢复提示
   const [localBackup, setLocalBackup] = useState<{ sceneId: number; data: any } | null>(null);
+  const isReadOnly = !isEditMode;
 
   // ============ Hooks ============
   const {
@@ -1117,12 +1144,39 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     return (prev + next) / 2;
   };
 
+  const requireEditMode = () => {
+    if (isReadOnly) {
+      setToast({ message: '当前为只读模式，请先打开编辑模式', tone: 'info' });
+      return false;
+    }
+    return true;
+  };
+
+  const toggleEditMode = () => {
+    if (isEditMode && (isDirty || isSynopsisDirty || saveQueueSize > 0 || isSaving || isSavingSynopsis)) {
+      setToast({ message: '存在未保存内容，请保存完成后再切回只读模式', tone: 'error' });
+      return;
+    }
+    if (isEditMode) {
+      setEditingChapterId(null);
+    }
+    setIsEditMode(prev => !prev);
+    setToast({
+      message: isEditMode ? '已切换为只读模式' : '已打开编辑模式',
+      tone: isEditMode ? 'info' : 'success',
+    });
+  };
+
   useEffect(() => {
     loadChapters();
   }, [loadChapters]);
 
   // 检查是否有本地备份需要恢复
   useEffect(() => {
+    if (!isEditMode) {
+      setLocalBackup(null);
+      return;
+    }
     if (!activeScene?.id) return;
 
     const backupKey = `manju_scene_${activeScene.id}`;
@@ -1145,7 +1199,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     } catch (err) {
       console.error('Failed to check local backup', err);
     }
-  }, [activeScene?.id]);
+  }, [isEditMode, activeScene?.id]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -1185,6 +1239,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
   // ============ 事件处理函数 ============
   const handleAddChapterAt = (insertIndex: number) => {
+    if (!requireEditMode()) return;
     const index = computeInsertIndex(chapters, insertIndex);
     chapterApi.create(bookId, { title: `新章节(点我修改章节名)`, index, status: 'DRAFT' }).then(res => {
       const newChapter: Episode = { id: res.id, title: res.title, index: res.index, status: res.status as 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED', scenes: [] };
@@ -1197,6 +1252,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleAddSceneAt = (chapterId: number, insertIndex: number) => {
+    if (!requireEditMode()) return;
     dispatch({ type: 'SET_ACTIVE_CHAPTER', payload: chapterId });
     const chapter = chapters.find(c => c.id === chapterId);
     const index = computeInsertIndex(chapter?.scenes || [], insertIndex);
@@ -1228,16 +1284,17 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleDeleteScene = (chapterId: number, sceneId: number, label: string) => {
+    if (!requireEditMode()) return;
     setConfirmDelete({ type: 'scene', chapterId, sceneId, label });
   };
 
   const handleSelectScene = async (chapterId: number, scene: Scene) => {
-    // 自动保存当前编辑
-    if (activeChapterId && isSynopsisDirty && activeChapter) {
+    // 只在编辑模式下切换选择时自动保存当前编辑。
+    if (isEditMode && activeChapterId && isSynopsisDirty && activeChapter) {
       const ok = await persistChapterSynopsis(activeChapterId, synopsisDraft);
       if (ok) setToast({ message: '章节梗概已保存', tone: 'success' });
     }
-    if (activeScene && activeChapterId && isDirty) {
+    if (isEditMode && activeScene && activeChapterId && isDirty) {
       await persistScene(activeChapterId, activeScene);
     }
     dispatch({ type: 'SELECT_SCENE', payload: { chapterId, scene } });
@@ -1245,7 +1302,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleToggleChapter = (chapterId: number) => {
-    if (activeChapterId && isSynopsisDirty && activeChapter) {
+    if (isEditMode && activeChapterId && isSynopsisDirty && activeChapter) {
       persistChapterSynopsis(activeChapterId, synopsisDraft).then(ok => {
         if (ok) setToast({ message: '章节梗概已保存', tone: 'success' });
       });
@@ -1258,6 +1315,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleUpdateChapterTitle = (chapterId: number, title: string) => {
+    if (!requireEditMode()) return;
     dispatch({ type: 'UPDATE_CHAPTER', payload: { chapterId, updates: { title } } });
     chapterApi.update(bookId, chapterId, { title }).catch(err => {
       console.error('Failed to update chapter title', err);
@@ -1265,6 +1323,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleSaveChapterSynopsis = async () => {
+    if (!requireEditMode()) return;
     if (!activeChapter) return;
     dispatch({ type: 'UPDATE_CHAPTER', payload: { chapterId: activeChapter.id, updates: { synopsis: synopsisDraft } } });
     const ok = await persistChapterSynopsis(activeChapter.id, synopsisDraft);
@@ -1273,11 +1332,13 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const handleDeleteChapter = (chapterId: number) => {
+    if (!requireEditMode()) return;
     const target = chapters.find(ch => ch.id === chapterId);
     setConfirmDelete({ type: 'chapter', chapterId, label: target?.title || '未命名章节' });
   };
 
   const handleSubmitComment = async (content: string, meta?: string) => {
+    if (!requireEditMode()) return;
     if (!activeScene?.id) return;
     try {
       await addComment(content, meta);
@@ -1299,6 +1360,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   };
 
   const executeDelete = async () => {
+    if (!requireEditMode()) return;
     if (!confirmDelete) return;
     setIsDeleting(true);
     try {
@@ -1333,27 +1395,29 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
   // 场景定时自动保存（2秒）
   useEffect(() => {
+    if (!isEditMode) return;
     if (!isDirty || !activeScene || !activeChapterId) return;
     const timer = setTimeout(() => {
       persistScene(activeChapterId, activeScene);
     }, 2000);
     return () => clearTimeout(timer);
-  }, [isDirty, activeScene, activeChapterId, persistScene]);
+  }, [isEditMode, isDirty, activeScene, activeChapterId, persistScene]);
 
   // 梗概定时自动保存（2秒）
   useEffect(() => {
+    if (!isEditMode) return;
     if (!isSynopsisDirty || !activeChapterId) return;
     const timer = setTimeout(() => {
       persistChapterSynopsis(activeChapterId, synopsisDraft);
     }, 2000);
     return () => clearTimeout(timer);
-  }, [isSynopsisDirty, activeChapterId, synopsisDraft, persistChapterSynopsis]);
+  }, [isEditMode, isSynopsisDirty, activeChapterId, synopsisDraft, persistChapterSynopsis]);
 
   // Ctrl+S / Cmd+S 手动保存快捷键
   // 使用 ref 存储回调依赖，避免频繁注册/卸载事件监听器
-  const saveShortcutRef = useRef({ activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast });
+  const saveShortcutRef = useRef({ activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast, isEditMode });
   useEffect(() => {
-    saveShortcutRef.current = { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast };
+    saveShortcutRef.current = { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast, isEditMode };
   });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1361,7 +1425,11 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
         e.preventDefault();
         e.stopPropagation();
 
-        const { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast } = saveShortcutRef.current;
+        const { activeScene, activeChapterId, isDirty, isSynopsisDirty, activeChapter, synopsisDraft, persistScene, persistChapterSynopsis, setToast, isEditMode } = saveShortcutRef.current;
+        if (!isEditMode) {
+          setToast({ message: '只读模式下不能保存，请先打开编辑模式', tone: 'info' });
+          return;
+        }
         if (activeScene && activeChapterId && isDirty) {
           persistScene(activeChapterId, activeScene).then(ok => {
             if (ok) setToast({ message: '场景已保存 (Ctrl+S)', tone: 'success' });
@@ -1384,7 +1452,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // 离开页面前确保保存
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isDirty || isSynopsisDirty) {
+      if (isEditMode && (isDirty || isSynopsisDirty)) {
         e.preventDefault();
         // 现代浏览器会显示标准确认对话框
         return (e.returnValue = '您有未保存的更改，确定要离开吗？');
@@ -1393,7 +1461,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isDirty, isSynopsisDirty]);
+  }, [isEditMode, isDirty, isSynopsisDirty]);
 
   return (
     <div className="flex h-full bg-[#121212] relative">
@@ -1535,13 +1603,15 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
           {chapters.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-white/30">
               <AlertCircle size={32} />
-              <p className="text-xs font-semibold">暂无章节，点击下方按钮插入</p>
-              <button
-                onClick={() => handleAddChapterAt(0)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
-              >
-                <Plus size={14} /> 新建章节
-              </button>
+              <p className="text-xs font-semibold">{isReadOnly ? '暂无章节，打开编辑模式后可新建' : '暂无章节，点击下方按钮插入'}</p>
+              {!isReadOnly && (
+                <button
+                  onClick={() => handleAddChapterAt(0)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+                >
+                  <Plus size={14} /> 新建章节
+                </button>
+              )}
             </div>
           )}
           {chapters.length > 0 && (
@@ -1550,7 +1620,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                 <div className="w-full max-w-[200px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
                 <button
                   onClick={() => handleAddChapterAt(0)}
-                  className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                  className={`absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200 ${isReadOnly ? 'hidden' : ''}`}
                 >
                   <Plus size={12} className="inline-block mr-1" /> 在此插入章节
                 </button>
@@ -1594,9 +1664,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                             />
                           ) : (
                             <button
-                              className="text-left text-sm font-semibold hover:text-blue-300 transition-colors"
+                              className={`text-left text-sm font-semibold transition-colors ${isReadOnly ? 'cursor-default text-white/80' : 'hover:text-blue-300'}`}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (!requireEditMode()) return;
                                 setEditingChapterId(chapter.id);
                                 setEditingTitle(chapter.title || '未命名章节');
                               }}
@@ -1606,7 +1677,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      {!isReadOnly && <div className="flex items-center gap-1.5">
                         <button
                           className="p-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20"
                           onClick={(e) => {
@@ -1617,7 +1688,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                         >
                           <Trash2 size={14} />
                         </button>
-                      </div>
+                      </div>}
                     </div>
 
                     {chapter.id === activeChapterId && (
@@ -1626,7 +1697,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                           <div className="w-full max-w-[180px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
                           <button
                             onClick={() => handleAddSceneAt(chapter.id, 0)}
-                            className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                            className={`absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200 ${isReadOnly ? 'hidden' : ''}`}
                           >
                             <Plus size={12} className="inline-block mr-1" /> 在此插入场景
                           </button>
@@ -1672,7 +1743,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                     }`}>
                                       {STATUS_MAP[scene.status]}
                                     </span>
-                                    <button
+                                    {!isReadOnly && <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleDeleteScene(chapter.id, scene.id, `场景 ${sceneIdx + 1}`);
@@ -1681,7 +1752,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                       title="删除场景"
                                     >
                                       <Trash2 size={14} />
-                                    </button>
+                                    </button>}
                                   </div>
                                 </div>
                                 <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
@@ -1692,7 +1763,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                 <div className="w-full max-w-[180px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
                                 <button
                                   onClick={() => handleAddSceneAt(chapter.id, sceneIdx + 1)}
-                                  className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                                  className={`absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200 ${isReadOnly ? 'hidden' : ''}`}
                                 >
                                   <Plus size={12} className="inline-block mr-1" /> 在此插入场景
                                 </button>
@@ -1707,7 +1778,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     <div className="w-full max-w-[200px] h-px bg-white/5 group-hover:bg-white/10 transition-colors" />
                     <button
                       onClick={() => handleAddChapterAt(idx + 1)}
-                      className="absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200"
+                      className={`absolute top-1/2 -translate-y-1/2 px-3 py-1 text-[11px] rounded-full border border-dashed border-white/10 text-white/50 bg-[#1a1a1a] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all hover:border-blue-500/50 hover:text-blue-200 ${isReadOnly ? 'hidden' : ''}`}
                     >
                       <Plus size={12} className="inline-block mr-1" /> 在此插入章节
                     </button>
@@ -1722,25 +1793,43 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
         {/* 底部快捷添加栏 - 始终可见 */}
         <div className="p-3 border-t border-white/5 bg-[#1a1a1a] space-y-2">
           <button
-            onClick={() => handleAddChapterAt(chapters.length)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 rounded-xl text-xs font-bold transition-all hover:border-blue-500/50"
+            type="button"
+            onClick={toggleEditMode}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+              isEditMode
+                ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/25'
+                : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+            }`}
           >
-            <Plus size={14} /> 添加章节
+            {isEditMode ? <Unlock size={14} /> : <Lock size={14} />}
+            {isEditMode ? '编辑模式' : '只读模式'}
           </button>
-          <button
-            onClick={() => {
-              if (activeChapterId) {
-                const chapter = chapters.find(c => c.id === activeChapterId);
-                handleAddSceneAt(activeChapterId, chapter?.scenes?.length || 0);
-              }
-            }}
-            disabled={!activeChapterId}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-white/60"
-          >
-            <Plus size={14} /> 添加场景
-          </button>
-          {!activeChapterId && chapters.length > 0 && (
-            <p className="text-[10px] text-white/30 text-center">选择章节后可添加场景</p>
+          {isEditMode ? (
+            <>
+              <button
+                onClick={() => handleAddChapterAt(chapters.length)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 rounded-xl text-xs font-bold transition-all hover:border-blue-500/50"
+              >
+                <Plus size={14} /> 添加章节
+              </button>
+              <button
+                onClick={() => {
+                  if (activeChapterId) {
+                    const chapter = chapters.find(c => c.id === activeChapterId);
+                    handleAddSceneAt(activeChapterId, chapter?.scenes?.length || 0);
+                  }
+                }}
+                disabled={!activeChapterId}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-white/60"
+              >
+                <Plus size={14} /> 添加场景
+              </button>
+              {!activeChapterId && chapters.length > 0 && (
+                <p className="text-[10px] text-white/30 text-center">选择章节后可添加场景</p>
+              )}
+            </>
+          ) : (
+            <p className="text-[10px] text-white/30 text-center">只读模式下不会自动保存，也不能增删改</p>
           )}
         </div>
       </div>
@@ -1762,9 +1851,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
                     <textarea
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner"
+                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none min-h-[140px] resize-none leading-relaxed transition-all placeholder:text-white/5 shadow-inner ${isReadOnly ? 'cursor-default opacity-80' : 'focus:ring-2 focus:ring-blue-500/30'}`}
                       value={activeScene.description}
                       onChange={(e) => updateActiveScene(scene => ({ ...scene, description: e.target.value }))}
+                      readOnly={isReadOnly}
                       placeholder="详细描述画面内容，包括角色动作、环境变化等..."
                     />
                   </div>
@@ -1772,9 +1862,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">台词/旁白 (Dialogue)</label>
                     <textarea
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[80px] resize-none leading-relaxed"
+                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none min-h-[80px] resize-none leading-relaxed ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
                       value={activeScene.dialogue}
                       onChange={(e) => updateActiveScene(scene => ({ ...scene, dialogue: e.target.value }))}
+                      readOnly={isReadOnly}
                       placeholder="角色的台词或剧情叙述..."
                     />
                   </div>
@@ -1783,18 +1874,20 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     <div className="space-y-4">
                       <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">镜头/运镜 (Camera Movement)</label>
                       <textarea
-                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
+                        className={`w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none min-h-[60px] resize-none leading-relaxed ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
                         value={activeScene.cameraMovement}
                         onChange={(e) => updateActiveScene(scene => ({ ...scene, cameraMovement: e.target.value }))}
+                        readOnly={isReadOnly}
                         placeholder="特写 / 全景 / 俯视..."
                       />
                     </div>
                     <div className="space-y-4">
                       <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">转场/剪辑手法 (Transition)</label>
                       <textarea
-                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none leading-relaxed"
+                        className={`w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none min-h-[60px] resize-none leading-relaxed ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
                         value={activeScene.transitionEffect || ''}
                         onChange={(e) => updateActiveScene(scene => ({ ...scene, transitionEffect: e.target.value }))}
+                        readOnly={isReadOnly}
                         placeholder="淡入淡出 / 硬切 / 叠化..."
                       />
                     </div>
@@ -1812,6 +1905,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       sceneId={activeScene.id}
                       references={sceneReferences}
                       onReferencesChange={setSceneReferences}
+                      readOnly={isReadOnly}
                     />
                   </div>
                 </div>
@@ -1824,7 +1918,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                      {/* 动画状态点 */}
                      <div className="relative">
                        <div className={`w-2.5 h-2.5 rounded-full transition-all ${
-                         saveError
+                         isReadOnly
+                           ? 'bg-white/40'
+                           : saveError
                            ? 'bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse'
                            : isDirty && !isSaving
                              ? 'bg-orange-400 shadow-[0_0_12px_#fb923c] animate-pulse'
@@ -1832,7 +1928,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                ? 'bg-yellow-400 shadow-[0_0_12px_#fbbf24]'
                                : 'bg-green-500 shadow-[0_0_12px_#22c55e]'
                        }`} />
-                       {(isSaving || isRetrying) && (
+                       {!isReadOnly && (isSaving || isRetrying) && (
                          <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-yellow-400 animate-ping" />
                        )}
                      </div>
@@ -1840,14 +1936,18 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                      {/* 状态文字 */}
                      <div className="flex flex-col gap-0.5">
                        <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                         saveError
+                         isReadOnly
+                           ? 'text-white/50'
+                           : saveError
                            ? 'text-red-300'
                            : isDirty && !isSaving
                              ? 'text-orange-300'
                              : 'text-white/50'
                        }`}>
-                         {saveError
-                           ? '保存失败'
+                         {isReadOnly
+                             ? '只读模式'
+                           : saveError
+                             ? '保存失败'
                            : isRetrying
                              ? `正在重试 (${retryCount}/3)`
                              : isSaving
@@ -1856,18 +1956,23 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                  ? '未保存'
                                  : '已保存'}
                        </span>
-                       {lastSavedAt && !isDirty && (
+                       {isReadOnly && (
+                         <span className="text-[9px] text-white/30">
+                           打开编辑模式后可修改和保存
+                         </span>
+                       )}
+                       {!isReadOnly && lastSavedAt && !isDirty && (
                          <span className="text-[9px] text-white/30">
                            上次保存：{lastSavedAt.toLocaleTimeString()}
                          </span>
                        )}
-                       {saveError && (
+                       {!isReadOnly && saveError && (
                          <span className="text-[9px] text-red-400/70">
                            {saveError}
                          </span>
                        )}
                        {/* 保存队列提示 */}
-                       {saveQueueSize > 0 && (
+                       {!isReadOnly && saveQueueSize > 0 && (
                          <span className="text-[9px] text-blue-400/70">
                            队列中：{saveQueueSize} 个任务
                          </span>
@@ -1876,14 +1981,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                    </div>
 
                    {/* 未保存徽章 */}
-                   {isDirty && !isSaving && (
+                   {!isReadOnly && isDirty && !isSaving && (
                      <div className="px-2.5 py-1 bg-orange-500/20 border border-orange-500/40 rounded-lg text-[10px] font-bold text-orange-200 animate-pulse">
                        有未保存更改
                      </div>
                    )}
 
                    {/* 保存队列徽章 */}
-                   {saveQueueSize > 1 && (
+                   {!isReadOnly && saveQueueSize > 1 && (
                      <div className="px-2.5 py-1 bg-blue-500/20 border border-blue-500/40 rounded-lg text-[10px] font-bold text-blue-200">
                        <div className="flex items-center gap-1.5">
                          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
@@ -1893,7 +1998,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                    )}
                  </div>
 
-                 <button
+                 {isEditMode && <button
                    onClick={async () => {
                      if (!activeScene || !activeChapterId) return;
                      if (!isDirty) {
@@ -1909,7 +2014,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                    disabled={isSaving || !activeScene || !activeChapterId}
                  >
                     <Save size={16} /> 手动保存 <span className="text-[9px] opacity-60">(Ctrl+S)</span>
-                 </button>
+                 </button>}
               </div>
             </>
           ) : (
@@ -1925,7 +2030,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   </div>
                   <button
                     onClick={() => handleAddChapterAt(0)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+                    className={`px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2 ${isReadOnly ? 'hidden' : ''}`}
                   >
                     <Plus size={16} /> 新建章节
                   </button>
@@ -1941,24 +2046,26 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       <span className="text-[10px] text-white/30">点击章节时展示的概要</span>
                       <span className="text-[10px] text-white/30">序号 #{chapters.findIndex(c => c.id === activeChapter.id) + 1}</span>
                     </div>
-                      <button
+                      {isEditMode && <button
                         onClick={handleSaveChapterSynopsis}
                         disabled={isSavingSynopsis}
                         className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-60"
                       >
                         {isSavingSynopsis ? '保存中...' : '保存梗概'}
-                      </button>
+                      </button>}
                     </div>
                     <textarea
                       rows={10}
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[200px] resize-none"
+                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none min-h-[200px] resize-none ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
                       value={synopsisDraft}
                       onChange={(e) => {
+                        if (isReadOnly) return;
                         setSynopsisDraft(e.target.value);
                         if (activeChapter?.id != null) {
                           dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: checkSynopsisDirty(activeChapter.id, e.target.value) });
                         }
                       }}
+                      readOnly={isReadOnly}
                       placeholder="填写章节的故事梗概，便于团队快速理解剧情走向"
                     />
                   </div>
@@ -2028,10 +2135,10 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       <CommentItem
                         key={c.id}
                         comment={c}
-                        onUpdate={async (id, content) => {
+                        onUpdate={isEditMode ? async (id, content) => {
                           await updateComment(id, content);
-                        }}
-                        onDelete={async (id) => {
+                        } : undefined}
+                        onDelete={isEditMode ? async (id) => {
                           const target = activeSceneComments.find(cm => cm.id === id);
                           await deleteComment(id);
                           if (activeScene?.id) {
@@ -2046,8 +2153,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                               }));
                             }
                           }
-                        }}
-                        onResolve={async (id) => {
+                        } : undefined}
+                        onResolve={isEditMode ? async (id) => {
                           await resolveComment(id);
                           if (activeScene?.id) {
                             setSceneUnresolvedCounts(prev => ({
@@ -2055,8 +2162,8 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                               [activeScene.id]: Math.max(0, (prev[activeScene.id] || 0) - 1)
                             }));
                           }
-                        }}
-                        onUnresolve={async (id) => {
+                        } : undefined}
+                        onUnresolve={isEditMode ? async (id) => {
                           await unresolveComment(id);
                           if (activeScene?.id) {
                             setSceneUnresolvedCounts(prev => ({
@@ -2064,7 +2171,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                               [activeScene.id]: (prev[activeScene.id] || 0) + 1
                             }));
                           }
-                        }}
+                        } : undefined}
                       />
                     ))
                   ) : (
@@ -2083,8 +2190,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
 
               <CommentInput
                 onSubmit={handleSubmitComment}
-                disabled={!activeScene}
+                disabled={!activeScene || isReadOnly}
                 posting={postingComment}
+                placeholder={isReadOnly ? '只读模式下不能发表或修改评论' : '输入您的修改意见或审核回复...'}
               />
             </div>
           </>

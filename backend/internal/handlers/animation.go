@@ -28,10 +28,7 @@ import (
 )
 
 const (
-	// 下面是agent plan 的api
-	// arkTaskCreatePath = "/api/plan/v3/contents/generations/tasks"
-	// 下面是非agent plan 的api
-	arkTaskCreatePath = "/api/v3/contents/generations/tasks"
+	arkTaskCreatePath = "/v3/contents/generations/tasks"
 
 	animationTaskPollInterval       = 10 * time.Second
 	animationTaskPollBatchSize      = 20
