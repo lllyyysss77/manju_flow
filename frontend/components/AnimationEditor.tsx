@@ -1018,6 +1018,34 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setIsPlaying(prev => !prev);
   };
 
+
+  const scrollReferenceRail = (element: HTMLDivElement, delta: number, behavior: ScrollBehavior = 'auto') => {
+    if (element.scrollWidth <= element.clientWidth || delta === 0) return;
+    element.scrollBy({ left: delta, behavior });
+  };
+
+  const handleReferenceRailWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollWidth <= element.clientWidth) return;
+
+    const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (dominantDelta === 0) return;
+
+    event.preventDefault();
+    scrollReferenceRail(element, dominantDelta);
+  };
+
+  const handleReferenceRailKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    const element = event.currentTarget;
+    if (element.scrollWidth <= element.clientWidth) return;
+
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    scrollReferenceRail(element, direction * element.clientWidth * 0.75, 'smooth');
+  };
+
   const closePreview = () => {
     if (previewVideoRef.current) {
       previewVideoRef.current.pause();
@@ -1079,10 +1107,18 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           usesHorizontalRail ? (
             <div className="space-y-2">
               <div className="rounded-[28px] border border-white/10 bg-black/20 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-                <div className="flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div
+                  className="reference-media-rail flex gap-3 overflow-x-auto overscroll-x-contain pb-3 snap-x snap-mandatory focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/50"
+                  tabIndex={0}
+                  role="list"
+                  aria-label={`${options.title}列表，可用鼠标滚轮或左右方向键横向滚动`}
+                  onWheel={handleReferenceRailWheel}
+                  onKeyDown={handleReferenceRailKeyDown}
+                >
                   {items.map((item, index) => (
                     <div
                       key={item.id}
+                      role="listitem"
                       className="group relative w-[230px] shrink-0 snap-start rounded-[24px] border border-white/10 bg-[#171717] p-2 shadow-[0_18px_35px_rgba(0,0,0,0.28)]"
                     >
                       <button
@@ -1127,11 +1163,11 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                   ))}
                 </div>
               </div>
-              <p className="px-1 text-[10px] text-white/28">左右滑动查看更多{options.title}</p>
+              <p className="px-1 text-[10px] text-white/28">鼠标滚轮、拖动滚动条或左右方向键查看更多{options.title}</p>
             </div>
           ) : usesVerticalScrollableList ? (
             <div className="space-y-2">
-              <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
+              <div className="reference-media-list max-h-[360px] overflow-y-auto space-y-3 pr-2">
                 {items.map((item, index) => (
                   <div
                     key={item.id}
@@ -1161,7 +1197,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                   </div>
                 ))}
               </div>
-              <p className="px-1 text-[10px] text-white/28">上下滑动查看更多{options.title}</p>
+              <p className="px-1 text-[10px] text-white/28">鼠标滚轮或拖动滚动条查看更多{options.title}</p>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">

@@ -30,3 +30,35 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #444;
 }
+
+/* Reference upload rails need visible, draggable scrollbars for mouse users. */
+.reference-media-rail {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.38) rgba(255, 255, 255, 0.08);
+  scrollbar-gutter: stable;
+}
+
+.reference-media-rail::-webkit-scrollbar {
+  height: 10px;
+}
+
+.reference-media-rail::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+.reference-media-rail::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.85), rgba(255, 255, 255, 0.5));
+  border: 2px solid #171717;
+  border-radius: 999px;
+}
+
+.reference-media-rail::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, rgba(147, 197, 253, 0.95), rgba(255, 255, 255, 0.7));
+}
+
+.reference-media-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.32) rgba(255, 255, 255, 0.08);
+  scrollbar-gutter: stable;
+}
