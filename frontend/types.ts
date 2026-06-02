@@ -61,6 +61,7 @@ export interface SceneReference {
   index: number;
   imageUrl?: string;
   description?: string;
+  imageUploadedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -80,6 +81,8 @@ export interface Scene {
   audios?: SceneAudioTrack[]; // 多音轨
   frameSets?: SceneFrameSet[];
   animations?: SceneAnimation[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SceneAudioTrack {

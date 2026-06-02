@@ -198,6 +198,8 @@ const App: React.FC = () => {
             frameSets: s.frameSets,
             animations: s.animations,
             audios: s.audios,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
           }))
           .sort((a, b) => a.index - b.index),
       }));

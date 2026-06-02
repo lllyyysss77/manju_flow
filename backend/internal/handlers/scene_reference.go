@@ -3,11 +3,14 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // SceneReferenceHandler 场景参考资料处理器
@@ -16,6 +19,73 @@ type SceneReferenceHandler struct{}
 // NewSceneReferenceHandler 创建场景参考资料处理器
 func NewSceneReferenceHandler() *SceneReferenceHandler {
 	return &SceneReferenceHandler{}
+}
+
+func normalizeReferenceFileKey(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	const marker = "/api/files/"
+	if idx := strings.LastIndex(value, marker); idx >= 0 {
+		return strings.TrimPrefix(value[idx+len(marker):], "/")
+	}
+	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") ||
+		strings.HasPrefix(value, "data:") || strings.HasPrefix(value, "blob:") {
+		return ""
+	}
+	return strings.TrimPrefix(value, "/")
+}
+
+func hydrateReferenceImageUploadedAt(db *gorm.DB, references ...*models.SceneReference) {
+	byKey := make(map[string][]*models.SceneReference)
+	for _, reference := range references {
+		if reference == nil || reference.ImageUploadedAt != nil {
+			continue
+		}
+		key := normalizeReferenceFileKey(reference.ImageUrl)
+		if key == "" {
+			continue
+		}
+		byKey[key] = append(byKey[key], reference)
+	}
+	if len(byKey) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(byKey))
+	for key := range byKey {
+		keys = append(keys, key)
+	}
+
+	var files []models.File
+	if err := db.Where("`key` IN ?", keys).Order("created_at DESC").Find(&files).Error; err != nil {
+		return
+	}
+	seen := make(map[string]bool)
+	for _, file := range files {
+		if seen[file.Key] {
+			continue
+		}
+		seen[file.Key] = true
+		uploadedAt := file.CreatedAt
+		for _, reference := range byKey[file.Key] {
+			reference.ImageUploadedAt = &uploadedAt
+		}
+	}
+}
+
+func findReferenceFileUploadedAt(db *gorm.DB, imageUrl string) *time.Time {
+	key := normalizeReferenceFileKey(imageUrl)
+	if key == "" {
+		return nil
+	}
+	var file models.File
+	if err := db.Where("`key` = ?", key).Order("created_at DESC").First(&file).Error; err != nil {
+		return nil
+	}
+	uploadedAt := file.CreatedAt
+	return &uploadedAt
 }
 
 // List 获取场景参考资料列表
@@ -40,6 +110,11 @@ func (h *SceneReferenceHandler) List(c *gin.Context) {
 		})
 		return
 	}
+	referencePtrs := make([]*models.SceneReference, 0, len(references))
+	for i := range references {
+		referencePtrs = append(referencePtrs, &references[i])
+	}
+	hydrateReferenceImageUploadedAt(db, referencePtrs...)
 
 	c.JSON(http.StatusOK, models.SceneReferenceListResponse{
 		Total: int64(len(references)),
@@ -77,11 +152,21 @@ func (h *SceneReferenceHandler) Create(c *gin.Context) {
 		return
 	}
 
+	var imageUploadedAt *time.Time
+	if req.ImageUrl != "" {
+		imageUploadedAt = findReferenceFileUploadedAt(db, req.ImageUrl)
+		if imageUploadedAt == nil {
+			now := time.Now()
+			imageUploadedAt = &now
+		}
+	}
+
 	reference := models.SceneReference{
-		SceneID:     uint(sceneIdUint),
-		Index:       *req.Index,
-		ImageUrl:    req.ImageUrl,
-		Description: req.Description,
+		SceneID:         uint(sceneIdUint),
+		Index:           *req.Index,
+		ImageUrl:        req.ImageUrl,
+		ImageUploadedAt: imageUploadedAt,
+		Description:     req.Description,
 	}
 
 	if err := db.Create(&reference).Error; err != nil {
@@ -126,11 +211,20 @@ func (h *SceneReferenceHandler) BatchCreate(c *gin.Context) {
 
 	var references []models.SceneReference
 	for _, r := range req.References {
+		var imageUploadedAt *time.Time
+		if r.ImageUrl != "" {
+			imageUploadedAt = findReferenceFileUploadedAt(db, r.ImageUrl)
+			if imageUploadedAt == nil {
+				now := time.Now()
+				imageUploadedAt = &now
+			}
+		}
 		references = append(references, models.SceneReference{
-			SceneID:     uint(sceneIdUint),
-			Index:       *r.Index,
-			ImageUrl:    r.ImageUrl,
-			Description: r.Description,
+			SceneID:         uint(sceneIdUint),
+			Index:           *r.Index,
+			ImageUrl:        r.ImageUrl,
+			ImageUploadedAt: imageUploadedAt,
+			Description:     r.Description,
 		})
 	}
 
@@ -170,6 +264,7 @@ func (h *SceneReferenceHandler) GetByID(c *gin.Context) {
 		})
 		return
 	}
+	hydrateReferenceImageUploadedAt(db, &reference)
 
 	c.JSON(http.StatusOK, reference)
 }
@@ -211,6 +306,17 @@ func (h *SceneReferenceHandler) Update(c *gin.Context) {
 		reference.Index = *req.Index
 	}
 	if req.ImageUrl != nil {
+		if *req.ImageUrl != reference.ImageUrl {
+			if *req.ImageUrl == "" {
+				reference.ImageUploadedAt = nil
+			} else {
+				reference.ImageUploadedAt = findReferenceFileUploadedAt(db, *req.ImageUrl)
+				if reference.ImageUploadedAt == nil {
+					now := time.Now()
+					reference.ImageUploadedAt = &now
+				}
+			}
+		}
 		reference.ImageUrl = *req.ImageUrl
 	}
 	if req.Description != nil {

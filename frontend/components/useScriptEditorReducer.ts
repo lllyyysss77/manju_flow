@@ -435,6 +435,8 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
             frameSets: s.frameSets,
             animations: s.animations,
             audios: s.audios,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
           }) as Scene)
           .sort((a, b) => a.index - b.index),
       })) as Episode[];
@@ -526,7 +528,14 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
         referenceImageDescription: scene.referenceImageDescription,
       });
 
-      savedSignaturesRef.current[scene.id] = getSignature(updated);
+      const savedScene: Scene = {
+        ...scene,
+        ...updated,
+        chapterId: updated.chapterId ?? chapterId,
+        comments: scene.comments || updated.comments || [],
+      };
+      savedSignaturesRef.current[scene.id] = getSignature(savedScene);
+      dispatch({ type: 'REPLACE_SCENE', payload: { chapterId, tempId: scene.id, scene: savedScene } });
       dispatch({ type: 'SAVE_SUCCESS', payload: { sceneId: scene.id, savedAt: new Date() } });
       dispatch({ type: 'SET_IS_RETRYING', payload: false });
       dispatch({ type: 'SET_RETRY_COUNT', payload: 0 });

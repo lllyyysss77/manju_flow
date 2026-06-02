@@ -55,6 +55,19 @@ const BRUSH_SIZES = [
   { label: '大', value: 14 },
 ];
 
+const formatTimestamp = (value?: string | Date | null) => {
+  if (!value) return '暂无';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '暂无';
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const ReferenceSection: React.FC<{ 
   initialImage?: string;
   onUpload: (file: File) => Promise<void>;
@@ -682,6 +695,7 @@ const ReferenceCard: React.FC<{
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = isUploading || localUploading || readOnly;
+  const uploadTime = reference.imageUploadedAt || (reference.imageUrl ? reference.updatedAt || reference.createdAt : undefined);
 
   // ESC 键关闭预览
   useEffect(() => {
@@ -785,6 +799,11 @@ const ReferenceCard: React.FC<{
         <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
           参考 #{index + 1}
         </span>
+        {reference.imageUrl && (
+          <span className="text-[10px] text-white/30">
+            上传：{formatTimestamp(uploadTime)}
+          </span>
+        )}
       </div>
 
       {/* 图片预览区域 */}
@@ -1960,6 +1979,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                          <span className="text-[9px] text-white/30">
                            打开编辑模式后可修改和保存
                          </span>
+                       )}
+                       {activeScene && (
+                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] text-white/25">
+                           <span>创建：{formatTimestamp(activeScene.createdAt)}</span>
+                           <span>修改：{formatTimestamp(activeScene.updatedAt)}</span>
+                         </div>
                        )}
                        {!isReadOnly && lastSavedAt && !isDirty && (
                          <span className="text-[9px] text-white/30">
