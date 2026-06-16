@@ -70,7 +70,7 @@ const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
   video: '视频参考',
 };
 
-const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-260128';
+const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-fast-260128';
 const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
 
