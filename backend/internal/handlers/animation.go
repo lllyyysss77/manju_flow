@@ -99,6 +99,15 @@ type arkTaskStatusResponse struct {
 	} `json:"content"`
 }
 
+type arkHTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *arkHTTPError) Error() string {
+	return e.Message
+}
+
 type resolvedAnimationReferenceAsset struct {
 	Source    string
 	Name      string
@@ -264,7 +273,7 @@ func (h *AnimationHandler) fetchArkTaskStatus(ctx context.Context, client *http.
 		if message == "" {
 			message = "Failed to query Ark task status"
 		}
-		return nil, errors.New(message)
+		return nil, &arkHTTPError{StatusCode: resp.StatusCode, Message: message}
 	}
 
 	var payload arkTaskStatusResponse
@@ -432,6 +441,36 @@ func mapArkStatusToAnimationTaskStatus(status string) models.AnimationTaskStatus
 	default:
 		return models.AnimationTaskStatusProcessing
 	}
+}
+
+func isTerminalArkPollError(err error) bool {
+	var arkErr *arkHTTPError
+	return errors.As(err, &arkErr) && arkErr.StatusCode >= http.StatusBadRequest && arkErr.StatusCode < http.StatusInternalServerError
+}
+
+func recordArkPollError(db *gorm.DB, task *models.SceneAnimationGenerationTask, err error) error {
+	if task == nil || err == nil {
+		return nil
+	}
+
+	now := time.Now()
+	message := firstNonEmpty(err.Error(), "Failed to query Ark task status")
+	updates := map[string]any{
+		"last_polled_at": &now,
+		"error_message":  message,
+	}
+	if isTerminalArkPollError(err) {
+		updates["status"] = models.AnimationTaskStatusFailed
+		updates["completed_at"] = &now
+	}
+
+	if updateErr := db.Model(task).Updates(updates).Error; updateErr != nil {
+		return fmt.Errorf("failed to record generation task poll error")
+	}
+	if reloadErr := db.First(task, task.ID).Error; reloadErr != nil {
+		return fmt.Errorf("failed to reload generation task")
+	}
+	return nil
 }
 
 func (h *AnimationHandler) getSceneAndAnimation(db *gorm.DB, sceneID string, animationID string) (*models.Scene, *models.SceneAnimation, error) {
@@ -697,7 +736,10 @@ func (h *AnimationHandler) pollGenerationTaskOnce(
 
 	remoteStatus, err := h.fetchArkTaskStatus(ctx, httpClient, task.ArkTaskID)
 	if err != nil {
-		return err
+		if recordErr := recordArkPollError(db, task, err); recordErr != nil {
+			return recordErr
+		}
+		return nil
 	}
 
 	return h.applyRemoteGenerationTaskStatus(db, task, remoteStatus)
@@ -1542,7 +1584,12 @@ func (h *AnimationHandler) PollGenerationTask(c *gin.Context) {
 	httpClient := &http.Client{Timeout: animationTaskPollRequestTimeout}
 	remoteStatus, err := h.fetchArkTaskStatus(c.Request.Context(), httpClient, task.ArkTaskID)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		if recordErr := recordArkPollError(db, &task, err); recordErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": recordErr.Error()})
+			return
+		}
+		hydrateAnimationTask(&task)
+		c.JSON(http.StatusOK, task)
 		return
 	}
 
