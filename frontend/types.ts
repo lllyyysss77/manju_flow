@@ -62,6 +62,8 @@ export interface SceneReference {
   imageUrl?: string;
   description?: string;
   imageUploadedAt?: string;
+  createdBy?: number;
+  updatedBy?: number;
   createdAt?: string;
   updatedAt?: string;
 }

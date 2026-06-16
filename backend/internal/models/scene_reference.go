@@ -14,12 +14,16 @@ type SceneReference struct {
 	ImageUrl        string         `gorm:"type:text" json:"imageUrl"`    // 参考图 URL（可选）
 	ImageUploadedAt *time.Time     `json:"imageUploadedAt,omitempty"`    // 参考图最近上传时间
 	Description     string         `gorm:"type:text" json:"description"` // 描述（可选）
+	CreatedBy       uint           `gorm:"index" json:"createdBy"`       // 创建者ID
+	UpdatedBy       uint           `gorm:"index" json:"updatedBy"`       // 最近更新者ID
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联（无外键约束）
-	Scene Scene `gorm:"foreignKey:SceneID;constraint:false" json:"-"`
+	Scene   Scene `gorm:"foreignKey:SceneID;constraint:false" json:"-"`
+	Creator User  `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
+	Updater User  `gorm:"foreignKey:UpdatedBy;constraint:false" json:"-"`
 }
 
 // TableName 指定表名

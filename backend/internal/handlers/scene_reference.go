@@ -88,6 +88,15 @@ func findReferenceFileUploadedAt(db *gorm.DB, imageUrl string) *time.Time {
 	return &uploadedAt
 }
 
+func currentSceneReferenceUserID(c *gin.Context) (uint, bool) {
+	userID, exists := c.Get("userId")
+	if !exists {
+		return 0, false
+	}
+	id, ok := userID.(uint)
+	return id, ok
+}
+
 // List 获取场景参考资料列表
 func (h *SceneReferenceHandler) List(c *gin.Context) {
 	sceneId := c.Param("sceneId")
@@ -134,6 +143,13 @@ func (h *SceneReferenceHandler) Create(c *gin.Context) {
 	}
 
 	db := database.GetDB()
+	userID, ok := currentSceneReferenceUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
 
 	// 检查场景是否存在
 	var scene models.Scene
@@ -167,6 +183,8 @@ func (h *SceneReferenceHandler) Create(c *gin.Context) {
 		ImageUrl:        req.ImageUrl,
 		ImageUploadedAt: imageUploadedAt,
 		Description:     req.Description,
+		CreatedBy:       userID,
+		UpdatedBy:       userID,
 	}
 
 	if err := db.Create(&reference).Error; err != nil {
@@ -191,6 +209,13 @@ func (h *SceneReferenceHandler) BatchCreate(c *gin.Context) {
 	}
 
 	db := database.GetDB()
+	userID, ok := currentSceneReferenceUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
 
 	// 检查场景是否存在
 	var scene models.Scene
@@ -225,6 +250,8 @@ func (h *SceneReferenceHandler) BatchCreate(c *gin.Context) {
 			ImageUrl:        r.ImageUrl,
 			ImageUploadedAt: imageUploadedAt,
 			Description:     r.Description,
+			CreatedBy:       userID,
+			UpdatedBy:       userID,
 		})
 	}
 
@@ -275,6 +302,13 @@ func (h *SceneReferenceHandler) Update(c *gin.Context) {
 	id := c.Param("referenceId")
 
 	db := database.GetDB()
+	userID, ok := currentSceneReferenceUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
 
 	// 检查场景是否存在
 	var scene models.Scene
@@ -322,6 +356,7 @@ func (h *SceneReferenceHandler) Update(c *gin.Context) {
 	if req.Description != nil {
 		reference.Description = *req.Description
 	}
+	reference.UpdatedBy = userID
 
 	if err := db.Save(&reference).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
