@@ -251,6 +251,8 @@ const App: React.FC = () => {
         cover: book.cover || '',
         type: book.type,
         description: book.description || '',
+        originalTextKey: book.originalTextKey || '',
+        originalTextPreview: book.originalTextPreview || '',
       });
     } catch (err) {
       console.error('Failed to load book detail:', err);
@@ -260,6 +262,8 @@ const App: React.FC = () => {
         cover: project.cover,
         type: project.originalWorkType,
         description: '',
+        originalTextKey: project.originalTextKey || '',
+        originalTextPreview: project.originalTextPreview || '',
       });
     } finally {
       setIsEditLoading(false);

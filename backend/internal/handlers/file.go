@@ -3,6 +3,7 @@ package handlers
 import (
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,107 @@ type FileHandler struct{}
 // NewFileHandler 创建文件处理器
 func NewFileHandler() *FileHandler {
 	return &FileHandler{}
+}
+
+const originalTextPreviewRunes = 800
+
+func previewText(content []byte, limit int) string {
+	runes := []rune(string(content))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit])
+}
+
+func isTxtUpload(filename string) bool {
+	return strings.EqualFold(filepath.Ext(filename), ".txt")
+}
+
+// UploadOriginalText 上传小说/漫画原文 txt，并返回前 800 个字符作为预览。
+// POST /api/files/original-text
+func (h *FileHandler) UploadOriginalText(c *gin.Context) {
+	if !oss.IsConfigured() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "文件服务未配置",
+		})
+		return
+	}
+
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "用户未认证",
+		})
+		return
+	}
+	currentUser := user.(*models.User)
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "请选择要上传的原文 txt 文件",
+		})
+		return
+	}
+	defer file.Close()
+
+	if !isTxtUpload(header.Filename) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "原文上传只支持 txt 文件",
+		})
+		return
+	}
+
+	key, content, err := oss.GenerateKeyFromContent(file, header.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "处理原文失败: " + err.Error(),
+		})
+		return
+	}
+
+	ossClient := oss.GetClient()
+	exists, err = ossClient.Exists(key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "检查原文失败: " + err.Error(),
+		})
+		return
+	}
+	if !exists {
+		if err := ossClient.UploadBytes(key, content, "text/plain; charset=utf-8"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "原文上传失败: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	fileRecord := &models.File{
+		Key:          key,
+		OriginalName: header.Filename,
+		Size:         int64(len(content)),
+		MimeType:     "text/plain; charset=utf-8",
+		UploaderID:   currentUser.ID,
+		Visibility:   models.FileVisibilityPrivate,
+	}
+	if err := database.GetDB().Create(fileRecord).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "保存原文记录失败: " + err.Error(),
+		})
+		return
+	}
+
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := scheme + "://" + c.Request.Host
+
+	c.JSON(http.StatusCreated, models.OriginalTextUploadResponse{
+		FileResponse: fileRecord.ToResponse(baseURL),
+		Preview:      previewText(content, originalTextPreviewRunes),
+	})
 }
 
 // Upload 上传文件

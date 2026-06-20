@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, BookOpen, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
+import { X, BookOpen, Image as ImageIcon, Upload, Loader2, FileText } from 'lucide-react';
 import { CreateBookRequest, ensureHttpsUrl, fileApi } from '../api';
 
 interface ImportBookModalProps {
@@ -25,13 +25,18 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
     cover: '',
     type: 'NOVEL',
     description: '',
+    originalTextKey: '',
+    originalTextPreview: '',
   };
   const [formData, setFormData] = useState<CreateBookRequest>(initialData || defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingOriginalText, setIsUploadingOriginalText] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCoverDragOver, setIsCoverDragOver] = useState(false);
+  const [isOriginalDragOver, setIsOriginalDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const originalTextInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = mode === 'edit';
 
@@ -57,8 +62,8 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
       setError('请输入作者名称');
       return;
     }
-    if (isUploadingCover) {
-      setError('封面上传中，请稍候');
+    if (isUploadingCover || isUploadingOriginalText) {
+      setError('文件上传中，请稍候');
       return;
     }
 
@@ -120,6 +125,57 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
     }
   };
 
+  const handleOriginalTextUpload = async (file?: File | null) => {
+    if (!file) return;
+    const isTxt = file.name.toLowerCase().endsWith('.txt');
+    if (!isTxt) {
+      setError('原文上传只支持 txt 文件');
+      if (originalTextInputRef.current) {
+        originalTextInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setIsUploadingOriginalText(true);
+    setError(null);
+    try {
+      const res = await fileApi.uploadOriginalText(file);
+      setFormData(prev => ({
+        ...prev,
+        originalTextKey: res.key,
+        originalTextPreview: res.preview,
+      }));
+    } catch (err) {
+      console.error('Failed to upload original text', err);
+      setError(err instanceof Error ? err.message : '原文上传失败，请稍后重试');
+    } finally {
+      setIsUploadingOriginalText(false);
+      setIsOriginalDragOver(false);
+      if (originalTextInputRef.current) {
+        originalTextInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleOriginalTextFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    handleOriginalTextUpload(file);
+  };
+
+  const handleOriginalTextDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isUploadingOriginalText) {
+      setIsOriginalDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    handleOriginalTextUpload(file);
+    if (!file) {
+      setIsOriginalDragOver(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -131,7 +187,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
       />
 
       {/* 弹窗内容 */}
-      <div className="relative bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-lg mx-4 shadow-2xl">
+      <div className="relative bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -155,7 +211,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
             <span>加载作品信息...</span>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
                 {error}
@@ -313,6 +369,80 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               />
             </div>
 
+            {/* 原文 */}
+            <div>
+              <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
+                小说/漫画原文
+              </label>
+              <div
+                className={`rounded-xl border bg-white/5 p-4 transition-colors ${
+                  isOriginalDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/10'
+                }`}
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setIsOriginalDragOver(true);
+                }}
+                onDragLeave={() => setIsOriginalDragOver(false)}
+                onDrop={handleOriginalTextDrop}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-lg bg-blue-500/10 p-2 text-blue-300">
+                    <FileText size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        ref={originalTextInputRef}
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={handleOriginalTextFileChange}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => originalTextInputRef.current?.click()}
+                        disabled={isUploadingOriginalText}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-blue-900/30"
+                      >
+                        {isUploadingOriginalText ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            <span>上传中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={16} />
+                            <span>{formData.originalTextKey ? '重新上传原文' : '上传 TXT 原文'}</span>
+                          </>
+                        )}
+                      </button>
+                      {formData.originalTextKey && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, originalTextKey: '', originalTextPreview: '' }))}
+                          className="px-4 py-2 rounded-lg border border-white/10 text-white/70 font-semibold hover:bg-white/10 transition-all"
+                        >
+                          移除原文
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-3 text-white/40 text-xs leading-relaxed">
+                      仅支持 .txt；上传后保存到 OSS，并自动截取前 800 字用于大纲人设顶部预览。
+                    </p>
+                    {formData.originalTextPreview && (
+                      <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                        <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-white/30">预览</div>
+                        <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-white/65">
+                          {formData.originalTextPreview}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 提交按钮 */}
             <div className="flex gap-3 pt-2">
               <button
@@ -324,7 +454,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || isUploadingCover}
+                disabled={isSubmitting || isUploadingCover || isUploadingOriginalText}
                 className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (

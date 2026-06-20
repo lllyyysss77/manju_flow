@@ -53,8 +53,9 @@ func Setup(r *gin.Engine) {
 			authorized.GET("/auth/me", authHandler.GetCurrentUser)
 
 			// 文件路由（需要认证）
-			authorized.POST("/files", fileHandler.Upload)        // 上传文件
-			authorized.DELETE("/files/*key", fileHandler.Delete) // 删除文件
+			authorized.POST("/files/original-text", fileHandler.UploadOriginalText) // 上传小说/漫画原文 txt
+			authorized.POST("/files", fileHandler.Upload)                           // 上传文件
+			authorized.DELETE("/files/*key", fileHandler.Delete)                    // 删除文件
 
 			// 书库路由
 			bookHandler := handlers.NewBookHandler()

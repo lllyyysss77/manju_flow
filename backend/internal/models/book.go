@@ -25,19 +25,21 @@ const (
 
 // Book 书库模型 - 存储小说和漫画的原始作品
 type Book struct {
-	ID               uint             `gorm:"primaryKey" json:"id"`
-	Title            string           `gorm:"size:255;not null" json:"title"`
-	Author           string           `gorm:"size:100;not null" json:"author"`
-	Cover            string           `gorm:"size:500" json:"cover"`
-	Type             BookType         `gorm:"size:20;not null;default:'NOVEL'" json:"type"`
-	Description      string           `gorm:"type:text" json:"description"`
-	AdaptationStatus AdaptationStatus `gorm:"size:20;default:'NONE'" json:"adaptationStatus"`
-	AdaptedBy        string           `gorm:"size:100" json:"adaptedBy"` // 正在改编此作品的编剧
-	ChapterCount     int              `gorm:"default:0" json:"chapterCount"`
-	Outline          string           `gorm:"type:text" json:"outline"` // 大纲（纯文本）
-	CreatedAt        time.Time        `json:"createdAt"`
-	UpdatedAt        time.Time        `json:"updatedAt"`
-	DeletedAt        gorm.DeletedAt   `gorm:"index" json:"-"`
+	ID                  uint             `gorm:"primaryKey" json:"id"`
+	Title               string           `gorm:"size:255;not null" json:"title"`
+	Author              string           `gorm:"size:100;not null" json:"author"`
+	Cover               string           `gorm:"size:500" json:"cover"`
+	Type                BookType         `gorm:"size:20;not null;default:'NOVEL'" json:"type"`
+	Description         string           `gorm:"type:text" json:"description"`
+	AdaptationStatus    AdaptationStatus `gorm:"size:20;default:'NONE'" json:"adaptationStatus"`
+	AdaptedBy           string           `gorm:"size:100" json:"adaptedBy"` // 正在改编此作品的编剧
+	ChapterCount        int              `gorm:"default:0" json:"chapterCount"`
+	Outline             string           `gorm:"type:text" json:"outline"` // 大纲（纯文本）
+	OriginalTextKey     string           `gorm:"size:500" json:"originalTextKey"`
+	OriginalTextPreview string           `gorm:"type:text" json:"originalTextPreview"`
+	CreatedAt           time.Time        `json:"createdAt"`
+	UpdatedAt           time.Time        `json:"updatedAt"`
+	DeletedAt           gorm.DeletedAt   `gorm:"index" json:"-"`
 }
 
 // TableName 指定表名
@@ -55,12 +57,14 @@ type BookListResponse struct {
 
 // CreateBookRequest 创建书籍请求
 type CreateBookRequest struct {
-	Title       string   `json:"title" binding:"required"`
-	Author      string   `json:"author" binding:"required"`
-	Cover       string   `json:"cover"`
-	Type        BookType `json:"type" binding:"required,oneof=NOVEL COMIC"`
-	Description string   `json:"description"`
-	Outline     string   `json:"outline"`
+	Title               string   `json:"title" binding:"required"`
+	Author              string   `json:"author" binding:"required"`
+	Cover               string   `json:"cover"`
+	Type                BookType `json:"type" binding:"required,oneof=NOVEL COMIC"`
+	Description         string   `json:"description"`
+	Outline             string   `json:"outline"`
+	OriginalTextKey     string   `json:"originalTextKey"`
+	OriginalTextPreview string   `json:"originalTextPreview"`
 }
 
 // UpdateOutlineRequest 更新大纲请求

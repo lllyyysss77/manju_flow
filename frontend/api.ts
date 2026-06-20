@@ -95,6 +95,8 @@ export interface Book {
   type: BookType;
   description: string;
   outline: string;
+  originalTextKey?: string;
+  originalTextPreview?: string;
   adaptationStatus: AdaptationStatus;
   adaptedBy: string;
   chapterCount: number;
@@ -116,6 +118,8 @@ export interface CreateBookRequest {
   type: BookType;
   description?: string;
   outline?: string;
+  originalTextKey?: string;
+  originalTextPreview?: string;
 }
 
 export interface BookListParams {
@@ -294,6 +298,8 @@ export function bookToProject(book: Book): Project {
     episodes: [], // 初始化为空数组，后续可以从其他 API 获取
     assignedWriter: book.adaptedBy || undefined,
     outline: book.outline || '',
+    originalTextKey: book.originalTextKey || '',
+    originalTextPreview: book.originalTextPreview || '',
   };
 }
 
@@ -367,6 +373,10 @@ export interface FileUploadResponse {
   createdAt: string;
 }
 
+export interface OriginalTextUploadResponse extends FileUploadResponse {
+  preview: string;
+}
+
 /**
  * 同步函数：将原始文件 key/url 转换为可直接使用的 /api/files/{key} 代理 URL
  * 后端代理模式下浏览器自动利用 Cache-Control + ETag 缓存，无需 JS 侧缓存
@@ -392,6 +402,15 @@ export const fileApi = {
     formData.append('file', file);
     formData.append('visibility', visibility);
     return request<FileUploadResponse>('/api/files', {
+      method: 'POST',
+      body: formData,
+    }).then(res => ({ ...res, url: ensureHttpsUrl(res.url) }));
+  },
+
+  uploadOriginalText: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<OriginalTextUploadResponse>('/api/files/original-text', {
       method: 'POST',
       body: formData,
     }).then(res => ({ ...res, url: ensureHttpsUrl(res.url) }));

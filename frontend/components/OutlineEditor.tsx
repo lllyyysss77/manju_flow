@@ -13,7 +13,10 @@ import {
   Download,
   Mic,
   Play,
-  Pause
+  Pause,
+  ChevronDown,
+  ChevronRight,
+  FileText
 } from 'lucide-react';
 import { bookApi, characterApi, fileApi, getFileUrl, downloadFile } from '../api';
 
@@ -552,6 +555,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   onCharactersChange,
 }) => {
   const [outline, setOutline] = useState(initialOutline);
+  const [originalTextPreview, setOriginalTextPreview] = useState('');
+  const [isOriginalPreviewOpen, setIsOriginalPreviewOpen] = useState(false);
   const [characters, setCharacters] = useState<Character[]>(initialCharacters);
   const [activeCharacterId, setActiveCharacterId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -608,6 +613,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
       setOutline(bookRes.outline || '');
       savedOutlineRef.current = bookRes.outline || '';
+      setOriginalTextPreview(bookRes.originalTextPreview || '');
 
       const sortedChars = (charRes.data || []).sort((a, b) => a.index - b.index);
       setCharacters(sortedChars);
@@ -986,6 +992,38 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       <div className="flex-1 flex flex-col h-full bg-[#0f0f0f] overflow-hidden">
         <div className="flex-1 overflow-y-auto p-8">
           <div className="max-w-4xl mx-auto space-y-10">
+            {/* 原文预览 */}
+            {originalTextPreview && (
+              <div className="rounded-2xl border border-white/10 bg-[#181818] shadow-inner overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsOriginalPreviewOpen(prev => !prev)}
+                  className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-blue-500/10 p-2 text-blue-300">
+                      <FileText size={16} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">原文预览</div>
+                      <div className="mt-1 text-xs text-white/45">已截取上传原文前 800 字，默认折叠</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-white/45">
+                    {isOriginalPreviewOpen ? '收起' : '展开'}
+                    {isOriginalPreviewOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </div>
+                </button>
+                {isOriginalPreviewOpen && (
+                  <div className="border-t border-white/5 px-5 py-4">
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-white/75">
+                      {originalTextPreview}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 大纲编辑区 */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">

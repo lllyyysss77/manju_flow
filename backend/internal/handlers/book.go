@@ -107,12 +107,15 @@ func (h *BookHandler) Create(c *gin.Context) {
 	}
 
 	book := models.Book{
-		Title:            req.Title,
-		Author:           req.Author,
-		Cover:            req.Cover,
-		Type:             req.Type,
-		Description:      req.Description,
-		AdaptationStatus: models.AdaptationStatusNone,
+		Title:               req.Title,
+		Author:              req.Author,
+		Cover:               req.Cover,
+		Type:                req.Type,
+		Description:         req.Description,
+		Outline:             req.Outline,
+		OriginalTextKey:     req.OriginalTextKey,
+		OriginalTextPreview: req.OriginalTextPreview,
+		AdaptationStatus:    models.AdaptationStatusNone,
 	}
 
 	db := database.GetDB()
@@ -188,6 +191,8 @@ func (h *BookHandler) Update(c *gin.Context) {
 	book.Cover = req.Cover
 	book.Type = req.Type
 	book.Description = req.Description
+	book.OriginalTextKey = req.OriginalTextKey
+	book.OriginalTextPreview = req.OriginalTextPreview
 
 	if err := db.Save(&book).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

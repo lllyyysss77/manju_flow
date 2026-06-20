@@ -237,6 +237,8 @@ export interface Project {
   assignedArtist?: string;
   assignedEditor?: string;
   outline?: string;
+  originalTextKey?: string;
+  originalTextPreview?: string;
   characters?: Character[];
 }
 
