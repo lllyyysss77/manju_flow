@@ -196,6 +196,10 @@ export interface ChapterVideo {
   codec?: string;
   bitrate?: number;
   previewBitrate?: number;
+  editScriptUrl?: string;
+  editScriptName?: string;
+  editScriptSize?: number;
+  editScriptUploadedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }

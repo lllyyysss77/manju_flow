@@ -51,6 +51,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [loadingVideo, setLoadingVideo] = useState(false);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [uploadingOriginal, setUploadingOriginal] = useState(false);
+  const [uploadingEditScript, setUploadingEditScript] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -59,10 +60,12 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const [approving, setApproving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [originalProgress, setOriginalProgress] = useState<number | null>(null);
+  const [editScriptProgress, setEditScriptProgress] = useState<number | null>(null);
   const [originalDragOver, setOriginalDragOver] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const originalInputRef = useRef<HTMLInputElement>(null);
+  const editScriptInputRef = useRef<HTMLInputElement>(null);
   const hasUploadedVideo = !!(videoDetail?.videoUrl || videoDetail?.previewUrl);
   const [preferPreview, setPreferPreview] = useState(true);
   const previewSource = videoDetail?.previewUrl ? getFileUrl(videoDetail.previewUrl, { redirect: true }) : '';
@@ -72,6 +75,7 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
   const playbackSource = hasUploadedVideo
     ? (preferPreview && previewSource ? previewSource : originalSource || previewSource)
     : '';
+  const hasEditScript = !!videoDetail?.editScriptUrl;
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
@@ -522,6 +526,32 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     }
   };
 
+  const isZipFile = (file: File) => /\.zip$/i.test(file.name);
+
+  const handleUploadEditScript = async (file?: File | null) => {
+    if (!file || !activeChapter?.id) return;
+    if (!isZipFile(file)) {
+      showToast('剪辑脚本只支持上传 zip 文件包', 'error');
+      if (editScriptInputRef.current) editScriptInputRef.current.value = '';
+      return;
+    }
+    setUploadingEditScript(true);
+    setEditScriptProgress(0);
+    try {
+      const updated = await videoApi.uploadEditScript(activeChapter.id, file, (p) => setEditScriptProgress(p));
+      setVideoDetail(updated);
+      showToast(videoDetail?.editScriptUrl ? '剪辑脚本已覆盖更新' : '剪辑脚本已上传', 'success');
+    } catch (err) {
+      console.error('Upload edit script failed', err);
+      const msg = err instanceof Error ? err.message : '上传剪辑脚本失败，请重试';
+      showToast(msg, 'error');
+    } finally {
+      setUploadingEditScript(false);
+      setEditScriptProgress(null);
+      if (editScriptInputRef.current) editScriptInputRef.current.value = '';
+    }
+  };
+
   const handleOriginalDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -574,6 +604,28 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
     }
   };
 
+  const handleDownloadEditScript = async () => {
+    const raw = videoDetail?.editScriptUrl;
+    if (!raw) {
+      showToast('暂无可下载的剪辑脚本', 'error');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const url = getFileUrl(raw);
+      if (!url) {
+        showToast('无法解析剪辑脚本地址', 'error');
+        return;
+      }
+      await downloadFile(url, videoDetail?.editScriptName);
+    } catch (err) {
+      console.error('Download edit script failed', err);
+      showToast('剪辑脚本下载失败，请稍后重试', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (!bookId || !activeChapter?.id) {
       showToast('缺少书籍或章节信息，无法批准定稿', 'error');
@@ -613,6 +665,13 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
         accept="video/*"
         className="hidden"
         onChange={(e) => handleUploadOriginal(e.target.files?.[0])}
+      />
+      <input
+        ref={editScriptInputRef}
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        className="hidden"
+        onChange={(e) => handleUploadEditScript(e.target.files?.[0])}
       />
       <Toast toast={toast} onClose={hideToast} />
       {/* 顶部章节切换，与其他模块保持一致 */}
@@ -683,6 +742,38 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                 <div className="p-3 rounded-xl bg-white/5 border border-white/5">
                   <div className="text-white font-semibold mb-1">版本追踪</div>
                   <div className="text-white/60 text-[13px] leading-relaxed">每次上传会生成新版本，可回滚、批准定稿，流程清晰。</div>
+                </div>
+              </div>
+              <div className="px-8 pb-6">
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-400/20 flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex-1">
+                    <div className="text-sm text-white font-semibold">剪辑脚本 ZIP</div>
+                    <div className="text-[12px] text-white/50 mt-1">
+                      {hasEditScript
+                        ? `${videoDetail?.editScriptName || 'script.zip'} · ${formatBytes(videoDetail?.editScriptSize)}`
+                        : '仅支持 .zip；二次上传会覆盖当前章节脚本，不保留历史版本。'}
+                    </div>
+                  </div>
+                  {hasEditScript && (
+                    <button
+                      type="button"
+                      onClick={handleDownloadEditScript}
+                      disabled={downloading}
+                      className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs border border-white/10 transition-colors disabled:opacity-60"
+                    >
+                      下载脚本
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => editScriptInputRef.current?.click()}
+                    disabled={uploadingEditScript}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm border border-emerald-500/60 transition-all disabled:opacity-60"
+                  >
+                    {uploadingEditScript
+                      ? `上传中${editScriptProgress !== null ? ` ${editScriptProgress}%` : ''}`
+                      : hasEditScript ? '覆盖上传 ZIP' : '上传剪辑脚本'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -762,6 +853,32 @@ export const DeliverReview: React.FC<DeliverReviewProps> = ({ videoUrl, episode,
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-400/20 text-[11px] text-white/70">
+                    <span className="text-emerald-100 font-semibold">剪辑脚本</span>
+                    <span className="max-w-[140px] truncate text-white/50">
+                      {hasEditScript ? `${videoDetail?.editScriptName || 'script.zip'} · ${formatBytes(videoDetail?.editScriptSize)}` : '未上传'}
+                    </span>
+                    {hasEditScript && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadEditScript}
+                        disabled={downloading}
+                        className="text-emerald-100 hover:text-white disabled:opacity-50"
+                      >
+                        下载
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => editScriptInputRef.current?.click()}
+                      disabled={uploadingEditScript}
+                      className="text-emerald-100 hover:text-white disabled:opacity-50"
+                    >
+                      {uploadingEditScript
+                        ? `上传中${editScriptProgress !== null ? ` ${editScriptProgress}%` : ''}`
+                        : hasEditScript ? '覆盖' : '上传'}
+                    </button>
+                  </div>
                   <div className="relative">
                     <button
                       onClick={() => setVersionMenuOpen((prev) => !prev)}

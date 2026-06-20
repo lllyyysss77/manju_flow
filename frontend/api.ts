@@ -745,6 +745,50 @@ export const videoApi = {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+  uploadEditScript: (
+    chapterId: number,
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<ChapterVideo> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText) as ChapterVideo);
+          } catch {
+            reject(new ApiError(xhr.status, 'Invalid JSON response'));
+          }
+          return;
+        }
+        let message = `Upload failed with status ${xhr.status}`;
+        try {
+          const errorData = JSON.parse(xhr.responseText);
+          message = errorData.error || message;
+        } catch {
+          // ignore parse error
+        }
+        reject(new ApiError(xhr.status, message));
+      };
+
+      xhr.onerror = () => reject(new ApiError(0, 'Network error'));
+      xhr.open('PUT', `${API_BASE_URL}/api/chapters/${chapterId}/video/edit-script`);
+
+      const token = authStorage.getToken();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+      xhr.send(formData);
+    });
+  },
   listVersions: (chapterId: number) =>
     request<ChapterVideoVersionListResponse>(`/api/chapters/${chapterId}/video/versions`),
   revert: (chapterId: number, version: number) =>

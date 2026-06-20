@@ -1,11 +1,17 @@
 package handlers
 
 import (
+	"archive/zip"
+	"bytes"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
+	"manju-flow/internal/oss"
 
 	"github.com/gin-gonic/gin"
 )
@@ -203,6 +209,171 @@ func (h *VideoHandler) Upload(c *gin.Context) {
 	tx.Commit()
 
 	c.JSON(http.StatusOK, version)
+}
+
+func isZipUpload(filename string, contentType string) bool {
+	if !strings.EqualFold(filepath.Ext(filename), ".zip") {
+		return false
+	}
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return contentType == "" ||
+		contentType == "application/zip" ||
+		contentType == "application/x-zip-compressed" ||
+		contentType == "application/octet-stream" ||
+		contentType == "multipart/x-zip"
+}
+
+// UploadEditScript 上传/覆盖章节剪辑脚本 ZIP。脚本不保留历史版本，只覆盖当前章节记录。
+// @Summary 上传剪辑脚本
+// @Description 为章节上传剪辑脚本 ZIP，二次上传直接覆盖当前脚本
+// @Tags video
+// @Accept multipart/form-data
+// @Produce json
+// @Param chapterId path int true "章节ID"
+// @Param file formData file true "剪辑脚本 ZIP"
+// @Success 200 {object} models.ChapterVideo
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/chapters/{chapterId}/video/edit-script [put]
+func (h *VideoHandler) UploadEditScript(c *gin.Context) {
+	if !oss.IsConfigured() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "文件服务未配置",
+		})
+		return
+	}
+
+	chapterId := c.Param("chapterId")
+	chapterIdUint, err := strconv.ParseUint(chapterId, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid chapter ID",
+		})
+		return
+	}
+
+	userId, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User not authenticated",
+		})
+		return
+	}
+
+	db := database.GetDB()
+
+	var chapter models.Chapter
+	if err := db.First(&chapter, chapterId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Chapter not found",
+		})
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "请选择要上传的剪辑脚本 ZIP 文件",
+		})
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if !isZipUpload(header.Filename, contentType) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "剪辑脚本只支持 zip 文件包",
+		})
+		return
+	}
+	if contentType == "" {
+		contentType = "application/zip"
+	}
+
+	key, content, err := oss.GenerateKeyFromContent(file, header.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "处理剪辑脚本失败: " + err.Error(),
+		})
+		return
+	}
+	if _, err := zip.NewReader(bytes.NewReader(content), int64(len(content))); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "剪辑脚本只支持有效的 zip 文件包",
+		})
+		return
+	}
+
+	ossClient := oss.GetClient()
+	ossExists, err := ossClient.Exists(key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "检查剪辑脚本失败: " + err.Error(),
+		})
+		return
+	}
+	if !ossExists {
+		if err := ossClient.UploadBytes(key, content, contentType); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "剪辑脚本上传失败: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	now := time.Now()
+	tx := db.Begin()
+
+	var video models.ChapterVideo
+	result := tx.Where("chapter_id = ?", chapter.ID).First(&video)
+	if result.Error != nil {
+		video = models.ChapterVideo{
+			ChapterID: uint(chapterIdUint),
+			Status:    models.VideoStatusPending,
+		}
+		if err := tx.Create(&video).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to create video record",
+			})
+			return
+		}
+	}
+
+	updates := map[string]interface{}{
+		"edit_script_url":         key,
+		"edit_script_name":        header.Filename,
+		"edit_script_size":        int64(len(content)),
+		"edit_script_uploaded_at": &now,
+	}
+	if err := tx.Model(&video).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update edit script",
+		})
+		return
+	}
+
+	fileRecord := &models.File{
+		Key:          key,
+		OriginalName: header.Filename,
+		Size:         int64(len(content)),
+		MimeType:     contentType,
+		UploaderID:   userId.(uint),
+		Visibility:   models.FileVisibilityPrivate,
+	}
+	if err := tx.Create(fileRecord).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "保存剪辑脚本记录失败: " + err.Error(),
+		})
+		return
+	}
+
+	tx.Commit()
+
+	db.Where("chapter_id = ?", chapter.ID).First(&video)
+	c.JSON(http.StatusOK, video)
 }
 
 // UploadPreview 上传预览版视频

@@ -156,13 +156,14 @@ func Setup(r *gin.Engine) {
 			videoHandler := handlers.NewVideoHandler()
 			video := authorized.Group("/chapters/:chapterId/video")
 			{
-				video.GET("", videoHandler.GetInfo)                // 获取章节视频信息
-				video.PUT("", videoHandler.Upload)                 // 上传/更新视频
-				video.DELETE("", videoHandler.Delete)              // 删除视频
-				video.PUT("/preview", videoHandler.UploadPreview)  // 上传预览版
-				video.PUT("/status", videoHandler.UpdateStatus)    // 更新状态
-				video.GET("/versions", videoHandler.ListVersions)  // 版本历史
-				video.PUT("/revert/:version", videoHandler.Revert) // 回滚版本
+				video.GET("", videoHandler.GetInfo)                      // 获取章节视频信息
+				video.PUT("", videoHandler.Upload)                       // 上传/更新视频
+				video.DELETE("", videoHandler.Delete)                    // 删除视频
+				video.PUT("/preview", videoHandler.UploadPreview)        // 上传预览版
+				video.PUT("/status", videoHandler.UpdateStatus)          // 更新状态
+				video.PUT("/edit-script", videoHandler.UploadEditScript) // 上传/覆盖剪辑脚本 ZIP
+				video.GET("/versions", videoHandler.ListVersions)        // 版本历史
+				video.PUT("/revert/:version", videoHandler.Revert)       // 回滚版本
 			}
 
 			// 场景参考资料路由

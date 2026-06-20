@@ -18,24 +18,28 @@ const (
 
 // ChapterVideo 章节交付视频模型 - 每个章节对应一个交付视频
 type ChapterVideo struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	ChapterID      uint           `gorm:"not null;uniqueIndex" json:"chapterId"` // 一对一关系
-	VideoUrl       string         `gorm:"type:text" json:"videoUrl"`             // 当前原始视频URL
-	PreviewUrl     string         `gorm:"type:text" json:"previewUrl"`           // 压缩预览版URL（可选）
-	VideoVersion   int            `gorm:"default:0" json:"videoVersion"`         // 当前版本号
-	Status         VideoStatus    `gorm:"size:20;not null;default:'PENDING'" json:"status"`
-	Duration       int            `gorm:"default:0" json:"duration"`       // 时长（秒）
-	FileSize       int64          `gorm:"default:0" json:"fileSize"`       // 原始文件大小（字节）
-	PreviewSize    int64          `gorm:"default:0" json:"previewSize"`    // 预览版大小（字节）
-	Width          int            `gorm:"default:0" json:"width"`          // 视频宽度
-	Height         int            `gorm:"default:0" json:"height"`         // 视频高度
-	Format         string         `gorm:"size:50" json:"format"`           // 视频格式（如 mp4, webm）
-	Codec          string         `gorm:"size:50" json:"codec"`            // 编码格式（如 h264, h265）
-	Bitrate        int            `gorm:"default:0" json:"bitrate"`        // 码率（kbps）
-	PreviewBitrate int            `gorm:"default:0" json:"previewBitrate"` // 预览版码率（kbps）
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                   uint           `gorm:"primaryKey" json:"id"`
+	ChapterID            uint           `gorm:"not null;uniqueIndex" json:"chapterId"` // 一对一关系
+	VideoUrl             string         `gorm:"type:text" json:"videoUrl"`             // 当前原始视频URL
+	PreviewUrl           string         `gorm:"type:text" json:"previewUrl"`           // 压缩预览版URL（可选）
+	VideoVersion         int            `gorm:"default:0" json:"videoVersion"`         // 当前版本号
+	Status               VideoStatus    `gorm:"size:20;not null;default:'PENDING'" json:"status"`
+	Duration             int            `gorm:"default:0" json:"duration"`       // 时长（秒）
+	FileSize             int64          `gorm:"default:0" json:"fileSize"`       // 原始文件大小（字节）
+	PreviewSize          int64          `gorm:"default:0" json:"previewSize"`    // 预览版大小（字节）
+	Width                int            `gorm:"default:0" json:"width"`          // 视频宽度
+	Height               int            `gorm:"default:0" json:"height"`         // 视频高度
+	Format               string         `gorm:"size:50" json:"format"`           // 视频格式（如 mp4, webm）
+	Codec                string         `gorm:"size:50" json:"codec"`            // 编码格式（如 h264, h265）
+	Bitrate              int            `gorm:"default:0" json:"bitrate"`        // 码率（kbps）
+	PreviewBitrate       int            `gorm:"default:0" json:"previewBitrate"` // 预览版码率（kbps）
+	EditScriptUrl        string         `gorm:"type:text" json:"editScriptUrl"`  // 剪辑脚本 ZIP URL
+	EditScriptName       string         `gorm:"size:255" json:"editScriptName"`  // 剪辑脚本原始文件名
+	EditScriptSize       int64          `gorm:"default:0" json:"editScriptSize"` // 剪辑脚本大小（字节）
+	EditScriptUploadedAt *time.Time     `json:"editScriptUploadedAt"`            // 剪辑脚本上传时间
+	CreatedAt            time.Time      `json:"createdAt"`
+	UpdatedAt            time.Time      `json:"updatedAt"`
+	DeletedAt            gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联（无外键约束，通过业务逻辑保证数据完整性）
 	Chapter Chapter `gorm:"foreignKey:ChapterID;constraint:false" json:"-"`
