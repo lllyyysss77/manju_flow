@@ -556,6 +556,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 }) => {
   const [outline, setOutline] = useState(initialOutline);
   const [originalTextPreview, setOriginalTextPreview] = useState('');
+  const [originalTextKey, setOriginalTextKey] = useState('');
   const [isOriginalPreviewOpen, setIsOriginalPreviewOpen] = useState(false);
   const [characters, setCharacters] = useState<Character[]>(initialCharacters);
   const [activeCharacterId, setActiveCharacterId] = useState<number | null>(null);
@@ -614,6 +615,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       setOutline(bookRes.outline || '');
       savedOutlineRef.current = bookRes.outline || '';
       setOriginalTextPreview(bookRes.originalTextPreview || '');
+      setOriginalTextKey(bookRes.originalTextKey || '');
 
       const sortedChars = (charRes.data || []).sort((a, b) => a.index - b.index);
       setCharacters(sortedChars);
@@ -995,10 +997,17 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             {/* 原文预览 */}
             {originalTextPreview && (
               <div className="rounded-2xl border border-white/10 bg-[#181818] shadow-inner overflow-hidden">
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setIsOriginalPreviewOpen(prev => !prev)}
-                  className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsOriginalPreviewOpen(prev => !prev);
+                    }
+                  }}
+                  className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors cursor-pointer select-none"
                 >
                   <div className="flex items-center gap-3">
                     <div className="rounded-lg bg-blue-500/10 p-2 text-blue-300">
@@ -1009,11 +1018,27 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                       <div className="mt-1 text-xs text-white/45">已截取上传原文前 800 字，默认折叠</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-white/45">
-                    {isOriginalPreviewOpen ? '收起' : '展开'}
-                    {isOriginalPreviewOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  <div className="flex items-center gap-2">
+                    {originalTextKey && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const url = getFileUrl(originalTextKey);
+                          if (url) downloadFile(url);
+                        }}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 transition-colors"
+                        title="下载原文"
+                      >
+                        <Download size={14} />
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 text-xs font-bold text-white/45">
+                      {isOriginalPreviewOpen ? '收起' : '展开'}
+                      {isOriginalPreviewOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </div>
                   </div>
-                </button>
+                </div>
                 {isOriginalPreviewOpen && (
                   <div className="border-t border-white/5 px-5 py-4">
                     <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-white/75">
