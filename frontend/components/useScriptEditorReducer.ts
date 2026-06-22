@@ -591,6 +591,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     try {
       await chapterApi.update(bookId, chapterId, { synopsis });
       savedChapterSynopsisRef.current[chapterId] = currentSig;
+      dispatch({ type: 'UPDATE_CHAPTER', payload: { chapterId, updates: { synopsis } } });
       dispatch({ type: 'SET_SYNOPSIS_DIRTY', payload: false });
 
       // 保存成功后清除备份

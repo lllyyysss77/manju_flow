@@ -68,6 +68,26 @@ const formatTimestamp = (value?: string | Date | null) => {
   });
 };
 
+const markdownValue = (value?: string | null) => {
+  const normalized = (value || '').trim();
+  return normalized || '未填写';
+};
+
+const escapeMarkdownTitle = (value?: string | null) =>
+  (value || '未命名').replace(/([\\`*_{}\[\]()#+\-.!|>])/g, '\\$1');
+
+const getExportTimestamp = () => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+};
+
+const getExportFileStamp = () => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+};
+
 const ReferenceSection: React.FC<{ 
   initialImage?: string;
   onUpload: (file: File) => Promise<void>;
@@ -1405,6 +1425,83 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }
   };
 
+  const buildExportMarkdown = () => {
+    const sortedChapters = [...chapters].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    const lines: string[] = [
+      '# 剧本创作导出',
+      '',
+      `导出时间：${getExportTimestamp()}`,
+      '',
+    ];
+
+    if (sortedChapters.length === 0) {
+      lines.push('暂无章节。');
+      return lines.join('\n');
+    }
+
+    sortedChapters.forEach((chapter, chapterIdx) => {
+      const synopsis = chapter.id === activeChapterId ? synopsisDraft : chapter.synopsis;
+      const sortedScenes = [...(chapter.scenes || [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+      lines.push(`## 章节 ${chapterIdx + 1}：${escapeMarkdownTitle(chapter.title || '未命名章节')}`);
+      lines.push('');
+      lines.push('### 故事梗概');
+      lines.push('');
+      lines.push(markdownValue(synopsis));
+      lines.push('');
+
+      if (sortedScenes.length === 0) {
+        lines.push('### 场景');
+        lines.push('');
+        lines.push('暂无场景。');
+        lines.push('');
+        return;
+      }
+
+      sortedScenes.forEach((scene, sceneIdx) => {
+        lines.push(`### 场景 ${sceneIdx + 1}`);
+        lines.push('');
+        lines.push('#### 画面描述');
+        lines.push('');
+        lines.push(markdownValue(scene.description));
+        lines.push('');
+        lines.push('#### 台词/旁白');
+        lines.push('');
+        lines.push(markdownValue(scene.dialogue));
+        lines.push('');
+        lines.push('#### 镜头/运镜');
+        lines.push('');
+        lines.push(markdownValue(scene.cameraMovement));
+        lines.push('');
+        lines.push('#### 转场/剪辑手法');
+        lines.push('');
+        lines.push(markdownValue(scene.transitionEffect));
+        lines.push('');
+      });
+    });
+
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+  };
+
+  const handleExportMarkdown = () => {
+    try {
+      const markdown = buildExportMarkdown();
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `剧本创作导出_${bookId}_${getExportFileStamp()}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setToast({ message: 'Markdown 文件已导出', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to export markdown', err);
+      setToast({ message: '导出失败，请稍后重试', tone: 'error' });
+    }
+  };
+
   // Toast 自动隐藏
   useEffect(() => {
     if (!toast) return;
@@ -1608,15 +1705,27 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       <div style={{ width: leftPanel.width }} className="border-r border-white/5 flex flex-col bg-[#161616]">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">章节 / 场景</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: null, scene: null } });
-            }}
-            className="px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-          >
-            折叠全部
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExportMarkdown();
+              }}
+              className="px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              导出 MD
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: null, scene: null } });
+              }}
+              className="px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              折叠全部
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-4">
           {chapters.length === 0 && (
