@@ -302,6 +302,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const videoReferenceInputRef = useRef<HTMLInputElement>(null);
   const promptEditorRef = useRef<HTMLDivElement>(null);
   const promptPickerAnchorRef = useRef<Range | null>(null);
+  const promptMentionPreviewTimerRef = useRef<number | null>(null);
   const [animations, setAnimations] = useState<SceneAnimation[]>([]);
   const [selectedAnimationId, setSelectedAnimationId] = useState<number | null>(null);
   const [versionMap, setVersionMap] = useState<Record<number, SceneAnimationVersion[]>>({});
@@ -661,6 +662,14 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [imagePreview]);
 
+  useEffect(() => {
+    return () => {
+      if (promptMentionPreviewTimerRef.current) {
+        window.clearTimeout(promptMentionPreviewTimerRef.current);
+      }
+    };
+  }, []);
+
   const selectedAnimation = animations.find(a => a.id === selectedAnimationId) || null;
   const currentVersions = selectedAnimation ? versionMap[selectedAnimation.id] || [] : [];
   const currentGenerationTasks = selectedAnimation ? generationTaskMap[selectedAnimation.id] || [] : [];
@@ -881,23 +890,54 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const handlePromptEditorInput = () => {
     const next = syncPromptFromEditor();
-    if (next.endsWith('@')) openPromptPickerAtCaret();
+    if (next.endsWith('@')) {
+      openPromptPickerAtCaret();
+      return;
+    }
+    if (promptPicker.open) {
+      setPromptPicker(prev => ({
+        ...prev,
+        open: false,
+        category: undefined,
+        parentId: undefined,
+        childId: undefined,
+        activeIndex: 0,
+      }));
+    }
+  };
+
+  const clearPromptMentionPreviewTimer = () => {
+    if (promptMentionPreviewTimerRef.current) {
+      window.clearTimeout(promptMentionPreviewTimerRef.current);
+      promptMentionPreviewTimerRef.current = null;
+    }
+  };
+
+  const schedulePromptMentionPreviewHide = () => {
+    clearPromptMentionPreviewTimer();
+    promptMentionPreviewTimerRef.current = window.setTimeout(() => {
+      setHoveredPromptMention(null);
+      promptMentionPreviewTimerRef.current = null;
+    }, 300);
   };
 
   const handlePromptEditorMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-asset-id]');
     if (!target) {
-      setHoveredPromptMention(null);
+      schedulePromptMentionPreviewHide();
       return;
     }
     const id = target.dataset.assetId || '';
     const mention = promptMentions[id];
-    const hostRect = event.currentTarget.getBoundingClientRect();
+    const host = promptEditorRef.current?.parentElement || event.currentTarget;
+    const hostRect = host.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
     if (mention) {
+      clearPromptMentionPreviewTimer();
       setHoveredPromptMention({
         mention,
-        x: Math.min(event.clientX - hostRect.left + 12, hostRect.width - 260),
-        y: event.clientY - hostRect.top + 16,
+        x: Math.max(8, Math.min(targetRect.right - hostRect.left + 8, hostRect.width - 272)),
+        y: Math.max(8, targetRect.bottom - hostRect.top + 8),
       });
     }
   };
@@ -2434,7 +2474,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             onInput={handlePromptEditorInput}
                             onKeyDown={handlePromptEditorKeyDown}
                             onMouseMove={handlePromptEditorMouseMove}
-                            onMouseLeave={() => setHoveredPromptMention(null)}
+                            onMouseLeave={schedulePromptMentionPreviewHide}
                             onBlur={() => {
                               syncPromptFromEditor();
                             }}
@@ -2442,8 +2482,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           />
                           {hoveredPromptMention && (
                             <div
-                              className="pointer-events-none absolute z-40 w-64 rounded-xl border border-white/10 bg-[#111] p-3 shadow-2xl"
+                              className="absolute z-40 w-64 rounded-xl border border-white/10 bg-[#111] p-3 shadow-2xl"
                               style={{ left: hoveredPromptMention.x, top: hoveredPromptMention.y }}
+                              onMouseEnter={clearPromptMentionPreviewTimer}
+                              onMouseLeave={schedulePromptMentionPreviewHide}
                             >
                               <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">
                                 {hoveredPromptMention.mention.mediaType === 'image' ? '图片预览' : '音频预览'}
@@ -2451,7 +2493,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                               {hoveredPromptMention.mention.mediaType === 'image' ? (
                                 <img src={hoveredPromptMention.mention.url} className="max-h-48 w-full rounded-lg object-contain bg-black" />
                               ) : (
-                                <audio controls src={hoveredPromptMention.mention.url} className="pointer-events-auto w-full h-10" />
+                                <audio controls src={hoveredPromptMention.mention.url} className="w-full h-10" />
                               )}
                               <div className="mt-2 truncate text-[11px] text-white/55">{hoveredPromptMention.mention.name}</div>
                             </div>
