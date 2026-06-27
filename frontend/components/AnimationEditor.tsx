@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Episode, Scene, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
-import { fileApi, animationApi, storyboardApi, commentApi, getFileUrl, downloadFile } from '../api';
+import { Character, Episode, Scene, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
+import { fileApi, animationApi, storyboardApi, commentApi, characterApi, getFileUrl, downloadFile, normalizeFileKey } from '../api';
 import {
   MessageSquare,
   AlertCircle,
@@ -64,11 +64,54 @@ interface UploadedReferenceMedia {
   type: ReferenceMediaType;
 }
 
+type MentionAssetKind = 'character-image' | 'character-audio' | 'storyboard-image';
+type MentionCategory = 'character-image' | 'character-audio' | 'storyboard-image';
+
+interface PromptAssetMention {
+  id: string;
+  label: string;
+  kind: MentionAssetKind;
+  mediaType: Extract<ReferenceMediaType, 'image' | 'audio'>;
+  key: string;
+  url: string;
+  mimeType: string;
+  name: string;
+}
+
+interface PromptAssetPickerState {
+  open: boolean;
+  category?: MentionCategory;
+  parentId?: string;
+  childId?: string;
+  x: number;
+  y: number;
+  activeIndex: number;
+}
+
 const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
   image: '图片参考',
   audio: '音频参考',
   video: '视频参考',
 };
+
+const PROMPT_MENTION_PATTERN = /\{\{asset:([^}]+)\}\}/g;
+
+const CHARACTER_IMAGE_SLOTS = [
+  { field: 'referenceImageUrl' as const, label: '三视图' },
+  { field: 'halfBodyFrontImageUrl' as const, label: '半身正面' },
+  { field: 'fullBodyFrontImageUrl' as const, label: '全身正面' },
+  { field: 'fullBodySideImageUrl' as const, label: '全身侧视图' },
+  { field: 'fullBodyBackImageUrl' as const, label: '全身后视图' },
+];
+
+const PROMPT_ASSET_CATEGORY_LABELS: Record<MentionCategory, string> = {
+  'character-image': '人物图片',
+  'character-audio': '人物音频',
+  'storyboard-image': '分镜图',
+};
+
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-fast-260128';
 const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
@@ -257,6 +300,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const imageReferenceInputRef = useRef<HTMLInputElement>(null);
   const audioReferenceInputRef = useRef<HTMLInputElement>(null);
   const videoReferenceInputRef = useRef<HTMLInputElement>(null);
+  const promptEditorRef = useRef<HTMLDivElement>(null);
+  const promptPickerAnchorRef = useRef<Range | null>(null);
   const [animations, setAnimations] = useState<SceneAnimation[]>([]);
   const [selectedAnimationId, setSelectedAnimationId] = useState<number | null>(null);
   const [versionMap, setVersionMap] = useState<Record<number, SceneAnimationVersion[]>>({});
@@ -270,6 +315,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     video: [],
   });
   const [generationPrompt, setGenerationPrompt] = useState('');
+  const [promptMentions, setPromptMentions] = useState<Record<string, PromptAssetMention>>({});
+  const [promptPicker, setPromptPicker] = useState<PromptAssetPickerState>({ open: false, x: 16, y: 44, activeIndex: 0 });
   const [generationRatio, setGenerationRatio] = useState<SeedanceRatio>(DEFAULT_VIDEO_RATIO);
   const [generationDuration, setGenerationDuration] = useState(DEFAULT_VIDEO_DURATION);
   const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
@@ -278,6 +325,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -287,6 +335,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [newClipName, setNewClipName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SceneAnimation | null>(null);
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
+  const [hoveredPromptMention, setHoveredPromptMention] = useState<{ mention: PromptAssetMention; x: number; y: number } | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [isCommentPanelCollapsed, setIsCommentPanelCollapsed] = useState(true);
@@ -322,6 +371,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       video: [],
     });
     setGenerationPrompt(buildDefaultVideoPrompt(scene));
+    setPromptMentions({});
+    setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
     setGenerationRatio(DEFAULT_VIDEO_RATIO);
     setGenerationDuration(DEFAULT_VIDEO_DURATION);
     setGenerationModel(DEFAULT_VIDEO_MODEL);
@@ -430,25 +481,54 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   }, [activeScene, resetGenerationDraft]);
 
   useEffect(() => {
+    if (!bookId) {
+      setCharacters([]);
+      return;
+    }
+    let cancelled = false;
+    const loadCharacters = async () => {
+      try {
+        const res = await characterApi.list(bookId);
+        if (!cancelled) {
+          setCharacters((res.data || []).sort((a, b) => a.index - b.index));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load character assets', err);
+          showToast('大纲人设资产加载失败', 'error');
+        }
+      }
+    };
+    loadCharacters();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  useEffect(() => {
     if (!activeScene?.id) return;
     let cancelled = false;
+    const targetScenes = sortedScenes.slice(activeSceneIndex, activeSceneIndex + 4).filter(scene => scene?.id);
     const load = async () => {
       try {
-        const res = await storyboardApi.list(activeScene.id);
+        const entries = await Promise.all(
+          targetScenes.map(async scene => {
+            const res = await storyboardApi.list(scene.id);
+            const resolvedFrameSets = (res.data || [])
+              .sort((a, b) => a.index - b.index)
+              .map(frameSet => ({
+                ...frameSet,
+                resolvedStartFrameUrl: frameSet.startFrameUrl ? getFileUrl(frameSet.startFrameUrl) || undefined : undefined,
+                resolvedEndFrameUrl: frameSet.endFrameUrl ? getFileUrl(frameSet.endFrameUrl) || undefined : undefined,
+              }));
+            return [scene.id, resolvedFrameSets] as const;
+          })
+        );
         if (cancelled) return;
-        const resolvedFrameSets = (res.data || [])
-          .sort((a, b) => a.index - b.index)
-          .map(frameSet => ({
-            ...frameSet,
-            resolvedStartFrameUrl: frameSet.startFrameUrl ? getFileUrl(frameSet.startFrameUrl) || undefined : undefined,
-            resolvedEndFrameUrl: frameSet.endFrameUrl ? getFileUrl(frameSet.endFrameUrl) || undefined : undefined,
-          }));
-        if (!cancelled) {
-          setFramePreviewCache(prev => ({
-            ...prev,
-            [activeScene.id]: resolvedFrameSets,
-          }));
-        }
+        setFramePreviewCache(prev => ({
+          ...prev,
+          ...Object.fromEntries(entries),
+        }));
       } catch (err) {
         if (cancelled) return;
         console.error('Failed to load storyboard preview', err);
@@ -458,7 +538,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeScene?.id]);
+  }, [activeScene?.id, activeSceneIndex, sortedScenes]);
 
   // 获取场景评论数
   useEffect(() => {
@@ -599,6 +679,31 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const displayClipUrl = currentVersionData?.videoUrl || selectedAnimation?.animationUrl;
   const currentVersionLabel = normalizedVersionNumber ?? '—';
   const storyboardReferenceList = activeScene?.id ? framePreviewCache[activeScene.id] || [] : [];
+  const promptMentionList = useMemo(
+    () => Object.values(promptMentions)
+      .filter(mention => generationPrompt.includes(mention.label) || generationPrompt.includes(`{{asset:${mention.id}}}`))
+      .sort((a, b) => {
+        const indexOfMention = (mention: PromptAssetMention) => {
+          const labelIndex = generationPrompt.indexOf(mention.label);
+          if (labelIndex >= 0) return labelIndex;
+          return generationPrompt.indexOf(`{{asset:${mention.id}}}`);
+        };
+        return indexOfMention(a) - indexOfMention(b);
+      }),
+    [generationPrompt, promptMentions]
+  );
+  const promptMentionOrder = useMemo(() => {
+    const order: Record<string, string> = {};
+    promptMentionList.forEach(mention => {
+      const refIndex = referenceMedia[mention.mediaType].findIndex(item => item.key === mention.key);
+      order[mention.id] = `${mention.mediaType === 'image' ? '图片' : '音频'} ${refIndex >= 0 ? refIndex + 1 : 1}`;
+    });
+    return order;
+  }, [promptMentionList, referenceMedia]);
+  const promptPickerScenes = useMemo(
+    () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 4),
+    [activeSceneIndex, sortedScenes]
+  );
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   const canGenerateVideo =
     Boolean(selectedAnimationId) &&
@@ -661,6 +766,324 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       ...prev,
       [type]: prev[type].filter(item => item.id !== mediaId),
     }));
+  };
+
+  const buildMentionMedia = (type: Extract<ReferenceMediaType, 'image' | 'audio'>, id: string, key: string, name: string, label: string, kind: MentionAssetKind): PromptAssetMention | null => {
+    const normalized = normalizeFileKey(key);
+    const source = normalized.key || normalized.externalUrl || key;
+    if (!source) return null;
+    return {
+      id,
+      label,
+      kind,
+      mediaType: type,
+      key: source,
+      url: getFileUrl(source) || source,
+      mimeType: type === 'image' ? 'image/*' : 'audio/*',
+      name,
+    };
+  };
+
+  const addPromptMention = (mention: PromptAssetMention) => {
+    setPromptMentions(prev => ({ ...prev, [mention.id]: mention }));
+    setReferenceMedia(prev => {
+      const exists = prev[mention.mediaType].some(item => item.key === mention.key);
+      if (exists) return prev;
+      const media: UploadedReferenceMedia = {
+        id: `mention-${mention.id}`,
+        key: mention.key,
+        name: mention.name,
+        url: mention.url,
+        mimeType: mention.mimeType,
+        type: mention.mediaType,
+      };
+      return {
+        ...prev,
+        [mention.mediaType]: [...prev[mention.mediaType], media],
+      };
+    });
+    insertMentionIntoEditor(mention);
+    setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
+  };
+
+  const serializePromptEditor = () => {
+    const editor = promptEditorRef.current;
+    if (!editor) return generationPrompt;
+    const walk = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+      if (node.nodeType !== Node.ELEMENT_NODE) return '';
+      const element = node as HTMLElement;
+      if (element.dataset.assetId) return `{{asset:${element.dataset.assetId}}}`;
+      if (element.tagName === 'BR') return '\n';
+      return Array.from(element.childNodes).map(walk).join('');
+    };
+    return Array.from(editor.childNodes).map(walk).join('').replace(/\u00a0/g, ' ');
+  };
+
+  const getPromptEditorHtml = () => {
+    const parts: string[] = [];
+    let lastIndex = 0;
+    generationPrompt.replace(PROMPT_MENTION_PATTERN, (raw, id: string, offset: number) => {
+      parts.push(escapeHtml(generationPrompt.slice(lastIndex, offset)).replace(/\n/g, '<br>'));
+      const mention = promptMentions[id];
+      const label = promptMentionOrder[id] || (mention?.mediaType === 'audio' ? '音频' : '图片');
+      parts.push(`<span contenteditable="false" data-asset-id="${escapeHtml(id)}" class="inline-flex items-center rounded-full border border-blue-400/30 bg-blue-500/15 px-2 py-0.5 text-[12px] font-semibold text-blue-100 align-baseline">${escapeHtml(label)}</span>`);
+      lastIndex = offset + raw.length;
+      return raw;
+    });
+    parts.push(escapeHtml(generationPrompt.slice(lastIndex)).replace(/\n/g, '<br>'));
+    return parts.join('');
+  };
+
+  useEffect(() => {
+    const editor = promptEditorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    const html = getPromptEditorHtml();
+    if (editor.innerHTML !== html) editor.innerHTML = html;
+  }, [generationPrompt, promptMentions, promptMentionOrder]);
+
+  useEffect(() => {
+    const editor = promptEditorRef.current;
+    if (!editor) return;
+    editor.querySelectorAll<HTMLElement>('[data-asset-id]').forEach(chip => {
+      const id = chip.dataset.assetId || '';
+      const mention = promptMentions[id];
+      chip.textContent = promptMentionOrder[id] || (mention?.mediaType === 'audio' ? '音频' : '图片');
+    });
+  }, [promptMentionOrder, promptMentions]);
+
+  const syncPromptFromEditor = () => {
+    const next = serializePromptEditor();
+    setGenerationPrompt(next);
+    return next;
+  };
+
+  const getCaretRectInPromptEditor = () => {
+    const editor = promptEditorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection?.rangeCount) return { x: 16, y: 44 };
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    const hostRect = editor.getBoundingClientRect();
+    if (rect.width || rect.height) {
+      return { x: Math.max(8, rect.left - hostRect.left), y: Math.max(36, rect.bottom - hostRect.top + 8) };
+    }
+    return { x: 16, y: 44 };
+  };
+
+  const openPromptPickerAtCaret = () => {
+    const selection = window.getSelection();
+    if (selection?.rangeCount) promptPickerAnchorRef.current = selection.getRangeAt(0).cloneRange();
+    const pos = getCaretRectInPromptEditor();
+    setPromptPicker({ open: true, x: pos.x, y: pos.y, activeIndex: 0 });
+  };
+
+  const handlePromptEditorInput = () => {
+    const next = syncPromptFromEditor();
+    if (next.endsWith('@')) openPromptPickerAtCaret();
+  };
+
+  const handlePromptEditorMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-asset-id]');
+    if (!target) {
+      setHoveredPromptMention(null);
+      return;
+    }
+    const id = target.dataset.assetId || '';
+    const mention = promptMentions[id];
+    const hostRect = event.currentTarget.getBoundingClientRect();
+    if (mention) {
+      setHoveredPromptMention({
+        mention,
+        x: Math.min(event.clientX - hostRect.left + 12, hostRect.width - 260),
+        y: event.clientY - hostRect.top + 16,
+      });
+    }
+  };
+
+  const insertMentionIntoEditor = (mention: PromptAssetMention) => {
+    const editor = promptEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    const range = promptPickerAnchorRef.current?.cloneRange() || selection?.getRangeAt(0).cloneRange();
+    if (!range) return;
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const activeRange = selection!.getRangeAt(0);
+    if (activeRange.startContainer.nodeType === Node.TEXT_NODE) {
+      const textNode = activeRange.startContainer;
+      const offset = activeRange.startOffset;
+      if ((textNode.textContent || '')[offset - 1] === '@') {
+        activeRange.setStart(textNode, offset - 1);
+      }
+    }
+    activeRange.deleteContents();
+    const chip = document.createElement('span');
+    chip.contentEditable = 'false';
+    chip.dataset.assetId = mention.id;
+    chip.className = 'inline-flex items-center rounded-full border border-blue-400/30 bg-blue-500/15 px-2 py-0.5 text-[12px] font-semibold text-blue-100 align-baseline';
+    const existingIndex = referenceMedia[mention.mediaType].findIndex(item => item.key === mention.key);
+    const displayIndex = existingIndex >= 0 ? existingIndex + 1 : referenceMedia[mention.mediaType].length + 1;
+    chip.textContent = `${mention.mediaType === 'image' ? '图片' : '音频'} ${displayIndex}`;
+    activeRange.insertNode(document.createTextNode(' '));
+    activeRange.insertNode(chip);
+    const after = document.createRange();
+    after.setStartAfter(chip.nextSibling || chip);
+    after.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(after);
+    setGenerationPrompt(serializePromptEditor());
+  };
+
+  const renderPromptForSubmission = () => {
+    let text = generationPrompt.replace(PROMPT_MENTION_PATTERN, (_raw, id: string) => promptMentionOrder[id] || '');
+    promptMentionList.forEach(mention => {
+      text = text.split(mention.label).join(promptMentionOrder[mention.id] || '');
+    });
+    return text.trim();
+  };
+
+  const getPromptPickerActiveOptions = () => {
+    const availableCharacters = characters.filter(char => char.name?.trim());
+    const selectedCharacter = availableCharacters.find(char => String(char.id) === promptPicker.parentId);
+    const selectedScene = promptPickerScenes.find(scene => String(scene.id) === promptPicker.parentId);
+    const selectedFrameSets = selectedScene?.id ? framePreviewCache[selectedScene.id] || [] : [];
+    const selectedFrameSet = selectedFrameSets.find(frameSet => String(frameSet.id) === promptPicker.childId);
+
+    if (!promptPicker.category) {
+      return (Object.keys(PROMPT_ASSET_CATEGORY_LABELS) as MentionCategory[]).map(category => ({
+        key: category,
+        disabled: false,
+        select: () => setPromptPicker(prev => ({ ...prev, category, parentId: undefined, childId: undefined, activeIndex: 0 })),
+      }));
+    }
+
+    if (promptPicker.category === 'character-audio') {
+      return availableCharacters.map(character => {
+        const mention = character.voiceAudioUrl ? buildMentionMedia(
+          'audio',
+          `char-audio-${character.id}`,
+          character.voiceAudioUrl,
+          `${character.name} · 音色`,
+          `@人物音频/${character.name}`,
+          'character-audio'
+        ) : null;
+        return {
+          key: String(character.id),
+          disabled: !mention,
+          select: () => mention && addPromptMention(mention),
+        };
+      });
+    }
+
+    if (promptPicker.category === 'character-image' && !selectedCharacter) {
+      return availableCharacters.map(character => ({
+        key: String(character.id),
+        disabled: false,
+        select: () => setPromptPicker(prev => ({ ...prev, parentId: String(character.id), childId: undefined, activeIndex: 0 })),
+      }));
+    }
+
+    if (promptPicker.category === 'character-image' && selectedCharacter) {
+      return CHARACTER_IMAGE_SLOTS.map(slot => {
+        const key = selectedCharacter[slot.field];
+        const mention = key ? buildMentionMedia(
+          'image',
+          `char-img-${selectedCharacter.id}-${slot.field}`,
+          key,
+          `${selectedCharacter.name} · ${slot.label}`,
+          `@人物图片/${selectedCharacter.name}/${slot.label}`,
+          'character-image'
+        ) : null;
+        return {
+          key: slot.field,
+          disabled: !mention,
+          select: () => mention && addPromptMention(mention),
+        };
+      });
+    }
+
+    if (promptPicker.category === 'storyboard-image' && !selectedScene) {
+      return promptPickerScenes.map(scene => ({
+        key: String(scene.id),
+        disabled: false,
+        select: () => setPromptPicker(prev => ({ ...prev, parentId: String(scene.id), childId: undefined, activeIndex: 0 })),
+      }));
+    }
+
+    if (promptPicker.category === 'storyboard-image' && selectedScene && !selectedFrameSet) {
+      return selectedFrameSets.map(frameSet => ({
+        key: String(frameSet.id),
+        disabled: false,
+        select: () => setPromptPicker(prev => ({ ...prev, childId: String(frameSet.id), activeIndex: 0 })),
+      }));
+    }
+
+    if (promptPicker.category === 'storyboard-image' && selectedScene && selectedFrameSet) {
+      return [
+        { label: '首帧', key: selectedFrameSet.startFrameUrl, url: selectedFrameSet.resolvedStartFrameUrl },
+        { label: '尾帧', key: selectedFrameSet.endFrameUrl, url: selectedFrameSet.resolvedEndFrameUrl },
+      ].map(item => {
+        const mention = item.key ? buildMentionMedia(
+          'image',
+          `storyboard-${selectedScene.id}-${selectedFrameSet.id}-${item.label}`,
+          item.key,
+          `#${selectedScene.index} ${selectedFrameSet.name || `帧集 #${Math.round(selectedFrameSet.index)}`} · ${item.label}`,
+          `@分镜图/#${selectedScene.index}/${selectedFrameSet.name || `帧集 #${Math.round(selectedFrameSet.index)}`}/${item.label}`,
+          'storyboard-image'
+        ) : null;
+        return {
+          key: item.label,
+          disabled: !mention,
+          select: () => mention && addPromptMention(mention),
+        };
+      });
+    }
+
+    return [];
+  };
+
+  const handlePromptEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (promptPicker.open) {
+      const options = getPromptPickerActiveOptions();
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        setPromptPicker(prev => ({
+          ...prev,
+          activeIndex: options.length ? (prev.activeIndex + delta + options.length) % options.length : 0,
+        }));
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const option = options[promptPicker.activeIndex] || options[0];
+        if (option && !option.disabled) option.select();
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setPromptPicker(prev => {
+          if (prev.childId) return { ...prev, childId: undefined, activeIndex: 0 };
+          if (prev.parentId) return { ...prev, parentId: undefined, activeIndex: 0 };
+          if (prev.category) return { ...prev, category: undefined, activeIndex: 0 };
+          return prev;
+        });
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setPromptPicker(prev => ({ ...prev, open: false }));
+        return;
+      }
+    }
+
+    if (event.key === '@') {
+      window.setTimeout(openPromptPickerAtCaret, 0);
+    }
   };
 
   const handleUploadVideo = async (file?: File | null) => {
@@ -745,7 +1168,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const handleGenerateVideo = async () => {
     if (!activeScene?.id || !selectedAnimationId) return;
-    const text = generationPrompt.trim();
+    const text = renderPromptForSubmission();
     if (!text) {
       showToast('请输入视频提示词', 'error');
       return;
@@ -1052,6 +1475,221 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       previewVideoRef.current.currentTime = 0;
     }
     setPreviewSource(null);
+  };
+
+  const renderPromptAssetPicker = () => {
+    if (!promptPicker.open) return null;
+    const availableCharacters = characters.filter(char => char.name?.trim());
+    const selectedCharacter = availableCharacters.find(char => String(char.id) === promptPicker.parentId) || null;
+    const selectedScene = promptPickerScenes.find(scene => String(scene.id) === promptPicker.parentId) || null;
+    const selectedFrameSets = selectedScene?.id ? framePreviewCache[selectedScene.id] || [] : [];
+    const selectedFrameSet = selectedFrameSets.find(frameSet => String(frameSet.id) === promptPicker.childId) || null;
+    const activeOptions = getPromptPickerActiveOptions();
+    const isActive = (key: string) => activeOptions[promptPicker.activeIndex]?.key === key;
+    const buttonClass = (active: boolean, disabled = false) => `mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition-colors ${
+      disabled
+        ? 'cursor-not-allowed opacity-30 text-white/35'
+        : active
+          ? 'bg-blue-500/15 text-blue-100'
+          : 'text-white/55 hover:bg-white/5 hover:text-white'
+    }`;
+
+    return (
+      <div
+        className="absolute z-30 mt-1 flex max-w-[min(920px,calc(100vw-48px))] overflow-hidden rounded-2xl border border-white/10 bg-[#101010] shadow-2xl"
+        style={{ left: promptPicker.x, top: promptPicker.y }}
+      >
+        <div className="w-40 shrink-0 border-r border-white/10 p-2">
+          <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择资产类型</div>
+          {(Object.keys(PROMPT_ASSET_CATEGORY_LABELS) as MentionCategory[]).map(category => (
+            <button
+              key={category}
+              type="button"
+              onMouseEnter={() => {
+                if (!promptPicker.category) {
+                  const idx = activeOptions.findIndex(option => option.key === category);
+                  setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                }
+              }}
+              onClick={() => setPromptPicker(prev => ({ ...prev, category, parentId: undefined, childId: undefined, activeIndex: 0 }))}
+              className={buttonClass(promptPicker.category === category || (!promptPicker.category && isActive(category)))}
+            >
+              <span>{PROMPT_ASSET_CATEGORY_LABELS[category]}</span>
+              <ChevronRight size={13} />
+            </button>
+          ))}
+        </div>
+
+        {promptPicker.category && (
+          <div className="w-52 shrink-0 max-h-[360px] overflow-y-auto border-r border-white/10 p-2">
+            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
+              {promptPicker.category === 'storyboard-image' ? '选择分镜' : '选择人物'}
+            </div>
+            {promptPicker.category === 'storyboard-image' ? (
+              promptPickerScenes.length > 0 ? promptPickerScenes.map(scene => (
+                <button
+                  key={scene.id}
+                  type="button"
+                  onMouseEnter={() => {
+                    if (!selectedScene) {
+                      const idx = activeOptions.findIndex(option => option.key === String(scene.id));
+                      setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                    }
+                  }}
+                  onClick={() => setPromptPicker(prev => ({ ...prev, parentId: String(scene.id), childId: undefined, activeIndex: 0 }))}
+                  className={buttonClass(selectedScene?.id === scene.id || (!selectedScene && isActive(String(scene.id))))}
+                >
+                  <span>#{scene.index}</span>
+                  <span className="ml-2 truncate text-white/35">{scene.description || '分镜'}</span>
+                </button>
+              )) : (
+                <div className="px-3 py-6 text-center text-xs text-white/30">暂无当前分镜</div>
+              )
+            ) : (
+              availableCharacters.length > 0 ? availableCharacters.map(character => {
+                const audioMention = character.voiceAudioUrl ? buildMentionMedia(
+                  'audio',
+                  `char-audio-${character.id}`,
+                  character.voiceAudioUrl,
+                  `${character.name} · 音色`,
+                  `@人物音频/${character.name}`,
+                  'character-audio'
+                ) : null;
+                const disabled = promptPicker.category === 'character-audio' && !audioMention;
+                return (
+                  <button
+                    key={character.id}
+                    type="button"
+                    disabled={disabled}
+                    onMouseEnter={() => {
+                      if (!selectedCharacter || promptPicker.category === 'character-audio') {
+                        const idx = activeOptions.findIndex(option => option.key === String(character.id));
+                        setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                      }
+                    }}
+                    onClick={() => {
+                      if (promptPicker.category === 'character-audio') {
+                        if (audioMention) addPromptMention(audioMention);
+                      } else {
+                        setPromptPicker(prev => ({ ...prev, parentId: String(character.id), childId: undefined, activeIndex: 0 }));
+                      }
+                    }}
+                    className={buttonClass(selectedCharacter?.id === character.id || ((!selectedCharacter || promptPicker.category === 'character-audio') && isActive(String(character.id))), disabled)}
+                  >
+                    <span>{character.name}</span>
+                    <span className="text-white/30">{promptPicker.category === 'character-audio' ? (audioMention ? '音色' : '未上传') : '人设'}</span>
+                  </button>
+                );
+              }) : (
+                <div className="px-3 py-6 text-center text-xs text-white/30">大纲人设里还没有角色资产</div>
+              )
+            )}
+          </div>
+        )}
+
+        {promptPicker.category === 'character-image' && selectedCharacter && (
+          <div className="w-64 shrink-0 max-h-[360px] overflow-y-auto p-2">
+            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择图片</div>
+            {CHARACTER_IMAGE_SLOTS.map(slot => {
+              const key = selectedCharacter[slot.field];
+              const mention = key ? buildMentionMedia(
+                'image',
+                `char-img-${selectedCharacter.id}-${slot.field}`,
+                key,
+                `${selectedCharacter.name} · ${slot.label}`,
+                `@人物图片/${selectedCharacter.name}/${slot.label}`,
+                'character-image'
+              ) : null;
+              return (
+                <button
+                  key={slot.field}
+                  type="button"
+                  disabled={!mention}
+                  onMouseEnter={() => {
+                    const idx = activeOptions.findIndex(option => option.key === slot.field);
+                    setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                  }}
+                  onClick={() => mention && addPromptMention(mention)}
+                  className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs transition-colors ${buttonClass(isActive(slot.field), !mention).replace('mb-1 flex w-full items-center justify-between', '')}`}
+                >
+                  <div className="h-10 w-10 overflow-hidden rounded-lg border border-white/10 bg-black">
+                    {mention?.url ? <img src={mention.url} className="h-full w-full object-cover" /> : null}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">{slot.label}</div>
+                    <div className="text-[10px] text-white/35">{mention ? '添加到图片参考' : '未上传'}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {promptPicker.category === 'storyboard-image' && selectedScene && (
+          <div className="w-56 shrink-0 max-h-[360px] overflow-y-auto border-r border-white/10 p-2">
+            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择帧集</div>
+            {selectedFrameSets.length > 0 ? selectedFrameSets.map(frameSet => (
+              <button
+                key={frameSet.id}
+                type="button"
+                onMouseEnter={() => {
+                  if (!selectedFrameSet) {
+                    const idx = activeOptions.findIndex(option => option.key === String(frameSet.id));
+                    setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                  }
+                }}
+                onClick={() => setPromptPicker(prev => ({ ...prev, childId: String(frameSet.id), activeIndex: 0 }))}
+                className={buttonClass(selectedFrameSet?.id === frameSet.id || (!selectedFrameSet && isActive(String(frameSet.id))))}
+              >
+                <span className="truncate">{frameSet.name || `帧集 #${Math.round(frameSet.index)}`}</span>
+                <ChevronRight size={13} />
+              </button>
+            )) : (
+              <div className="px-3 py-6 text-center text-xs text-white/30">#{selectedScene.index} 暂无帧集图片</div>
+            )}
+          </div>
+        )}
+
+        {promptPicker.category === 'storyboard-image' && selectedScene && selectedFrameSet && (
+          <div className="w-64 shrink-0 max-h-[360px] overflow-y-auto p-2">
+            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择首尾帧</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: '首帧', key: selectedFrameSet.startFrameUrl, url: selectedFrameSet.resolvedStartFrameUrl },
+                { label: '尾帧', key: selectedFrameSet.endFrameUrl, url: selectedFrameSet.resolvedEndFrameUrl },
+              ].map(item => {
+                const mention = item.key ? buildMentionMedia(
+                  'image',
+                  `storyboard-${selectedScene.id}-${selectedFrameSet.id}-${item.label}`,
+                  item.key,
+                  `#${selectedScene.index} ${selectedFrameSet.name || `帧集 #${Math.round(selectedFrameSet.index)}`} · ${item.label}`,
+                  `@分镜图/#${selectedScene.index}/${selectedFrameSet.name || `帧集 #${Math.round(selectedFrameSet.index)}`}/${item.label}`,
+                  'storyboard-image'
+                ) : null;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    disabled={!mention}
+                    onMouseEnter={() => {
+                      const idx = activeOptions.findIndex(option => option.key === item.label);
+                      setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                    }}
+                    onClick={() => mention && addPromptMention(mention)}
+                    className={`overflow-hidden rounded-lg border text-left transition-colors ${isActive(item.label) ? 'border-blue-400/50 bg-blue-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/5'} disabled:opacity-30`}
+                  >
+                    <div className="aspect-video bg-black">
+                      {item.url ? <img src={item.url} className="h-full w-full object-cover" /> : null}
+                    </div>
+                    <div className="px-2 py-1 text-[10px] text-white/60">{item.label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderReferenceMediaSection = (
@@ -1783,14 +2421,45 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             重新带入场景信息
                           </button>
                         </div>
-                        <textarea
-                          value={generationPrompt}
-                          onChange={e => setGenerationPrompt(e.target.value)}
-                          placeholder="描述镜头构图、时序动作、氛围、运镜方式，以及如何使用各个参考媒体..."
-                          className="w-full min-h-[180px] rounded-2xl border border-white/10 bg-[#111111] px-4 py-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-1 focus:ring-blue-500/40 resize-none leading-relaxed"
-                        />
+                        <div className="relative">
+                          {!generationPrompt.trim() && (
+                            <div className="pointer-events-none absolute left-4 top-4 z-[1] text-sm leading-relaxed text-white/20">
+                              描述镜头构图、时序动作、氛围、运镜方式；输入 @ 快捷添加人设图、音色或分镜首尾帧...
+                            </div>
+                          )}
+                          <div
+                            ref={promptEditorRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={handlePromptEditorInput}
+                            onKeyDown={handlePromptEditorKeyDown}
+                            onMouseMove={handlePromptEditorMouseMove}
+                            onMouseLeave={() => setHoveredPromptMention(null)}
+                            onBlur={() => {
+                              syncPromptFromEditor();
+                            }}
+                            className="w-full min-h-[180px] whitespace-pre-wrap rounded-2xl border border-white/10 bg-[#111111] px-4 py-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/40 leading-relaxed"
+                          />
+                          {hoveredPromptMention && (
+                            <div
+                              className="pointer-events-none absolute z-40 w-64 rounded-xl border border-white/10 bg-[#111] p-3 shadow-2xl"
+                              style={{ left: hoveredPromptMention.x, top: hoveredPromptMention.y }}
+                            >
+                              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">
+                                {hoveredPromptMention.mention.mediaType === 'image' ? '图片预览' : '音频预览'}
+                              </div>
+                              {hoveredPromptMention.mention.mediaType === 'image' ? (
+                                <img src={hoveredPromptMention.mention.url} className="max-h-48 w-full rounded-lg object-contain bg-black" />
+                              ) : (
+                                <audio controls src={hoveredPromptMention.mention.url} className="pointer-events-auto w-full h-10" />
+                              )}
+                              <div className="mt-2 truncate text-[11px] text-white/55">{hoveredPromptMention.mention.name}</div>
+                            </div>
+                          )}
+                          {renderPromptAssetPicker()}
+                        </div>
                         <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
-                          <span>建议在提示词中明确提及“图片 1 / 音频 1 / 视频 1”等引用顺序，便于模型理解。</span>
+                          <span>输入 @ 可从人物图片、人物音频、当前及后三格分镜图中选择；生成时会自动替换为“图片 1 / 音频 1”。</span>
                           <span>{generationPrompt.trim().length} chars</span>
                         </div>
                       </div>
