@@ -52,6 +52,9 @@ docker-compose up -d
 | TTS_JWT_EXPIRE_SECONDS | 音频克隆服务 JWT 时长 | 60 |
 | ARK_API_BASE_URL | 火山引擎 Ark 服务地址 | https://ark.cn-beijing.volces.com |
 | ARK_API_KEY | 火山引擎 Ark API Key | - |
+| ARK_AGENT_PLAN_API_BASE_URL | 火山引擎 Ark Agent Plan 服务地址，用于 LLM / 图片理解 | https://ark.cn-beijing.volces.com/api/plan |
+| ARK_AGENT_PLAN_API_KEY | 火山引擎 Ark Agent Plan API Key | - |
+| ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS | Ark Agent Plan 支持的 LLM 模型 ID 列表，逗号分隔或 JSON 数组；第一个为默认模型 | doubao-seed-2-1-pro-260628 |
 
 ## API 接口
 

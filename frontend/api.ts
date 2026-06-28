@@ -866,6 +866,7 @@ export interface CharacterListResponse {
 export interface CreateCharacterPayload {
   name: string;
   description?: string;
+  coreFeatures?: string;
   referenceImageUrl?: string;
   halfBodyFrontImageUrl?: string;
   fullBodyFrontImageUrl?: string;
@@ -878,6 +879,7 @@ export interface CreateCharacterPayload {
 export interface UpdateCharacterPayload {
   name?: string;
   description?: string;
+  coreFeatures?: string;
   referenceImageUrl?: string;
   halfBodyFrontImageUrl?: string;
   fullBodyFrontImageUrl?: string;
@@ -885,6 +887,18 @@ export interface UpdateCharacterPayload {
   fullBodyBackImageUrl?: string;
   voiceAudioUrl?: string;
   index?: number;
+}
+
+export interface GenerateCharacterCoreFeaturesPayload {
+  imageKey?: string;
+  model?: string;
+  name?: string;
+  description?: string;
+}
+
+export interface GenerateCharacterCoreFeaturesResponse {
+  coreFeatures: string;
+  model: string;
 }
 
 export const characterApi = {
@@ -897,6 +911,11 @@ export const characterApi = {
   update: (bookId: number, characterId: number, payload: UpdateCharacterPayload) =>
     request<Character>(`/api/books/${bookId}/characters/${characterId}`, {
       method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  generateCoreFeatures: (bookId: number, characterId: number, payload: GenerateCharacterCoreFeaturesPayload) =>
+    request<GenerateCharacterCoreFeaturesResponse>(`/api/books/${bookId}/characters/${characterId}/core-features/generate`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
   delete: (bookId: number, characterId: number) =>

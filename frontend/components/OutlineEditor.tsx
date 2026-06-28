@@ -16,7 +16,10 @@ import {
   Pause,
   ChevronDown,
   ChevronRight,
-  FileText
+  FileText,
+  Info,
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 import { bookApi, characterApi, fileApi, getFileUrl, downloadFile } from '../api';
 
@@ -570,6 +573,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [isCharacterDirty, setIsCharacterDirty] = useState(false);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const [isGeneratingCoreFeatures, setIsGeneratingCoreFeatures] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ characterId: number; name: string } | null>(null);
@@ -589,10 +593,14 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const getCharacterImageValue = (char: Character, field: CharacterImageField) => char[field];
 
+  const getCoreFeaturesReferenceImage = (char: Character) =>
+    CHARACTER_IMAGE_SLOTS.map(slot => char[slot.field]).find(Boolean) || '';
+
   const getCharacterSignature = (char: Character) =>
     JSON.stringify({
       name: char.name,
       description: char.description,
+      coreFeatures: char.coreFeatures,
       referenceImageUrl: char.referenceImageUrl,
       halfBodyFrontImageUrl: char.halfBodyFrontImageUrl,
       fullBodyFrontImageUrl: char.fullBodyFrontImageUrl,
@@ -687,6 +695,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       await characterApi.update(bookId, char.id, {
         name: char.name,
         description: char.description,
+        coreFeatures: char.coreFeatures,
         referenceImageUrl: char.referenceImageUrl,
         halfBodyFrontImageUrl: char.halfBodyFrontImageUrl,
         fullBodyFrontImageUrl: char.fullBodyFrontImageUrl,
@@ -722,6 +731,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       const newChar = await characterApi.create(bookId, {
         name: '新角色',
         description: '',
+        coreFeatures: '',
         index: maxIndex + 1,
       });
       const updated = [...characters, newChar].sort((a, b) => a.index - b.index);
@@ -769,14 +779,36 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     onCharactersChange?.(newList);
   };
 
+  const updateCharacterById = (characterId: number, updater: (char: Character) => Character) => {
+    setCharacters(prev => {
+      const target = prev.find(c => c.id === characterId);
+      if (!target) return prev;
+      const updated = updater(target);
+      const newList = prev.map(c => (c.id === updated.id ? updated : c));
+      const sig = getCharacterSignature(updated);
+      if (characterId === activeCharacterId) {
+        setIsCharacterDirty(savedCharactersRef.current[updated.id] !== sig);
+      }
+      onCharactersChange?.(newList);
+      return newList;
+    });
+  };
+
   // 上传参考图
   const handleUploadReference = async (field: CharacterImageField, file: File) => {
+    const characterSnapshot = activeCharacter;
     setIsUploadingReference(true);
     try {
       const res = await fileApi.upload(file, 'private');
       updateActiveCharacter(c => ({ ...c, [field]: res.key }));
       const slot = CHARACTER_IMAGE_SLOTS.find(item => item.field === field);
       setToast({ message: `${slot?.label || '参考图'}已上传`, tone: 'success' });
+      if (field === 'referenceImageUrl' && characterSnapshot) {
+        void handleGenerateCoreFeatures({
+          imageKey: res.key,
+          character: { ...characterSnapshot, referenceImageUrl: res.key },
+        });
+      }
     } catch (err) {
       console.error('Failed to upload reference', err);
       throw err;
@@ -787,6 +819,31 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const handleRemoveReference = (field: CharacterImageField) => {
     updateActiveCharacter(c => ({ ...c, [field]: undefined }));
+  };
+
+  const handleGenerateCoreFeatures = async (options?: { imageKey?: string; character?: Character }) => {
+    const character = options?.character || activeCharacter;
+    if (!character) return;
+    const imageKey = options?.imageKey || getCoreFeaturesReferenceImage(character);
+    if (!imageKey) {
+      setToast({ message: '请先上传角色参考图', tone: 'error' });
+      return;
+    }
+    setIsGeneratingCoreFeatures(true);
+    try {
+      const res = await characterApi.generateCoreFeatures(bookId, character.id, {
+        imageKey,
+        name: character.name,
+        description: character.description,
+      });
+      updateCharacterById(character.id, c => ({ ...c, coreFeatures: res.coreFeatures }));
+      setToast({ message: '角色核心特征已生成', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to generate core features', err);
+      setToast({ message: err instanceof Error ? err.message : '生成角色核心特征失败', tone: 'error' });
+    } finally {
+      setIsGeneratingCoreFeatures(false);
+    }
   };
 
   // 上传音色音频
@@ -1119,6 +1176,38 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                     onChange={(e) => updateActiveCharacter(c => ({ ...c, description: e.target.value }))}
                     placeholder="描述角色的性格、背景、外貌特征、行为习惯等..."
                   />
+                </div>
+
+                {/* 角色核心特征 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">
+                      <span>角色核心特征</span>
+                      <span className="group relative inline-flex">
+                        <Info size={13} className="text-white/35 transition-colors group-hover:text-blue-300" />
+                        <span className="pointer-events-none absolute left-1/2 top-5 z-20 w-72 -translate-x-1/2 rounded-xl border border-white/10 bg-[#0f0f0f] p-3 text-[11px] font-medium normal-case leading-relaxed tracking-normal text-white/65 opacity-0 shadow-2xl transition-opacity group-hover:opacity-100">
+                          用 2-3 个清晰、稳定的静态特征描述角色主体（如服饰、发型、外观、类别），用于生视频时配合人物参考图，帮助 AI 快速理解并定位图片中的人物。
+                        </span>
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateCoreFeatures()}
+                      disabled={isGeneratingCoreFeatures || !getCoreFeaturesReferenceImage(activeCharacter)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-400/25 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-blue-100 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-45"
+                      title={getCoreFeaturesReferenceImage(activeCharacter) ? '根据角色参考图生成核心特征' : '请先上传角色参考图'}
+                    >
+                      {isGeneratingCoreFeatures ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                      {isGeneratingCoreFeatures ? '生成中...' : '根据角色参考图生成'}
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[92px] resize-none leading-relaxed transition-all"
+                    value={activeCharacter.coreFeatures || ''}
+                    onChange={(e) => updateActiveCharacter(c => ({ ...c, coreFeatures: e.target.value }))}
+                    placeholder="用 2-3 个清晰、稳定的静态特征描述角色主体，如服饰、发型、外观或类别..."
+                  />
+                  <p className="text-[11px] leading-relaxed text-white/35">用于生视频时配合人物参考图，帮助 AI 快速定位图片中的人物。建议：银色短发、红色斗篷、机械义眼。</p>
                 </div>
 
                 {/* 参考图 */}

@@ -251,6 +251,7 @@ export interface Character {
   bookId: number;
   name: string;
   description: string;
+  coreFeatures?: string;
   referenceImageUrl?: string;
   halfBodyFrontImageUrl?: string;
   fullBodyFrontImageUrl?: string;

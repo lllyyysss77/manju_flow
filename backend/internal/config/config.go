@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"manju-flow/utils"
 	"strconv"
 	"strings"
@@ -10,14 +11,15 @@ var Cfg *Config
 
 // Config 应用配置
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	OSS      OSSConfig
-	TTS      TTSConfig
-	Ark      ArkConfig
-	App      AppConfig
-	CORS     CORSConfig
-	Auth     AuthConfig
+	Server       ServerConfig
+	Database     DatabaseConfig
+	OSS          OSSConfig
+	TTS          TTSConfig
+	Ark          ArkConfig
+	ArkAgentPlan ArkAgentPlanConfig
+	App          AppConfig
+	CORS         CORSConfig
+	Auth         AuthConfig
 }
 
 // CORSConfig 跨域配置
@@ -51,10 +53,17 @@ type TTSConfig struct {
 	JWTExpireSeconds int
 }
 
-// ArkConfig 火山引擎内容生成服务配置
+// ArkConfig 火山引擎内容生成服务配置（Seedance 视频生成）
 type ArkConfig struct {
 	APIBaseURL string
 	APIKey     string
+}
+
+// ArkAgentPlanConfig 火山引擎 Agent Plan 配置（LLM / 图片理解）
+type ArkAgentPlanConfig struct {
+	APIBaseURL         string
+	APIKey             string
+	SupportedLLMModels []string
 }
 
 // ServerConfig 服务器配置
@@ -109,6 +118,11 @@ func Load() *Config {
 			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com/api"),
 			APIKey:     utils.GetEnv("ARK_API_KEY", ""),
 		},
+		ArkAgentPlan: ArkAgentPlanConfig{
+			APIBaseURL:         utils.GetEnv("ARK_AGENT_PLAN_API_BASE_URL", "https://ark.cn-beijing.volces.com/api/plan"),
+			APIKey:             utils.GetEnv("ARK_AGENT_PLAN_API_KEY", ""),
+			SupportedLLMModels: parseStringList(utils.GetEnv("ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS", "doubao-seed-2-1-pro-260628")),
+		},
 		CORS: CORSConfig{
 			AllowOrigins: parseOrigins(utils.GetEnv("CORS_ORIGINS", "*")),
 		},
@@ -152,6 +166,32 @@ func parseIntEnv(key string, defaultValue int) int {
 	}
 
 	return parsed
+}
+
+func parseStringList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "[") {
+		var values []string
+		if err := json.Unmarshal([]byte(raw), &values); err == nil {
+			result := make([]string, 0, len(values))
+			for _, value := range values {
+				if item := strings.TrimSpace(value); item != "" {
+					result = append(result, item)
+				}
+			}
+			return result
+		}
+	}
+
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 // parseWhitelist 解析注册白名单

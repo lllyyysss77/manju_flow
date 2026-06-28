@@ -76,6 +76,8 @@ interface PromptAssetMention {
   url: string;
   mimeType: string;
   name: string;
+  coreFeatures?: string;
+  characterName?: string;
 }
 
 interface PromptAssetPickerState {
@@ -777,7 +779,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }));
   };
 
-  const buildMentionMedia = (type: Extract<ReferenceMediaType, 'image' | 'audio'>, id: string, key: string, name: string, label: string, kind: MentionAssetKind): PromptAssetMention | null => {
+  const buildMentionMedia = (type: Extract<ReferenceMediaType, 'image' | 'audio'>, id: string, key: string, name: string, label: string, kind: MentionAssetKind, coreFeatures?: string, characterName?: string): PromptAssetMention | null => {
     const normalized = normalizeFileKey(key);
     const source = normalized.key || normalized.externalUrl || key;
     if (!source) return null;
@@ -790,6 +792,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       url: getFileUrl(source) || source,
       mimeType: type === 'image' ? 'image/*' : 'audio/*',
       name,
+      coreFeatures,
+      characterName,
     };
   };
 
@@ -968,8 +972,17 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const existingIndex = referenceMedia[mention.mediaType].findIndex(item => item.key === mention.key);
     const displayIndex = existingIndex >= 0 ? existingIndex + 1 : referenceMedia[mention.mediaType].length + 1;
     chip.textContent = `${mention.mediaType === 'image' ? '图片' : '音频'} ${displayIndex}`;
-    activeRange.insertNode(document.createTextNode(' '));
-    activeRange.insertNode(chip);
+    const characterName = mention.characterName?.trim();
+    const coreFeatures = mention.coreFeatures?.trim();
+    const shouldCompleteCharacterDefinition = mention.kind === 'character-image' && Boolean(characterName && coreFeatures);
+    if (shouldCompleteCharacterDefinition) {
+      activeRange.insertNode(document.createTextNode(` 中${coreFeatures}定义为${characterName} `));
+      activeRange.insertNode(chip);
+      activeRange.insertNode(document.createTextNode('将 '));
+    } else {
+      activeRange.insertNode(document.createTextNode(' '));
+      activeRange.insertNode(chip);
+    }
     const after = document.createRange();
     after.setStartAfter(chip.nextSibling || chip);
     after.collapse(true);
@@ -1036,7 +1049,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           key,
           `${selectedCharacter.name} · ${slot.label}`,
           `@人物图片/${selectedCharacter.name}/${slot.label}`,
-          'character-image'
+          'character-image',
+          selectedCharacter.coreFeatures,
+          selectedCharacter.name
         ) : null;
         return {
           key: slot.field,
@@ -1638,7 +1653,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                 key,
                 `${selectedCharacter.name} · ${slot.label}`,
                 `@人物图片/${selectedCharacter.name}/${slot.label}`,
-                'character-image'
+                'character-image',
+                selectedCharacter.coreFeatures,
+                selectedCharacter.name
               ) : null;
               return (
                 <button
