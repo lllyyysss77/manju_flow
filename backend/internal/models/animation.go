@@ -152,3 +152,15 @@ type GenerateSceneAnimationRequest struct {
 	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
 	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
 }
+
+// PolishSceneAnimationPromptRequest 规范化视频提示词请求
+type PolishSceneAnimationPromptRequest struct {
+	Text  string `json:"text" binding:"required"`
+	Model string `json:"model"`
+}
+
+// PolishSceneAnimationPromptResponse 规范化视频提示词响应
+type PolishSceneAnimationPromptResponse struct {
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
+}

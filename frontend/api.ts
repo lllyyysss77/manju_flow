@@ -571,6 +571,16 @@ export interface GenerateAnimationPayload {
   referenceVideoKeys?: string[];
 }
 
+export interface PolishAnimationPromptPayload {
+  text: string;
+  model?: string;
+}
+
+export interface PolishAnimationPromptResponse {
+  prompt: string;
+  model: string;
+}
+
 export const animationApi = {
   list: (sceneId: number) => request<SceneAnimationListResponse>(`/api/scenes/${sceneId}/animations`),
   create: (sceneId: number, payload: CreateAnimationPayload) =>
@@ -598,6 +608,11 @@ export const animationApi = {
     ),
   createGenerationTask: (sceneId: number, animationId: number, payload: GenerateAnimationPayload) =>
     request<SceneAnimationGenerationTask>(`/api/scenes/${sceneId}/animations/${animationId}/generation-tasks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  polishPrompt: (sceneId: number, payload: PolishAnimationPromptPayload) =>
+    request<PolishAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/polish`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

@@ -324,6 +324,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationDuration, setGenerationDuration] = useState(DEFAULT_VIDEO_DURATION);
   const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
   const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [polishingPrompt, setPolishingPrompt] = useState(false);
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
@@ -991,12 +992,43 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setGenerationPrompt(serializePromptEditor());
   };
 
-  const renderPromptForSubmission = () => {
-    let text = generationPrompt.replace(PROMPT_MENTION_PATTERN, (_raw, id: string) => promptMentionOrder[id] || '');
-    promptMentionList.forEach(mention => {
+  const renderPromptForSubmission = (source = generationPrompt) => {
+    let text = source.replace(PROMPT_MENTION_PATTERN, (_raw, id: string) => promptMentionOrder[id] || '');
+    Object.values(promptMentions).forEach(mention => {
       text = text.split(mention.label).join(promptMentionOrder[mention.id] || '');
     });
     return text.trim();
+  };
+
+  const handlePolishPrompt = async () => {
+    if (!activeScene?.id) return;
+    const currentPrompt = serializePromptEditor();
+    setGenerationPrompt(currentPrompt);
+    const text = renderPromptForSubmission(currentPrompt);
+    if (!text) {
+      showToast('请先输入需要规范的提示词', 'error');
+      return;
+    }
+
+    setPolishingPrompt(true);
+    setAnimationError(null);
+    try {
+      const res = await animationApi.polishPrompt(activeScene.id, { text });
+      const nextPrompt = (res.prompt || '').trim();
+      if (!nextPrompt) {
+        throw new Error('规范化结果为空');
+      }
+      setGenerationPrompt(nextPrompt);
+      setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
+      showToast('提示词已按 Seedance 2.0 规范更新', 'success');
+    } catch (err) {
+      console.error('Polish animation prompt failed', err);
+      const message = err instanceof Error ? err.message : '提示词规范化失败，请重试';
+      setAnimationError(message);
+      showToast(message, 'error');
+    } finally {
+      setPolishingPrompt(false);
+    }
   };
 
   const getPromptPickerActiveOptions = () => {
@@ -2472,10 +2504,12 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
                           <button
                             type="button"
-                            onClick={() => setGenerationPrompt(buildDefaultVideoPrompt(activeScene))}
-                            className="text-[11px] text-white/45 hover:text-white transition-colors"
+                            onClick={handlePolishPrompt}
+                            disabled={polishingPrompt}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-emerald-200/80 hover:text-emerald-100 transition-colors disabled:cursor-not-allowed disabled:text-white/25"
                           >
-                            重新带入场景信息
+                            {polishingPrompt && <Loader2 size={12} className="animate-spin" />}
+                            {polishingPrompt ? '规范中...' : '一键规范提示词'}
                           </button>
                         </div>
                         <div className="relative">

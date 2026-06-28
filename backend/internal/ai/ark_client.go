@@ -59,18 +59,44 @@ type responsesOutput struct {
 	} `json:"choices"`
 }
 
-func (c *ArkClient) GenerateTextFromImage(ctx context.Context, modelID string, imageURL string, prompt string) (string, error) {
+func (c *ArkClient) GenerateText(ctx context.Context, modelID string, systemPrompt string, userPrompt string) (string, error) {
 	if strings.TrimSpace(c.APIKey) == "" {
 		return "", fmt.Errorf("ark api key is not configured")
 	}
 	if strings.TrimSpace(modelID) == "" {
 		return "", fmt.Errorf("model id is required")
 	}
+	if strings.TrimSpace(userPrompt) == "" {
+		return "", fmt.Errorf("prompt is required")
+	}
+
+	input := make([]responsesInputItem, 0, 2)
+	if strings.TrimSpace(systemPrompt) != "" {
+		input = append(input, responsesInputItem{
+			Role:    "system",
+			Content: []responsesContentItem{{Type: "input_text", Text: strings.TrimSpace(systemPrompt)}},
+		})
+	}
+	input = append(input, responsesInputItem{
+		Role:    "user",
+		Content: []responsesContentItem{{Type: "input_text", Text: strings.TrimSpace(userPrompt)}},
+	})
+
+	return c.createResponsesText(ctx, responsesRequest{
+		Model: strings.TrimSpace(modelID),
+		Input: input,
+	})
+}
+
+func (c *ArkClient) GenerateTextFromImage(ctx context.Context, modelID string, imageURL string, prompt string) (string, error) {
 	if strings.TrimSpace(imageURL) == "" {
 		return "", fmt.Errorf("image url is required")
 	}
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("prompt is required")
+	}
 
-	body, err := json.Marshal(responsesRequest{
+	return c.createResponsesText(ctx, responsesRequest{
 		Model: strings.TrimSpace(modelID),
 		Input: []responsesInputItem{{
 			Role: "user",
@@ -80,6 +106,17 @@ func (c *ArkClient) GenerateTextFromImage(ctx context.Context, modelID string, i
 			},
 		}},
 	})
+}
+
+func (c *ArkClient) createResponsesText(ctx context.Context, payload responsesRequest) (string, error) {
+	if strings.TrimSpace(c.APIKey) == "" {
+		return "", fmt.Errorf("ark api key is not configured")
+	}
+	if strings.TrimSpace(payload.Model) == "" {
+		return "", fmt.Errorf("model id is required")
+	}
+
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}

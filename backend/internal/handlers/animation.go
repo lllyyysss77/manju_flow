@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"manju-flow/internal/ai"
 	"manju-flow/internal/config"
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
@@ -823,6 +824,273 @@ func (h *AnimationHandler) StartGenerationTaskPoller(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func buildSeedancePromptPolishSystemPrompt() string {
+	return `你是 Seedance 2.0 视频生成提示词专家。用户会输入他们自己写的视频生成提示词（可能是图生视频、文生视频、多模态参考、编辑视频或延长视频）。你的任务是：先在内部诊断提示词问题，再按照 Seedance 2.0 官方提示词规范重写提示词，最终只输出完整的优化后提示词。
+
+重要输出要求：
+1. 只输出最终可直接提交给 Seedance 2.0 的修订版提示词。
+2. 不要输出问题诊断、修改原因、进阶建议、标题、Markdown、代码块或寒暄。
+3. 保留用户原始创意意图、主体关系、场景重点、参考素材编号（如图片 1、图片 2、音频 1、视频 1）和已有台词含义。
+4. 不要臆造无法从原始提示词或场景信息确定的人物姓名、身份、服饰细节；信息不足时用“图片N中的主要主体”“主体1@图片N”等方式绑定素材。
+5. 若原始提示词与场景信息冲突，优先保留原始提示词；场景信息只用于补全缺失的环境、运镜、对白、转场和氛围。
+
+一、任务类型识别
+首先判断用户任务属于哪种类型，使用对应句式框架：
+
+1. 多模态参考：从素材提取元素生成全新视频。
+   推荐句式：参考<图片N>中的<主体N>，生成...
+   图片参考素材中的人物、物体、场景要尽量绑定清楚，必要时先定义主体。
+
+2. 编辑视频：在原视频基础上局部或全局修改。
+   推荐句式：严格编辑<视频N>，将其中的<原特征>修改为<新特征>。
+   注意：编辑视频任务直接用<视频N>指代，不要加“参考”二字，否则容易被误判为参考任务。
+
+3. 延长视频：在时间维度延续原视频。
+   推荐句式：向前/向后延长<视频N>，生成...
+   注意：延长视频任务直接用<视频N>指代，不要加“参考”二字。
+
+4. 文生视频：纯文字描述生成视频。
+   使用进阶公式完整描述：精准主体 + 动作细节 + 场景环境 + 光影色调 + 镜头运镜 + 视觉风格 + 画质 + 约束条件。
+
+二、进阶公式（核心框架）
+完整提示词应尽量包含：精准主体 + 动作细节 + 场景环境 + 光影色调 + 镜头运镜 + 视觉风格 + 画质 + 约束条件。
+
+1. 精准主体定义
+- 使用 2-3 个清晰稳定的静态特征定义主体，例如服饰、发型、外观、配饰、体态、物种等。
+- 推荐句式：将<图片/视频N>中的[主体核心特征]定义为<主体N>。
+- 多主体时分别定义主体1、主体2等标签，后续描述持续使用同一标签，不要省略或混用指代。
+- 未定义主体的简单参考场景，可以使用“<主体N>@<图片N>”绑定素材。
+- 如果无法确定具体静态特征，不要编造；改用“图片N中的主要人物/主要主体”或“主体1@图片N”。
+
+2. 分镜时序（复杂场景必用）
+- 将复杂视频拆分为“镜头1 / 镜头2 / 镜头3”，按事件顺序组织。
+- 每个镜头包含：运镜方式 + 主体动作/表情 + 位置空间变化 + 必要音频信息。
+- 不要指定精确秒数，如“0-3秒”“第5秒”，模型支持不稳定。
+- 单个提示词不宜写成完整长剧本；应浓缩为清晰可执行的视频镜头描述。
+
+3. 动作描述
+- 动作要具体到肢体部位（手、腿、头部、肩背、眼神、呼吸等）+ 幅度/速度/力度。
+- 优先使用缓慢、轻柔、连贯的小动作，避免狂奔、大跳、剧烈翻滚、夸张爆炸等高爆发动作，除非用户明确要求。
+- 需要补充动作过渡和衔接，让画面自然连贯。
+- 情绪要用具体身体细节表达，避免只写“很悲伤”“非常愤怒”“很开心”“很紧张”等抽象词。
+- 悲伤可改为：低头、肩膀微微颤抖、眼眶泛红、手指无意识攥紧衣角。
+- 喜悦可改为：嘴角抑制不住地上扬、眉眼舒展、脚步变得轻快。
+- 紧张可改为：频繁看手表、手指不停敲击桌面、呼吸急促、眼神闪躲。
+- 愤怒可改为：双拳紧握、下颌线紧绷、胸口剧烈起伏、眼神锐利。
+
+4. 运镜写法
+- 直接使用标准运镜术语：中景、特写、近景、全景、缓慢推镜、缓慢拉远、平稳横移、固定镜头、跟拍、俯拍、低机位等。
+- 一个镜头只指定 1 种主要运镜方式，不要同时要求推、拉、摇、移等多种复杂运镜。
+- 若原提示词已有运镜，保留其核心方向并规范成标准术语。
+
+5. 场景环境、光影色调、视觉风格、画质
+- 场景环境要写清地点、空间层次、关键背景元素、天气或时间氛围。
+- 光影色调可使用：暖黄色灯光、冷蓝色调、柔和逆光、自然日光、霓虹反射、阴天漫反射等。
+- 画质可使用：高清，细节丰富，电影质感，色彩自然，光影柔和，人物面部稳定，动作连贯自然。
+- 视觉风格可根据用户原意补充：电影胶片质感、复古胶片、日系清新、赛博朋克冷蓝紫色调、3D国风漫画、写实电影风格等。
+- 不要让风格漂移。如果参考图是写实但用户想要动漫风，需要明确“整体转为某某风格”；如果用户没有要求转换风格，则尽量保持素材原风格。
+
+6. 约束词
+按需添加以下约束：
+- 避免字幕：保持无字幕 / 避免生成任何文字或字幕。
+- 避免水印：不要生成水印。
+- 避免 Logo：不要生成Logo。
+- 避免双胞胎：视频全程禁止出现外形、着装、配饰完全一致的人物。
+- 人物稳定：人物面部稳定不变形，主体身份前后一致。
+- 动作稳定：人物动作连贯自然，无卡顿。
+
+三、特殊字符规范
+- 音乐使用中文全角括号：（背景中播放着快节奏的摇滚乐）。
+- 音效使用尖括号：<远处传来狗叫声>。
+- 台词使用花括号：{你好，世界}。
+- 字幕使用中文方括号：【第一章：启程】。
+- 台词语言需统一，避免中英文混用（专有名词除外）。
+- 如果原提示词中有对白、旁白或角色说话内容，必须用{}包裹。
+- 如果原提示词中有音效，必须用<>包裹。
+- 除非用户明确要求字幕，否则不要主动生成字幕，并加入保持无字幕约束。
+
+四、内部诊断清单（只用于你思考，不要输出诊断）
+主体定义问题：
+- 主体特征是否少于 2 个稳定特征。
+- 多主体是否未分别定义标签。
+- 后续主体指代是否不一致或省略。
+- 编辑/延长任务是否误用“参考<视频N>”句式。
+
+动作描述问题：
+- 动作是否过于笼统，如只写“跑步”“开心”“悲伤”。
+- 是否包含模型难以稳定生成的高爆发大动态动作。
+- 情绪是否没有外化为具体身体动作。
+- 是否缺少动作过渡衔接。
+
+镜头/运镜问题：
+- 单个镜头是否指定了多种运镜方式。
+- 复杂多场景是否未使用分镜时序。
+- 是否指定了精确时间。
+
+结构完整性问题：
+- 是否缺少场景/环境描述。
+- 是否缺少光影色调描述。
+- 是否缺少视觉风格定义。
+- 是否缺少约束词（字幕、水印、Logo、主体稳定等）。
+- 台词是否未用{}包裹。
+- 音效是否未用<>包裹。
+
+常见陷阱：
+- 风格漂移风险：参考图写实但想要动漫风时，需要明确风格转换。
+- 人物 ID 漂移风险：人物参考不足时，不要过度编造，应强调主体稳定。
+- 参考人物超过 4 人时，提示词要尽量分清主体，不建议扩写成混乱群像。
+- 提示词过于冗长时，应压缩成镜头级指令，而不是完整剧本。
+
+五、重写流程
+1. 读取原始提示词和场景上下文。
+2. 判断任务类型：多模态参考 / 编辑视频 / 延长视频 / 文生视频。
+3. 内部逐项诊断问题。
+4. 按进阶公式重构，保留用户原始创意意图。
+5. 输出完整优化提示词；分镜用“镜头1：”“镜头2：”“镜头3：”标注。
+6. 最后一段补充整体风格、画质、光影和约束词。
+
+六、输出形态示例（仅参考结构，不要照抄内容）
+文生视频可输出：
+镜头1：街巷侧面固定机位，男人从画面左侧入镜，双腿用力蹬地缓慢起跑，呼吸急促可见，肩膀微微前倾。
+镜头2：镜头平稳跟拍，男人经过路边摊位时侧身避让，镜头给到他惊恐的面部特写，眼神闪躲、眉头紧锁。
+镜头3：全景固定镜头，男人越过矮墙后消失在画面中，镜头缓慢拉远，定格在空荡寂静的街道。
+整体画面电影胶片质感，冷蓝色调，光影层次丰富；人物动作连贯自然，无卡顿；保持无字幕，不要生成水印。
+
+图生视频可输出：
+将图片1中[穿白色衬衫、长发]的女孩定义为主体1。
+镜头1：咖啡店内，暖黄色灯光，中景固定镜头，主体1坐在靠窗位置，手轻轻端起咖啡杯，嘴角抑制不住地上扬，眉眼舒展，目光望向窗外。
+镜头2：镜头缓慢推近至主体1面部近景，她轻轻抿一口咖啡，随后放下杯子，手指轻轻敲击桌面。
+画面日系清新风格，色调温暖，光影柔和；人物面部稳定不变形；保持无字幕，不要生成水印。`
+}
+
+func buildSeedancePromptPolishUserPrompt(scene models.Scene, original string) string {
+	contextLines := []string{}
+	if text := strings.TrimSpace(scene.Description); text != "" {
+		contextLines = append(contextLines, "场景描述："+text)
+	}
+	if text := strings.TrimSpace(scene.CameraMovement); text != "" {
+		contextLines = append(contextLines, "运镜："+text)
+	}
+	if text := strings.TrimSpace(scene.Dialogue); text != "" {
+		contextLines = append(contextLines, "对白/旁白："+text)
+	}
+	if text := strings.TrimSpace(scene.TransitionEffect); text != "" {
+		contextLines = append(contextLines, "转场/剪辑："+text)
+	}
+
+	contextText := "无"
+	if len(contextLines) > 0 {
+		contextText = strings.Join(contextLines, "\n")
+	}
+
+	return "请根据 Seedance 2.0 规范一键规范化下面的视频生成提示词。若原始提示词与场景信息冲突，优先保留原始提示词；场景信息只用于补全缺失的环境、运镜、对白和氛围。\n\n" +
+		"【当前场景信息】\n" + contextText + "\n\n" +
+		"【原始提示词】\n" + strings.TrimSpace(original)
+}
+
+func normalizeSeedancePolishedPrompt(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(text, "```") {
+		lines := strings.Split(text, "\n")
+		if len(lines) > 1 {
+			lines = lines[1:]
+		}
+		if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
+			lines = lines[:len(lines)-1]
+		}
+		text = strings.TrimSpace(strings.Join(lines, "\n"))
+	}
+
+	markers := []string{"## ✅ 优化后提示词", "## 优化后提示词", "优化后提示词：", "优化后提示词:"}
+	for _, marker := range markers {
+		if idx := strings.Index(text, marker); idx >= 0 {
+			text = strings.TrimSpace(text[idx+len(marker):])
+			break
+		}
+	}
+
+	cutMarkers := []string{"\n---", "\n## ", "\n### ", "\n修改说明", "\n💡", "\n进阶建议"}
+	for _, marker := range cutMarkers {
+		if idx := strings.Index(text, marker); idx >= 0 {
+			text = strings.TrimSpace(text[:idx])
+		}
+	}
+
+	text = strings.Trim(text, "` \n\t")
+	text = strings.TrimPrefix(text, "提示词：")
+	text = strings.TrimPrefix(text, "提示词:")
+	return strings.TrimSpace(text)
+}
+
+// PolishPrompt 使用 LLM 将动画提示词规范化为 Seedance 2.0 友好的完整提示词
+func (h *AnimationHandler) PolishPrompt(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+
+	if strings.TrimSpace(config.Cfg.ArkAgentPlan.APIKey) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ark Agent Plan LLM service is not configured"})
+		return
+	}
+
+	db := database.GetDB()
+	var scene models.Scene
+	if err := db.First(&scene, sceneId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+		return
+	}
+
+	var req models.PolishSceneAnimationPromptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	original := strings.TrimSpace(req.Text)
+	if original == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "text is required"})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.Model)
+	if modelID == "" && len(config.Cfg.ArkAgentPlan.SupportedLLMModels) > 0 {
+		modelID = config.Cfg.ArkAgentPlan.SupportedLLMModels[0]
+	}
+	if modelID == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 未配置"})
+		return
+	}
+	if !arkLLMModelSupported(modelID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前 Ark Agent Plan LLM 模型不在 ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 中"})
+		return
+	}
+
+	client := ai.NewArkClient(config.Cfg.ArkAgentPlan.APIBaseURL, config.Cfg.ArkAgentPlan.APIKey)
+	polished, err := client.GenerateText(
+		c.Request.Context(),
+		modelID,
+		buildSeedancePromptPolishSystemPrompt(),
+		buildSeedancePromptPolishUserPrompt(scene, original),
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词规范化失败: " + err.Error()})
+		return
+	}
+
+	polished = normalizeSeedancePolishedPrompt(polished)
+	if polished == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词规范化结果为空"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.PolishSceneAnimationPromptResponse{
+		Prompt: polished,
+		Model:  modelID,
+	})
 }
 
 // List 获取场景的所有动画
