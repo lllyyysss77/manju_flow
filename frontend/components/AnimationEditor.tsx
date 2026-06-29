@@ -1,7 +1,8 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Character, Episode, Scene, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
-import { fileApi, animationApi, storyboardApi, commentApi, characterApi, getFileUrl, downloadFile, normalizeFileKey } from '../api';
+import { fileApi, animationApi, storyboardApi, commentApi, characterApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
+import { useAudioTrimmer } from './AudioTrimmerModal';
 import {
   MessageSquare,
   AlertCircle,
@@ -328,6 +329,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
+  const { trimIfNeeded, modal: audioTrimmerModal } = useAudioTrimmer(MAX_UPLOAD_AUDIO_DURATION, MIN_UPLOAD_AUDIO_DURATION);
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
   const [characters, setCharacters] = useState<Character[]>([]);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
@@ -745,24 +747,49 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setAnimationError(null);
     try {
       const uploadedItems: UploadedReferenceMedia[] = [];
+      let cancelled = false;
       for (const file of Array.from(files)) {
-        const uploaded = await fileApi.upload(file, 'private');
+        let targetFile = file;
+        if (type === 'audio') {
+          try {
+            targetFile = await trimIfNeeded(file);
+          } catch (err) {
+            if (err instanceof Error && err.message === '用户取消截取') {
+              cancelled = true;
+              break;
+            }
+            throw err;
+          }
+        }
+        const uploaded = await fileApi.upload(targetFile, 'private');
         const key = uploaded.key || '';
         const url = getFileUrl(key || uploaded.url) || uploaded.url;
         uploadedItems.push({
           id: `${type}-${key || uploaded.url}-${Date.now()}-${uploadedItems.length}`,
           key,
-          name: file.name,
+          name: targetFile.name,
           url,
-          mimeType: file.type || uploaded.mimeType || '',
+          mimeType: targetFile.type || uploaded.mimeType || '',
           type,
         });
       }
-      setReferenceMedia(prev => ({
-        ...prev,
-        [type]: [...prev[type], ...uploadedItems],
-      }));
-      showToast(`${REFERENCE_LABELS[type]}已上传`, 'success');
+      if (cancelled) {
+        if (uploadedItems.length) {
+          setReferenceMedia(prev => ({
+            ...prev,
+            [type]: [...prev[type], ...uploadedItems],
+          }));
+          showToast(`已上传 ${uploadedItems.length} 个文件，当前文件已取消`, 'info');
+        }
+        return;
+      }
+      if (uploadedItems.length) {
+        setReferenceMedia(prev => ({
+          ...prev,
+          [type]: [...prev[type], ...uploadedItems],
+        }));
+        showToast(`${REFERENCE_LABELS[type]}已上传`, 'success');
+      }
     } catch (err) {
       console.error('Upload reference media failed', err);
       setAnimationError(err instanceof Error ? err.message : '参考媒体上传失败');
@@ -2002,6 +2029,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         </div>
       )}
       <Toast toast={toast} onClose={hideToast} />
+      {audioTrimmerModal}
       {/* 顶部：章节选择 + 场景切换（与分镜风格保持一致） */}
       <div className="border-b border-white/5 bg-[#141414]">
         <ChapterTabBar

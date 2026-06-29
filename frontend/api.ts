@@ -19,6 +19,8 @@ export const ensureHttpsUrl = (url?: string | null): string => {
 const API_BASE_URL = ensureHttpsUrl(import.meta.env.VITE_API_URL || 'http://localhost:8080');
 const FILE_API_PREFIX = '/api/files/';
 export const MAX_UPLOAD_IMAGE_EDGE = 6000;
+export const MIN_UPLOAD_AUDIO_DURATION = 5; // 秒
+export const MAX_UPLOAD_AUDIO_DURATION = 12; // 秒
 const API_HOST = (() => {
   try {
     return new URL(API_BASE_URL).host;
