@@ -91,14 +91,14 @@ func buildCharacterCoreFeaturesPrompt(name string, description string) string {
 		"示例4：蓬松白毛，紫色眼瞳的黑白狼兽人" + contextText
 }
 
-func resolveOwnedFileSignedURL(userID uint, key string) (string, error) {
+func resolveCoreFeaturesImageSignedURL(key string) (string, error) {
 	normalizedKey := strings.TrimSpace(key)
 	if normalizedKey == "" {
 		return "", fmt.Errorf("参考图不能为空")
 	}
 
 	var file models.File
-	if err := database.GetDB().Where("`key` = ? AND uploader_id = ?", normalizedKey, userID).First(&file).Error; err != nil {
+	if err := database.GetDB().Where("`key` = ?", normalizedKey).First(&file).Error; err != nil {
 		return "", err
 	}
 
@@ -352,12 +352,10 @@ func (h *CharacterHandler) GenerateCoreFeatures(c *gin.Context) {
 	bookId := c.Param("bookId")
 	id := c.Param("characterId")
 
-	userIDValue, ok := c.Get("userId")
-	if !ok {
+	if _, ok := c.Get("userId"); !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户未认证"})
 		return
 	}
-	userID := userIDValue.(uint)
 
 	db := database.GetDB()
 
@@ -388,7 +386,7 @@ func (h *CharacterHandler) GenerateCoreFeatures(c *gin.Context) {
 		return
 	}
 
-	signedURL, err := resolveOwnedFileSignedURL(userID, imageKey)
+	signedURL, err := resolveCoreFeaturesImageSignedURL(imageKey)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色参考图不可用"})
 		return
