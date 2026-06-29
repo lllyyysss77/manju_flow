@@ -18,6 +18,7 @@ export const ensureHttpsUrl = (url?: string | null): string => {
 
 const API_BASE_URL = ensureHttpsUrl(import.meta.env.VITE_API_URL || 'http://localhost:8080');
 const FILE_API_PREFIX = '/api/files/';
+export const MAX_UPLOAD_IMAGE_EDGE = 6000;
 const API_HOST = (() => {
   try {
     return new URL(API_BASE_URL).host;
@@ -377,6 +378,95 @@ export interface OriginalTextUploadResponse extends FileUploadResponse {
   preview: string;
 }
 
+const IMAGE_OUTPUT_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+const getImageResizeOutputType = (file: File): string => {
+  if (file.type === 'image/jpeg' || file.type === 'image/webp') return file.type;
+  return 'image/webp';
+};
+
+const withImageExtension = (filename: string, mimeType: string): string => {
+  const extension = IMAGE_OUTPUT_EXTENSIONS[mimeType] || 'webp';
+  const basename = filename.replace(/\.[^/.]+$/, '');
+  return `${basename || 'image'}.${extension}`;
+};
+
+const canvasToBlob = (canvas: HTMLCanvasElement, mimeType: string): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => {
+        if (!blob) {
+          reject(new Error('图片压缩失败'));
+          return;
+        }
+        resolve(blob);
+      },
+      mimeType,
+      0.92
+    );
+  });
+
+const loadUploadImage = (file: File): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片读取失败'));
+    };
+    image.src = url;
+  });
+
+/**
+ * 统一的上传前文件处理入口：
+ * - 非图片原样上传
+ * - 图片最长边超过 6000 像素时，按比例压缩到 6000 像素内
+ */
+export const prepareFileForUpload = async (file: File): Promise<File> => {
+  if (!isBrowser || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+    return file;
+  }
+
+  const image = await loadUploadImage(file);
+  const sourceWidth = image.naturalWidth;
+  const sourceHeight = image.naturalHeight;
+  const longestEdge = Math.max(sourceWidth, sourceHeight);
+
+  if (!sourceWidth || !sourceHeight || longestEdge <= MAX_UPLOAD_IMAGE_EDGE) {
+    return file;
+  }
+
+  const scale = MAX_UPLOAD_IMAGE_EDGE / longestEdge;
+  const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('图片压缩失败');
+  }
+
+  ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+  const requestedType = getImageResizeOutputType(file);
+  const blob = await canvasToBlob(canvas, requestedType);
+  const outputType = blob.type || requestedType;
+  const outputName = outputType === file.type ? file.name : withImageExtension(file.name, outputType);
+
+  return new File([blob], outputName, {
+    type: outputType,
+    lastModified: Date.now(),
+  });
+};
+
 /**
  * 同步函数：将原始文件 key/url 转换为可直接使用的 /api/files/{key} 代理 URL
  * 后端代理模式下浏览器自动利用 Cache-Control + ETag 缓存，无需 JS 侧缓存
@@ -397,9 +487,10 @@ export const getFileUrl = (raw?: string | null, options?: GetFileUrlOptions): st
 };
 
 export const fileApi = {
-  upload: (file: File, visibility: 'public' | 'private' = 'private') => {
+  upload: async (file: File, visibility: 'public' | 'private' = 'private') => {
+    const uploadFile = await prepareFileForUpload(file);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', uploadFile);
     formData.append('visibility', visibility);
     return request<FileUploadResponse>('/api/files', {
       method: 'POST',
@@ -417,15 +508,17 @@ export const fileApi = {
   },
 
   // 带进度回调的上传（适合大文件）
-  uploadWithProgress: (
+  uploadWithProgress: async (
     file: File,
     visibility: 'public' | 'private' = 'private',
     onProgress?: (percent: number) => void
   ): Promise<FileUploadResponse> => {
+    onProgress?.(0);
+    const uploadFile = await prepareFileForUpload(file);
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', uploadFile);
       formData.append('visibility', visibility);
 
       xhr.upload.onprogress = (event) => {
