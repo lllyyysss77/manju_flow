@@ -116,14 +116,14 @@ type resolvedAnimationReferenceAsset struct {
 	SignedURL string
 }
 
-func (h *AnimationHandler) findOwnedFile(db *gorm.DB, userID uint, key string) (*models.File, error) {
+func (h *AnimationHandler) findFileByKey(db *gorm.DB, key string) (*models.File, error) {
 	normalizedKey := strings.TrimSpace(key)
 	if normalizedKey == "" {
 		return nil, fmt.Errorf("file key is required")
 	}
 
 	var file models.File
-	if err := db.Where("`key` = ? AND uploader_id = ?", normalizedKey, userID).First(&file).Error; err != nil {
+	if err := db.Where("`key` = ?", normalizedKey).First(&file).Error; err != nil {
 		return nil, err
 	}
 
@@ -139,7 +139,7 @@ func (h *AnimationHandler) buildSignedFileURL(file *models.File) (string, error)
 	return ossClient.GetSignedURL(file.Key, 3600)
 }
 
-func (h *AnimationHandler) resolveReferenceURLs(db *gorm.DB, userID uint, rawItems []string) ([]string, error) {
+func (h *AnimationHandler) resolveReferenceURLs(db *gorm.DB, rawItems []string) ([]string, error) {
 	urls := make([]string, 0, len(rawItems))
 	for _, raw := range rawItems {
 		normalized := strings.TrimSpace(raw)
@@ -151,7 +151,7 @@ func (h *AnimationHandler) resolveReferenceURLs(db *gorm.DB, userID uint, rawIte
 			continue
 		}
 
-		file, err := h.findOwnedFile(db, userID, normalized)
+		file, err := h.findFileByKey(db, normalized)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +182,6 @@ func buildAssetNameFromSource(source string, fallback string) string {
 
 func (h *AnimationHandler) resolveReferenceAssets(
 	db *gorm.DB,
-	userID uint,
 	rawItems []string,
 	fallbackPrefix string,
 ) ([]resolvedAnimationReferenceAsset, error) {
@@ -201,7 +200,7 @@ func (h *AnimationHandler) resolveReferenceAssets(
 			continue
 		}
 
-		file, err := h.findOwnedFile(db, userID, normalized)
+		file, err := h.findFileByKey(db, normalized)
 		if err != nil {
 			return nil, err
 		}
@@ -1587,17 +1586,17 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		return
 	}
 
-	referenceImageAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceImageKeys, "图片参考")
+	referenceImageAssets, err := h.resolveReferenceAssets(db, req.ReferenceImageKeys, "图片参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference image not found"})
 		return
 	}
-	referenceAudioAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceAudioKeys, "音频参考")
+	referenceAudioAssets, err := h.resolveReferenceAssets(db, req.ReferenceAudioKeys, "音频参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference audio not found"})
 		return
 	}
-	referenceVideoAssets, err := h.resolveReferenceAssets(db, userID, req.ReferenceVideoKeys, "视频参考")
+	referenceVideoAssets, err := h.resolveReferenceAssets(db, req.ReferenceVideoKeys, "视频参考")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference video not found"})
 		return
