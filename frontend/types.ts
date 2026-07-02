@@ -8,7 +8,7 @@ export enum ProductionStage {
   REVIEW = 'REVIEW'
 }
 
-export type Status = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
+export type Status = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
 
 export type CommentModule = 'script' | 'storyboard' | 'animation' | 'audio' | 'review';
 export type CommentTargetType = 'scene' | 'chapter';

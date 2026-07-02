@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback, Suspense, lazy } from 'react';
 import { ProductionStage, Project, Episode } from './types';
-import { STAGE_CONFIG, STATUS_MAP } from './constants';
+import { STAGE_CONFIG, STATUS_MAP, STATUS_FILTERS, DEFAULT_STATUS_FILTER_KEY } from './constants';
 import { ImportBookModal } from './components/ImportBookModal';
 import { LoraLibrary } from './components/LoraLibrary';
 import { authApi, authStorage, bookApi, chapterApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
@@ -20,7 +20,9 @@ import {
   RefreshCw,
   Pencil,
   Trash2,
-  Layers
+  Layers,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 
 // 懒加载编辑器组件 - 按需加载减少首屏体积
@@ -60,10 +62,12 @@ const App: React.FC = () => {
   const [activeSceneId, setActiveSceneId] = useState<number | null>(null);
 
   const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>(DEFAULT_STATUS_FILTER_KEY);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [mutatingId, setMutatingId] = useState<number | null>(null); // 归档/取消归档进行中
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingBookId, setEditingBookId] = useState<number | null>(null);
   const [editingData, setEditingData] = useState<CreateBookRequest | null>(null);
@@ -107,12 +111,17 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const params: { type?: BookType; keyword?: string; size?: number } = { size: 100 };
+      const params: { type?: BookType; keyword?: string; status?: string; size?: number } = { size: 100 };
       if (filterType !== 'ALL') {
         params.type = filterType;
       }
       if (debouncedKeyword.trim()) {
         params.keyword = debouncedKeyword.trim();
+      }
+      // 状态筛选：找到对应 tab 的 statuses 值
+      const statusOption = STATUS_FILTERS.find(f => f.key === statusFilter);
+      if (statusOption?.statuses) {
+        params.status = statusOption.statuses;
       }
       const response = await bookApi.list(params);
       setProjects(booksToProjects(response.data));
@@ -122,7 +131,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [filterType, debouncedKeyword, authToken]);
+  }, [filterType, statusFilter, debouncedKeyword, authToken]);
 
   // 初始加载和筛选变化时重新加载
   useEffect(() => {
@@ -236,6 +245,32 @@ const App: React.FC = () => {
       alert('删除失败，请稍后再试');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleArchive = async (projectId: number) => {
+    setMutatingId(projectId);
+    try {
+      await bookApi.archive(projectId);
+      await loadProjects();
+    } catch (err) {
+      console.error('Failed to archive project:', err);
+      alert('归档失败，请稍后再试');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  const handleUnarchive = async (projectId: number) => {
+    setMutatingId(projectId);
+    try {
+      await bookApi.unarchive(projectId);
+      await loadProjects();
+    } catch (err) {
+      console.error('Failed to unarchive project:', err);
+      alert('取消归档失败，请稍后再试');
+    } finally {
+      setMutatingId(null);
     }
   };
 
@@ -401,7 +436,22 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
           {/* 书库子筛选栏 - 移到内容区内部 */}
-          <div className="sticky top-0 z-20 bg-[#0a0a0a] px-12 py-4 border-b border-white/5">
+          <div className="sticky top-0 z-20 bg-[#0a0a0a] px-12 py-4 border-b border-white/5 flex flex-col gap-3">
+            {/* 第一行：状态分类 Tab */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+                {STATUS_FILTERS.map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${statusFilter === f.key ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* 第二行：类型筛选 + 搜索 + 导入 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
                 <button
@@ -529,6 +579,33 @@ const App: React.FC = () => {
                                 <span>编辑</span>
                               </button>
                               <button
+                                className="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/5 flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                disabled={mutatingId === p.id}
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  if (p.productionStatus === 'ARCHIVED') {
+                                    handleUnarchive(p.id);
+                                  } else {
+                                    handleArchive(p.id);
+                                  }
+                                }}
+                              >
+                                {mutatingId === p.id ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : p.productionStatus === 'ARCHIVED' ? (
+                                  <ArchiveRestore size={16} />
+                                ) : (
+                                  <Archive size={16} />
+                                )}
+                                <span>
+                                  {mutatingId === p.id
+                                    ? '处理中...'
+                                    : p.productionStatus === 'ARCHIVED'
+                                    ? '取消归档'
+                                    : '归档'}
+                                </span>
+                              </button>
+                              <button
                                 className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                 disabled={deletingId === p.id}
                                 onClick={() => {
@@ -556,6 +633,7 @@ const App: React.FC = () => {
                       <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-widest ${
                         p.productionStatus === 'IN_PROGRESS' ? 'bg-blue-600/40 border-blue-500 text-blue-100' :
                         p.productionStatus === 'COMPLETED' ? 'bg-green-600/40 border-green-500 text-green-100' :
+                        p.productionStatus === 'ARCHIVED' ? 'bg-zinc-700/50 border-zinc-600 text-zinc-300' :
                         'bg-zinc-600/40 border-zinc-500 text-zinc-100'
                       }`}>
                         {STATUS_MAP[p.productionStatus]}
