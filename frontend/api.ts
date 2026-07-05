@@ -88,7 +88,7 @@ export const normalizeFileKey = (input?: string | null): { key: string | null; e
 
 // 后端 Book 类型定义
 export type BookType = 'NOVEL' | 'COMIC';
-export type AdaptationStatus = 'NONE' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
+export type AdaptationStatus = 'NONE' | 'IN_PROGRESS' | 'COMPLETED';
 
 export interface Book {
   id: number;
@@ -130,7 +130,6 @@ export interface BookListParams {
   size?: number;
   type?: BookType;
   keyword?: string;
-  status?: string; // 逗号分隔多状态，如 "NONE,IN_PROGRESS"
 }
 
 // API 错误处理
@@ -213,7 +212,6 @@ export const bookApi = {
     if (params?.size) searchParams.set('size', String(params.size));
     if (params?.type) searchParams.set('type', params.type);
     if (params?.keyword) searchParams.set('keyword', params.keyword);
-    if (params?.status) searchParams.set('status', params.status);
 
     const queryString = searchParams.toString();
     const endpoint = `/api/books${queryString ? `?${queryString}` : ''}`;
@@ -246,20 +244,6 @@ export const bookApi = {
   delete: async (id: number): Promise<void> => {
     return request(`/api/books/${id}`, {
       method: 'DELETE',
-    });
-  },
-
-  // 归档书籍
-  archive: async (id: number): Promise<Book> => {
-    return request<Book>(`/api/books/${id}/archive`, {
-      method: 'PUT',
-    });
-  },
-
-  // 取消归档
-  unarchive: async (id: number): Promise<Book> => {
-    return request<Book>(`/api/books/${id}/unarchive`, {
-      method: 'PUT',
     });
   },
 
@@ -305,7 +289,6 @@ export function bookToProject(book: Book): Project {
     'NONE': 'DRAFT',
     'IN_PROGRESS': 'IN_PROGRESS',
     'COMPLETED': 'COMPLETED',
-    'ARCHIVED': 'ARCHIVED',
   };
 
   return {
@@ -686,6 +669,9 @@ export interface GenerateAnimationPayload {
 export interface PolishAnimationPromptPayload {
   text: string;
   model?: string;
+  referenceImageKeys?: string[];
+  referenceAudioKeys?: string[];
+  referenceVideoKeys?: string[];
 }
 
 export interface PolishAnimationPromptResponse {
@@ -725,6 +711,11 @@ export const animationApi = {
     }),
   polishPrompt: (sceneId: number, payload: PolishAnimationPromptPayload) =>
     request<PolishAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/polish`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  optimizePrompt: (sceneId: number, payload: PolishAnimationPromptPayload) =>
+    request<PolishAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/optimize`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

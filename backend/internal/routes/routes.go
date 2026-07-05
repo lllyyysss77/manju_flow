@@ -67,8 +67,6 @@ func Setup(r *gin.Engine) {
 				books.PUT("/:bookId", bookHandler.Update)                // 更新书籍
 				books.DELETE("/:bookId", bookHandler.Delete)             // 删除书籍
 				books.PUT("/:bookId/outline", bookHandler.UpdateOutline) // 更新大纲
-				books.PUT("/:bookId/archive", bookHandler.Archive)       // 归档书籍
-				books.PUT("/:bookId/unarchive", bookHandler.Unarchive)  // 取消归档
 			}
 
 			// 角色人设路由
@@ -124,7 +122,8 @@ func Setup(r *gin.Engine) {
 
 			// 动画路由（支持多套动画）
 			animationHandler := handlers.NewAnimationHandler()
-			authorized.POST("/scenes/:sceneId/animation-prompt/polish", animationHandler.PolishPrompt) // 一键规范动画提示词
+			authorized.POST("/scenes/:sceneId/animation-prompt/polish", animationHandler.PolishPrompt)     // 一键规范动画提示词
+			authorized.POST("/scenes/:sceneId/animation-prompt/optimize", animationHandler.OptimizePrompt) // 一键优化动画提示词
 			animations := authorized.Group("/scenes/:sceneId/animations")
 			{
 				animations.GET("", animationHandler.List)                                                           // 获取动画列表

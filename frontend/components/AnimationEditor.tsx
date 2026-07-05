@@ -326,6 +326,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [polishingPrompt, setPolishingPrompt] = useState(false);
+  const [optimizingPrompt, setOptimizingPrompt] = useState(false);
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
@@ -514,7 +515,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   useEffect(() => {
     if (!activeScene?.id) return;
     let cancelled = false;
-    const targetScenes = sortedScenes.slice(activeSceneIndex, activeSceneIndex + 4).filter(scene => scene?.id);
+    const targetScenes = sortedScenes.slice(activeSceneIndex, activeSceneIndex + 5).filter(scene => scene?.id);
     const load = async () => {
       try {
         const entries = await Promise.all(
@@ -715,7 +716,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return order;
   }, [promptMentionList, referenceMedia]);
   const promptPickerScenes = useMemo(
-    () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 4),
+    () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 5),
     [activeSceneIndex, sortedScenes]
   );
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
@@ -1055,6 +1056,45 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       showToast(message, 'error');
     } finally {
       setPolishingPrompt(false);
+    }
+  };
+
+  const getReferenceKeys = (type: ReferenceMediaType) =>
+    Array.from(new Set(referenceMedia[type].map(item => item.key).filter(Boolean)));
+
+  const handleOptimizePrompt = async () => {
+    if (!activeScene?.id) return;
+    const currentPrompt = serializePromptEditor();
+    setGenerationPrompt(currentPrompt);
+    const text = renderPromptForSubmission(currentPrompt);
+    if (!text) {
+      showToast('请先输入需要优化的提示词', 'error');
+      return;
+    }
+
+    setOptimizingPrompt(true);
+    setAnimationError(null);
+    try {
+      const res = await animationApi.optimizePrompt(activeScene.id, {
+        text,
+        referenceImageKeys: getReferenceKeys('image'),
+        referenceAudioKeys: getReferenceKeys('audio'),
+        referenceVideoKeys: getReferenceKeys('video'),
+      });
+      const nextPrompt = (res.prompt || '').trim();
+      if (!nextPrompt) {
+        throw new Error('优化结果为空');
+      }
+      setGenerationPrompt(nextPrompt);
+      setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
+      showToast('提示词已按电影分镜范式优化', 'success');
+    } catch (err) {
+      console.error('Optimize animation prompt failed', err);
+      const message = err instanceof Error ? err.message : '提示词优化失败，请重试';
+      setAnimationError(message);
+      showToast(message, 'error');
+    } finally {
+      setOptimizingPrompt(false);
     }
   };
 
@@ -2530,15 +2570,26 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
-                          <button
-                            type="button"
-                            onClick={handlePolishPrompt}
-                            disabled={polishingPrompt}
-                            className="inline-flex items-center gap-1.5 text-[11px] text-emerald-200/80 hover:text-emerald-100 transition-colors disabled:cursor-not-allowed disabled:text-white/25"
-                          >
-                            {polishingPrompt && <Loader2 size={12} className="animate-spin" />}
-                            {polishingPrompt ? '规范中...' : '一键规范提示词'}
-                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={handlePolishPrompt}
+                              disabled={polishingPrompt || optimizingPrompt}
+                              className="inline-flex items-center gap-1.5 text-[11px] text-emerald-200/80 hover:text-emerald-100 transition-colors disabled:cursor-not-allowed disabled:text-white/25"
+                            >
+                              {polishingPrompt && <Loader2 size={12} className="animate-spin" />}
+                              {polishingPrompt ? '规范中...' : '一键规范提示词'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleOptimizePrompt}
+                              disabled={polishingPrompt || optimizingPrompt}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100/90 transition-colors hover:border-amber-200/40 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                            >
+                              {optimizingPrompt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                              {optimizingPrompt ? '优化中...' : '一键优化提示词'}
+                            </button>
+                          </div>
                         </div>
                         <div className="relative">
                           {!generationPrompt.trim() && (
@@ -2580,7 +2631,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           {renderPromptAssetPicker()}
                         </div>
                         <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
-                          <span>输入 @ 可从人物图片、人物音频、当前及后三格分镜图中选择；生成时会自动替换为“图片 1 / 音频 1”。</span>
+                          <span>输入 @ 可从人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片 1 / 音频 1”。</span>
                           <span>{generationPrompt.trim().length} chars</span>
                         </div>
                       </div>

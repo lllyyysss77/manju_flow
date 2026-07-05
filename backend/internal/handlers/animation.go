@@ -989,6 +989,271 @@ func buildSeedancePromptPolishUserPrompt(scene models.Scene, original string) st
 		"【原始提示词】\n" + strings.TrimSpace(original)
 }
 
+func buildAnimationPromptOptimizeSystemPrompt() string {
+	return buildSeedancePromptPolishSystemPrompt() + `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+以下是“一键优化提示词”的追加规则。上方 Seedance 2.0 规范必须完整继承；本功能是在“规范化”的基础上进一步提升电影分镜可执行性、剧情理解、参考素材遵循度和作品风格适配度。
+
+你的身份升级：你不仅是 Seedance 2.0 视频生成提示词专家，也是电影级 AI 视频提示词导演。你擅长把用户的动画制作提示词优化成稳定、可执行、镜头感强、素材约束清晰的生成提示词。你需要参考下方已经抽象好的优秀样例写法规律，但不能机械套用样例的具体世界观或 3D CG 风格。
+
+一、额外输出要求
+1. 仍然只输出最终可直接提交给 Seedance 2.0 的完整优化后提示词。
+2. 仍然不要输出问题诊断、修改原因、标题、Markdown、代码块或寒暄。
+3. 输出应比“一键规范”更完整：不仅整理格式，还要补强镜头语言、动作细节、情绪外化、声音设计、光影规则、空间连续性、素材约束和负面约束。
+4. 原始提示词已有的镜头编号、台词、参考素材、人物关系、剧情事件、运动方向、场景设定、风格要求必须优先保留；只能在此基础上增强，不得重写成另一个剧情。
+5. 如果原始提示词已经很详细，不要大幅压缩；应做结构化、补漏和消歧。只有当提示词明显重复、矛盾或过长失控时，才进行适度整理。
+
+二、参考素材绝对优先规则
+1. 如果原始提示词里引用图片、音频或视频，必须严格遵循引用素材，不得忽略、改名、调换顺序或凭空重设外观。
+2. 手写引用如“图1”“图2”“音频1”“视频1”“@[IMG_GEN_...]”“@[02905...]”都视为真实有效素材，必须原样保留或用等价中文明确绑定。
+3. 如果请求中提供了图片上下文，把它们按顺序视为“图片1、图片2、图片3...”，并与原始提示词中的图片引用保持一致；如果无法完全确认对应关系，必须保守描述为“图片N中的主体/场景/道具”。
+4. 图片可用于理解人物外观、服装、道具、场景结构、光线、构图、空间关系，但不要编造图片外没有依据的客观外观。
+5. 音频引用只用于音色、语气、节奏、情绪参考；不得改写为不存在的音乐或 BGM。
+6. 视频引用如果被描述为延续、尾帧、回忆、编辑或参考，必须保持任务类型：延续就延续，编辑就编辑，回忆就作为蒙太奇/插叙画面，不要误写成普通图片参考。
+7. 示例：如果用户写“人物1在场景1下进行了跳跃”，优化重点是跳跃动作的准备、起跳、滞空、落地、重心、衣料/发丝/尘土、镜头跟随、音效和情绪，而不是凭空更改人物外观或场景结构。
+
+三、优秀样例已抽象出的可迁移范式
+1. 参考素材定义段：开头先定义每个素材用途，例如：图1为场景和光线参考，图2为角色细节参考，音频1为音色参考，视频1为回忆/延续/尾帧参考。
+2. 镜头分解段：复杂内容拆成“镜头1、镜头2、镜头3...”，按时间顺序推进；每个镜头尽量包含景别、机位、焦段/镜头感、构图、主体、动作、表情、空间关系、运镜、光影、声音。
+3. 构图和空间段：写清画面左右/前后/远近关系、主体占画面比例、前景遮挡、背景虚化、人物是否自然裁切、角色之间的距离和遮挡关系。
+4. 运镜段：保留用户已有运镜；必要时补充“手持呼吸感、缓慢推近、平稳横移、低机位仰拍、过肩镜头、长焦压缩、浅景深、虚焦到对焦、蒙太奇转场”等，但一个镜头不要叠加过多互相冲突的运镜。
+5. 动作段：动作要具体到身体部位和节奏，例如手指收紧、肩膀下沉、下颌绷紧、眼神停顿、呼吸变浅、衣摆被风吹动、道具轻微晃动、机械关节发出低声摩擦。
+6. 台词段：有台词时保留原文并用{}包裹，补充语气、节奏、停顿、音色参考和切镜节奏；不要改变台词含义。
+7. 声音段：优先补充环境音和动作音效，例如脚步、衣料、风沙、机械关节、全息启动、杯子碰撞、低频电流、远处人声；除非用户明确要求音乐，否则加入“有音效，无音乐，无字幕”。
+8. 光影段：光影必须来自场景和参考素材的合理光源，不随意添加摄影棚补光。可写自然逆光、夕阳侧逆光、冷蓝阴影、霓虹频闪、体积雾、玻璃反射、金属反光、浅景深、电影级调色。
+9. 连续性段：如果用户提到延续上一视频、尾帧、前后镜头或位置锁定，必须明确“人物位置、朝向、道具状态、镜头方向与上一段保持连续”，并避免出现多余人物或错误场景。
+10. 约束段：结尾补充人物身份一致、参考图肤色/材质/光影色相一致、位置关系合理、人物不混乱、不穿模、脸部稳定、肢体不变形、动作连贯、无水印、无字幕等。
+
+四、作品风格适配规则
+1. “Blizzard Cinematic / Blur Studio / 最终幻想 XVI / UE5 / MetaHuman / 动捕驱动 / 3A 游戏过场”等风格锁定只适用于明显的 3D CG、写实 CG、游戏过场、科幻动画作品。
+2. 如果从作品信息、章节/场景上下文或原始提示词判断作品明显不是 3D 动画，例如真人写实、二维动画、国漫平面风、日漫赛璐璐、手绘、水彩、漫画动态、定格、儿童绘本等，不要硬套 3D CG 风格；应改写成匹配该作品的风格锁定。
+3. 如果无法判断作品类型，保持中性：电影级视频生成、主体稳定、自然光影、镜头语言明确、画面质感统一，不强行加入具体 3D 引擎或游戏 CG 术语。
+4. 如果用户原始提示词已经指定风格，则优先用户指定风格；只补充该风格下的画质、光影、镜头和稳定性要求。
+5. 如果用户原始提示词使用“对标”作品，应保留其对标方向，但不要加入与对标方向冲突的其他风格。
+
+五、上下文使用规则
+1. 当前章节及前后章节大纲用于理解剧情走向、人物目标、冲突关系和情绪背景。
+2. 前序场景上下文只用于承接人物位置、道具状态、情绪余波、光线/空间连续性，不要主动把前序场景内容写进当前要生成的视频。
+3. 当前场景是默认生成范围的核心，必须优先服务用户原始提示词。
+4. 后续 1-4 个场景可能被用户合并成一段长镜头或一组连续分镜；如果原始提示词出现“接着、随后、然后、镜头2/3/4、长镜头、连续、一起生成”等连贯表达，可以把当前场景和后续场景合并理解并优化成连续镜头。
+5. 如果原始提示词只描述当前场景，不要擅自把后续场景剧情塞进输出；后续场景只用于铺垫方向和避免断裂。
+6. 上下文只能补全缺失信息，不得出现和原始提示词冲突的信息。
+7. 如果上下文能判断人物正在延续上一场动作，要补充衔接；如果上下文没有证据，不要臆造重大事件。
+
+六、优化后的推荐结构
+你可以根据原始提示词复杂度选择结构，但复杂动画优先使用以下结构：
+
+【参考素材约束】
+说明图1/图2/音频1/视频1或@[...]分别用于什么，严格绑定人物、场景、道具、音色、延续/回忆关系。
+
+镜头1：景别 + 机位 + 焦段/镜头感 + 构图 + 主体位置 + 动作细节 + 表情情绪 + 运镜 + 光影 + 声音/台词。
+镜头2：延续上一镜头的空间关系，写清切镜点、主体动作变化、前后景和声音衔接。
+镜头3：继续推进剧情，写清关键动作、情绪落点、转场或结尾画面。
+
+【整体风格与技术约束】
+根据作品类型写匹配的风格锁定、画质、帧率/运动模糊/景深/材质/色彩分级/环境光规则/声音规则/负面约束。若作品不是 3D CG，不要写 UE5、MetaHuman、动捕驱动、3A 游戏过场等 3D 专用词。
+
+七、最终自检清单（只用于思考，不要输出）
+- 是否完整继承 Seedance 2.0 规范化要求？
+- 是否保留所有素材引用和原始剧情意图？
+- 是否严格遵循图片/音频/视频参考，没有凭空改外观？
+- 是否引入了当前章节与前后章节、当前场景与前后场景的必要上下文？
+- 是否按作品类型适配风格，而不是盲目套用样例中的 3D CG 风格？
+- 是否补强了镜头、动作、情绪、光影、声音、连续性和负面约束？
+- 是否只输出最终优化后的提示词？`
+}
+
+func truncatePromptText(text string, maxRunes int) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(trimmed)
+	if len(runes) <= maxRunes {
+		return trimmed
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+func formatChapterContextLine(chapter models.Chapter, current bool) string {
+	label := "章节"
+	if current {
+		label = "当前章节"
+	}
+	parts := []string{fmt.Sprintf("%s %.2f：%s", label, chapter.Index, strings.TrimSpace(chapter.Title))}
+	if synopsis := truncatePromptText(chapter.Synopsis, 600); synopsis != "" {
+		parts = append(parts, "大纲："+synopsis)
+	}
+	return strings.Join(parts, "｜")
+}
+
+func formatSceneContextLine(scene models.Scene, current bool) string {
+	label := "场景"
+	if current {
+		label = "当前场景"
+	}
+	parts := []string{fmt.Sprintf("%s %.2f", label, scene.Index)}
+	if text := truncatePromptText(scene.Description, 500); text != "" {
+		parts = append(parts, "画面需求："+text)
+	}
+	if text := truncatePromptText(scene.CameraMovement, 260); text != "" {
+		parts = append(parts, "运镜："+text)
+	}
+	if text := truncatePromptText(scene.Dialogue, 360); text != "" {
+		parts = append(parts, "台词/旁白："+text)
+	}
+	if text := truncatePromptText(scene.TransitionEffect, 200); text != "" {
+		parts = append(parts, "转场："+text)
+	}
+	return strings.Join(parts, "｜")
+}
+
+func buildAnimationPromptOptimizeNarrativeContext(db *gorm.DB, scene models.Scene) string {
+	var lines []string
+	appendContextSection := func(title string, sectionLines []string) {
+		if len(sectionLines) > 0 {
+			lines = append(lines, title+"\n"+strings.Join(sectionLines, "\n"))
+		}
+	}
+
+	var chapter models.Chapter
+	if err := db.First(&chapter, scene.ChapterID).Error; err == nil {
+		var book models.Book
+		if err := db.First(&book, chapter.BookID).Error; err == nil {
+			bookLines := []string{}
+			if title := strings.TrimSpace(book.Title); title != "" {
+				bookLines = append(bookLines, "作品："+title)
+			}
+			if desc := truncatePromptText(book.Description, 500); desc != "" {
+				bookLines = append(bookLines, "简介："+desc)
+			}
+			if outline := truncatePromptText(book.Outline, 1200); outline != "" {
+				bookLines = append(bookLines, "全书大纲摘要："+outline)
+			}
+			if len(bookLines) > 0 {
+				lines = append(lines, "【作品信息】\n"+strings.Join(bookLines, "\n"))
+			}
+		}
+
+		var chapters []models.Chapter
+		if err := db.Where("book_id = ?", chapter.BookID).Order("`index` asc, id asc").Find(&chapters).Error; err == nil && len(chapters) > 0 {
+			currentIndex := -1
+			for i, item := range chapters {
+				if item.ID == chapter.ID {
+					currentIndex = i
+					break
+				}
+			}
+			if currentIndex >= 0 {
+				previousStart := currentIndex - 3
+				if previousStart < 0 {
+					previousStart = 0
+				}
+				previousChapterLines := []string{}
+				for i := previousStart; i < currentIndex; i++ {
+					previousChapterLines = append(previousChapterLines, formatChapterContextLine(chapters[i], false))
+				}
+				appendContextSection("【前序章节大纲｜只用于剧情承接，不主动写进当前画面】", previousChapterLines)
+
+				appendContextSection("【当前章节大纲｜当前生成内容的剧情核心】", []string{
+					formatChapterContextLine(chapters[currentIndex], true),
+				})
+
+				nextEnd := currentIndex + 3
+				if nextEnd >= len(chapters) {
+					nextEnd = len(chapters) - 1
+				}
+				nextChapterLines := []string{}
+				for i := currentIndex + 1; i <= nextEnd; i++ {
+					nextChapterLines = append(nextChapterLines, formatChapterContextLine(chapters[i], false))
+				}
+				appendContextSection("【后续章节大纲｜只用于理解剧情方向】", nextChapterLines)
+			}
+		}
+	}
+
+	var scenes []models.Scene
+	if err := db.Where("chapter_id = ?", scene.ChapterID).Order("`index` asc, id asc").Find(&scenes).Error; err == nil && len(scenes) > 0 {
+		currentIndex := -1
+		for i, item := range scenes {
+			if item.ID == scene.ID {
+				currentIndex = i
+				break
+			}
+		}
+		if currentIndex >= 0 {
+			previousStart := currentIndex - 3
+			if previousStart < 0 {
+				previousStart = 0
+			}
+			previousSceneLines := []string{}
+			for i := previousStart; i < currentIndex; i++ {
+				previousSceneLines = append(previousSceneLines, formatSceneContextLine(scenes[i], false))
+			}
+			appendContextSection("【前序场景上下文｜只用于承接，不要主动生成为当前画面】", previousSceneLines)
+
+			appendContextSection("【当前场景上下文｜默认生成范围核心】", []string{
+				formatSceneContextLine(scenes[currentIndex], true),
+			})
+
+			nextEnd := currentIndex + 4
+			if nextEnd >= len(scenes) {
+				nextEnd = len(scenes) - 1
+			}
+			nextSceneLines := []string{}
+			for i := currentIndex + 1; i <= nextEnd; i++ {
+				nextSceneLines = append(nextSceneLines, formatSceneContextLine(scenes[i], false))
+			}
+			appendContextSection("【后续1-4个场景上下文｜用户可能合并为长镜头/连续分镜时才纳入生成】", nextSceneLines)
+		}
+	}
+
+	if len(lines) == 0 {
+		return "无"
+	}
+	return strings.Join(lines, "\n\n")
+}
+
+func formatOptimizeReferenceAssets(label string, assets []resolvedAnimationReferenceAsset) string {
+	if len(assets) == 0 {
+		return label + "：无"
+	}
+	lines := make([]string, 0, len(assets))
+	for i, asset := range assets {
+		name := strings.TrimSpace(asset.Name)
+		if name == "" {
+			name = fmt.Sprintf("%s %d", label, i+1)
+		}
+		source := strings.TrimSpace(asset.Source)
+		if source == "" {
+			source = name
+		}
+		lines = append(lines, fmt.Sprintf("%s %d：%s（source: %s）", label, i+1, name, source))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func buildAnimationPromptOptimizeUserPrompt(
+	scene models.Scene,
+	original string,
+	narrativeContext string,
+	imageAssets []resolvedAnimationReferenceAsset,
+	audioAssets []resolvedAnimationReferenceAsset,
+	videoAssets []resolvedAnimationReferenceAsset,
+) string {
+	currentScene := formatSceneContextLine(scene, true)
+	return "请根据系统提示中已经列明的优秀样例可迁移规则，优化下面的动画制作提示词。必须严格保留并遵循原始提示词里的所有参考素材引用；若已随请求提供图片，请把图片按顺序视为“图片 1、图片 2...”的视觉上下文。\n\n" +
+		"【当前场景摘要】\n" + currentScene + "\n\n" +
+		"【剧情上下文】\n" + narrativeContext + "\n\n" +
+		"【上下文取舍提醒】\n前序场景只用于承接，不要主动写成当前生成画面；当前场景是默认生成核心；后续1-4个场景只有在原始提示词明显描述连续镜头、多个分镜或长镜头时，才纳入优化后的镜头内容。\n\n" +
+		"【已上传/已引用参考素材】\n以下列表是当前动画片段挂载的可用参考素材；只有原始提示词明确引用、或用户用“图片1/音频1/视频1”等顺序指代、或镜头生成确实需要的素材才写入优化结果，不要为了用完素材而强行加入无关角色/场景。\n" +
+		formatOptimizeReferenceAssets("图片", imageAssets) + "\n" +
+		formatOptimizeReferenceAssets("音频", audioAssets) + "\n" +
+		formatOptimizeReferenceAssets("视频", videoAssets) + "\n\n" +
+		"【原始提示词】\n" + strings.TrimSpace(original)
+}
+
 func normalizeSeedancePolishedPrompt(raw string) string {
 	text := strings.TrimSpace(raw)
 	if text == "" {
@@ -1088,6 +1353,105 @@ func (h *AnimationHandler) PolishPrompt(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.PolishSceneAnimationPromptResponse{
 		Prompt: polished,
+		Model:  modelID,
+	})
+}
+
+// OptimizePrompt 使用 LLM 按电影分镜范式优化动画提示词，并引入前后章节/场景与参考图片上下文
+func (h *AnimationHandler) OptimizePrompt(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+
+	if strings.TrimSpace(config.Cfg.ArkAgentPlan.APIKey) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ark Agent Plan LLM service is not configured"})
+		return
+	}
+
+	db := database.GetDB()
+	var scene models.Scene
+	if err := db.First(&scene, sceneId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+		return
+	}
+
+	var req models.PolishSceneAnimationPromptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	original := strings.TrimSpace(req.Text)
+	if original == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "text is required"})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.Model)
+	if modelID == "" && len(config.Cfg.ArkAgentPlan.SupportedLLMModels) > 0 {
+		modelID = config.Cfg.ArkAgentPlan.SupportedLLMModels[0]
+	}
+	if modelID == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 未配置"})
+		return
+	}
+	if !arkLLMModelSupported(modelID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前 Ark Agent Plan LLM 模型不在 ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 中"})
+		return
+	}
+
+	imageAssets, err := h.resolveReferenceAssets(db, req.ReferenceImageKeys, "图片参考")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference image not found"})
+		return
+	}
+	audioAssets, err := h.resolveReferenceAssets(db, req.ReferenceAudioKeys, "音频参考")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference audio not found"})
+		return
+	}
+	videoAssets, err := h.resolveReferenceAssets(db, req.ReferenceVideoKeys, "视频参考")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Reference video not found"})
+		return
+	}
+
+	imageURLs := make([]string, 0, len(imageAssets))
+	for _, asset := range imageAssets {
+		if signedURL := strings.TrimSpace(asset.SignedURL); signedURL != "" {
+			imageURLs = append(imageURLs, signedURL)
+		}
+		if len(imageURLs) >= 8 {
+			break
+		}
+	}
+
+	client := ai.NewArkClient(config.Cfg.ArkAgentPlan.APIBaseURL, config.Cfg.ArkAgentPlan.APIKey)
+	optimized, err := client.GenerateTextWithImages(
+		c.Request.Context(),
+		modelID,
+		buildAnimationPromptOptimizeSystemPrompt(),
+		buildAnimationPromptOptimizeUserPrompt(
+			scene,
+			original,
+			buildAnimationPromptOptimizeNarrativeContext(db, scene),
+			imageAssets,
+			audioAssets,
+			videoAssets,
+		),
+		imageURLs,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词优化失败: " + err.Error()})
+		return
+	}
+
+	optimized = normalizeSeedancePolishedPrompt(optimized)
+	if optimized == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词优化结果为空"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.PolishSceneAnimationPromptResponse{
+		Prompt: optimized,
 		Model:  modelID,
 	})
 }

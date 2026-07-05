@@ -108,6 +108,41 @@ func (c *ArkClient) GenerateTextFromImage(ctx context.Context, modelID string, i
 	})
 }
 
+func (c *ArkClient) GenerateTextWithImages(ctx context.Context, modelID string, systemPrompt string, userPrompt string, imageURLs []string) (string, error) {
+	if strings.TrimSpace(c.APIKey) == "" {
+		return "", fmt.Errorf("ark api key is not configured")
+	}
+	if strings.TrimSpace(modelID) == "" {
+		return "", fmt.Errorf("model id is required")
+	}
+	if strings.TrimSpace(userPrompt) == "" {
+		return "", fmt.Errorf("prompt is required")
+	}
+
+	input := make([]responsesInputItem, 0, 2)
+	if strings.TrimSpace(systemPrompt) != "" {
+		input = append(input, responsesInputItem{
+			Role:    "system",
+			Content: []responsesContentItem{{Type: "input_text", Text: strings.TrimSpace(systemPrompt)}},
+		})
+	}
+
+	content := []responsesContentItem{{Type: "input_text", Text: strings.TrimSpace(userPrompt)}}
+	for _, imageURL := range imageURLs {
+		trimmed := strings.TrimSpace(imageURL)
+		if trimmed == "" {
+			continue
+		}
+		content = append(content, responsesContentItem{Type: "input_image", ImageURL: trimmed})
+	}
+	input = append(input, responsesInputItem{Role: "user", Content: content})
+
+	return c.createResponsesText(ctx, responsesRequest{
+		Model: strings.TrimSpace(modelID),
+		Input: input,
+	})
+}
+
 func (c *ArkClient) createResponsesText(ctx context.Context, payload responsesRequest) (string, error) {
 	if strings.TrimSpace(c.APIKey) == "" {
 		return "", fmt.Errorf("ark api key is not configured")

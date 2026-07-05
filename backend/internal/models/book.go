@@ -18,10 +18,9 @@ const (
 type AdaptationStatus string
 
 const (
-	AdaptationStatusNone       AdaptationStatus = "NONE"        // 未开始改编（历史值，新建不再使用）
-	AdaptationStatusInProgress AdaptationStatus = "IN_PROGRESS" // 创作中（默认）
-	AdaptationStatusCompleted  AdaptationStatus = "COMPLETED"   // 已完成
-	AdaptationStatusArchived   AdaptationStatus = "ARCHIVED"    // 已归档
+	AdaptationStatusNone       AdaptationStatus = "NONE"        // 未开始改编
+	AdaptationStatusInProgress AdaptationStatus = "IN_PROGRESS" // 改编中
+	AdaptationStatusCompleted  AdaptationStatus = "COMPLETED"   // 改编完成
 )
 
 // Book 书库模型 - 存储小说和漫画的原始作品

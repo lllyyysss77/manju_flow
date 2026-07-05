@@ -155,8 +155,11 @@ type GenerateSceneAnimationRequest struct {
 
 // PolishSceneAnimationPromptRequest 规范化视频提示词请求
 type PolishSceneAnimationPromptRequest struct {
-	Text  string `json:"text" binding:"required"`
-	Model string `json:"model"`
+	Text               string   `json:"text" binding:"required"`
+	Model              string   `json:"model"`
+	ReferenceImageKeys []string `json:"referenceImageKeys"`
+	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
+	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
 }
 
 // PolishSceneAnimationPromptResponse 规范化视频提示词响应

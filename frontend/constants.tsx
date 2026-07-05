@@ -23,29 +23,8 @@ export const STAGE_CONFIG = [
 export const STATUS_MAP: Record<Status, string> = {
   DRAFT: '草稿',
   IN_PROGRESS: '进行中',
-  COMPLETED: '已完成',
-  ARCHIVED: '已归档'
+  COMPLETED: '已完成'
 };
-
-/**
- * 主界面状态筛选 Tab 配置
- * - statuses: 传给后端 ?status= 的值（逗号分隔），undefined 表示不过滤（全部）
- * - 默认选中项为 IN_PROGRESS_WITH_DRAFT（创作中 + 草稿合并展示）
- */
-export interface StatusFilterOption {
-  key: string;
-  label: string;
-  statuses?: string; // undefined = 全部
-}
-
-export const STATUS_FILTERS: StatusFilterOption[] = [
-  { key: 'ALL', label: '全部' },
-  { key: 'IN_PROGRESS_WITH_DRAFT', label: '进行中', statuses: 'NONE,IN_PROGRESS' },
-  { key: 'COMPLETED', label: '已完成', statuses: 'COMPLETED' },
-  { key: 'ARCHIVED', label: '已归档', statuses: 'ARCHIVED' },
-];
-
-export const DEFAULT_STATUS_FILTER_KEY = 'IN_PROGRESS_WITH_DRAFT';
 
 /** 默认场景占位图 (SVG data URL) */
 export const DEFAULT_SCENE_THUMB =
