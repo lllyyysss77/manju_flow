@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"manju-flow/internal/database"
 	"manju-flow/internal/models"
@@ -47,6 +48,7 @@ func (h *BookHandler) List(c *gin.Context) {
 	// 过滤参数
 	bookType := c.Query("type")
 	keyword := c.Query("keyword")
+	statusParam := c.Query("status")
 
 	// 构建查询
 	query := db.Model(&models.Book{})
@@ -54,6 +56,21 @@ func (h *BookHandler) List(c *gin.Context) {
 	// 类型过滤
 	if bookType != "" && (bookType == string(models.BookTypeNovel) || bookType == string(models.BookTypeComic)) {
 		query = query.Where("type = ?", bookType)
+	}
+
+	// 状态过滤（支持逗号分隔多值，如 ?status=NONE,IN_PROGRESS）
+	if statusParam != "" {
+		statuses := []string{}
+		for _, s := range strings.Split(statusParam, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			statuses = append(statuses, s)
+		}
+		if len(statuses) > 0 {
+			query = query.Where("adaptation_status IN ?", statuses)
+		}
 	}
 
 	// 关键词搜索（标题或作者）
@@ -115,7 +132,7 @@ func (h *BookHandler) Create(c *gin.Context) {
 		Outline:             req.Outline,
 		OriginalTextKey:     req.OriginalTextKey,
 		OriginalTextPreview: req.OriginalTextPreview,
-		AdaptationStatus:    models.AdaptationStatusNone,
+		AdaptationStatus:    models.AdaptationStatusInProgress,
 	}
 
 	db := database.GetDB()
@@ -274,6 +291,70 @@ func (h *BookHandler) UpdateOutline(c *gin.Context) {
 	if err := db.Save(&book).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update outline",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, book)
+}
+
+// Archive 归档书籍
+// @Summary 归档书籍
+// @Description 将书籍标记为已归档，从默认列表中隐藏
+// @Tags books
+// @Produce json
+// @Param id path int true "书籍ID"
+// @Success 200 {object} models.Book
+// @Failure 404 {object} map[string]string
+// @Router /api/books/{id}/archive [put]
+func (h *BookHandler) Archive(c *gin.Context) {
+	id := c.Param("bookId")
+
+	var book models.Book
+	db := database.GetDB()
+	if err := db.First(&book, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	book.AdaptationStatus = models.AdaptationStatusArchived
+	if err := db.Save(&book).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to archive book",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, book)
+}
+
+// Unarchive 取消归档
+// @Summary 取消归档书籍
+// @Description 将书籍从归档状态恢复为创作中
+// @Tags books
+// @Produce json
+// @Param id path int true "书籍ID"
+// @Success 200 {object} models.Book
+// @Failure 404 {object} map[string]string
+// @Router /api/books/{id}/unarchive [put]
+func (h *BookHandler) Unarchive(c *gin.Context) {
+	id := c.Param("bookId")
+
+	var book models.Book
+	db := database.GetDB()
+	if err := db.First(&book, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	book.AdaptationStatus = models.AdaptationStatusInProgress
+	if err := db.Save(&book).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to unarchive book",
 		})
 		return
 	}

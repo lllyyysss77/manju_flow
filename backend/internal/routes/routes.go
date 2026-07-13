@@ -67,6 +67,8 @@ func Setup(r *gin.Engine) {
 				books.PUT("/:bookId", bookHandler.Update)                // 更新书籍
 				books.DELETE("/:bookId", bookHandler.Delete)             // 删除书籍
 				books.PUT("/:bookId/outline", bookHandler.UpdateOutline) // 更新大纲
+				books.PUT("/:bookId/archive", bookHandler.Archive)       // 归档书籍
+				books.PUT("/:bookId/unarchive", bookHandler.Unarchive)   // 取消归档
 			}
 
 			// 角色人设路由
