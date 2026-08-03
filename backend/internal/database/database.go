@@ -43,6 +43,7 @@ func Init(cfg *config.DatabaseConfig) error {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Book{},
+		&models.BookFavorite{},
 		&models.Chapter{},
 		&models.Scene{},
 		&models.SceneReference{}, // 场景参考资料（一对多）

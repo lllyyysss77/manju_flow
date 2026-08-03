@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"manju-flow/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BookHandler 书籍处理器
@@ -21,14 +24,14 @@ func NewBookHandler() *BookHandler {
 
 // List 获取书籍列表
 // @Summary 获取书籍列表
-// @Description 获取书库中的所有小说和漫画，支持分页和类型过滤
+// @Description 获取作品库中的所有作品，支持分页、状态和关键词过滤
 // @Tags books
 // @Accept json
 // @Produce json
 // @Param page query int false "页码" default(1)
 // @Param size query int false "每页数量" default(10)
-// @Param type query string false "书籍类型 (NOVEL/COMIC)"
 // @Param keyword query string false "搜索关键词（标题或作者）"
+// @Param favorite query bool false "仅返回当前用户收藏的作品"
 // @Success 200 {object} models.BookListResponse
 // @Router /api/books [get]
 func (h *BookHandler) List(c *gin.Context) {
@@ -46,16 +49,16 @@ func (h *BookHandler) List(c *gin.Context) {
 	offset := (page - 1) * size
 
 	// 过滤参数
-	bookType := c.Query("type")
 	keyword := c.Query("keyword")
 	statusParam := c.Query("status")
+	favoriteOnly, _ := strconv.ParseBool(c.Query("favorite"))
+	userID := c.GetUint("userId")
 
 	// 构建查询
 	query := db.Model(&models.Book{})
-
-	// 类型过滤
-	if bookType != "" && (bookType == string(models.BookTypeNovel) || bookType == string(models.BookTypeComic)) {
-		query = query.Where("type = ?", bookType)
+	if favoriteOnly {
+		query = query.Where("id IN (?)", db.Model(&models.BookFavorite{}).
+			Select("book_id").Where("user_id = ?", userID))
 	}
 
 	// 状态过滤（支持逗号分隔多值，如 ?status=NONE,IN_PROGRESS）
@@ -95,6 +98,10 @@ func (h *BookHandler) List(c *gin.Context) {
 		})
 		return
 	}
+	if err := markFavoriteBooks(db, userID, books); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch favorites"})
+		return
+	}
 
 	c.JSON(http.StatusOK, models.BookListResponse{
 		Total: total,
@@ -106,7 +113,7 @@ func (h *BookHandler) List(c *gin.Context) {
 
 // Create 创建书籍
 // @Summary 创建新书籍
-// @Description 向书库中添加新的小说或漫画
+// @Description 向作品库中添加新作品
 // @Tags books
 // @Accept json
 // @Produce json
@@ -127,7 +134,6 @@ func (h *BookHandler) Create(c *gin.Context) {
 		Title:               req.Title,
 		Author:              req.Author,
 		Cover:               req.Cover,
-		Type:                req.Type,
 		Description:         req.Description,
 		Outline:             req.Outline,
 		OriginalTextKey:     req.OriginalTextKey,
@@ -167,6 +173,12 @@ func (h *BookHandler) GetByID(c *gin.Context) {
 		})
 		return
 	}
+	books := []models.Book{book}
+	if err := markFavoriteBooks(db, c.GetUint("userId"), books); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch favorite status"})
+		return
+	}
+	book = books[0]
 
 	c.JSON(http.StatusOK, book)
 }
@@ -206,7 +218,6 @@ func (h *BookHandler) Update(c *gin.Context) {
 	book.Title = req.Title
 	book.Author = req.Author
 	book.Cover = req.Cover
-	book.Type = req.Type
 	book.Description = req.Description
 	book.OriginalTextKey = req.OriginalTextKey
 	book.OriginalTextPreview = req.OriginalTextPreview
@@ -360,4 +371,79 @@ func (h *BookHandler) Unarchive(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, book)
+}
+
+// Favorite 收藏作品。
+func (h *BookHandler) Favorite(c *gin.Context) {
+	db := database.GetDB()
+	bookID := c.Param("bookId")
+
+	var book models.Book
+	if err := db.Select("id").First(&book, bookID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch book"})
+		return
+	}
+
+	favorite := models.BookFavorite{UserID: c.GetUint("userId"), BookID: book.ID}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&favorite).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to favorite book"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"isFavorite": true})
+}
+
+// Unfavorite 取消收藏作品。
+func (h *BookHandler) Unfavorite(c *gin.Context) {
+	db := database.GetDB()
+	bookID := c.Param("bookId")
+
+	var book models.Book
+	if err := db.Select("id").First(&book, bookID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch book"})
+		return
+	}
+
+	if err := db.Where("user_id = ? AND book_id = ?", c.GetUint("userId"), book.ID).
+		Delete(&models.BookFavorite{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unfavorite book"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"isFavorite": false})
+}
+
+func markFavoriteBooks(db *gorm.DB, userID uint, books []models.Book) error {
+	if len(books) == 0 {
+		return nil
+	}
+
+	bookIDs := make([]uint, 0, len(books))
+	for _, book := range books {
+		bookIDs = append(bookIDs, book.ID)
+	}
+
+	var favoriteBookIDs []uint
+	if err := db.Model(&models.BookFavorite{}).
+		Where("user_id = ? AND book_id IN ?", userID, bookIDs).
+		Pluck("book_id", &favoriteBookIDs).Error; err != nil {
+		return err
+	}
+
+	favorites := make(map[uint]struct{}, len(favoriteBookIDs))
+	for _, bookID := range favoriteBookIDs {
+		favorites[bookID] = struct{}{}
+	}
+	for i := range books {
+		_, books[i].IsFavorite = favorites[books[i].ID]
+	}
+	return nil
 }

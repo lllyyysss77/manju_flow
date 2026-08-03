@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, BookOpen, Image as ImageIcon, Upload, Loader2, FileText } from 'lucide-react';
+import { X, Upload, Loader2, FileText } from 'lucide-react';
 import { CreateBookRequest, ensureHttpsUrl, fileApi } from '../api';
 
 interface ImportBookModalProps {
@@ -23,7 +23,6 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
     title: '',
     author: '',
     cover: '',
-    type: 'NOVEL',
     description: '',
     originalTextKey: '',
     originalTextPreview: '',
@@ -218,39 +217,6 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
               </div>
             )}
 
-            {/* 作品类型 */}
-            <div>
-              <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
-                作品类型
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, type: 'NOVEL' }))}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl border transition-all ${
-                    formData.type === 'NOVEL'
-                      ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                      : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
-                  }`}
-                >
-                  <BookOpen size={18} />
-                  <span className="font-semibold">小说</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, type: 'COMIC' }))}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl border transition-all ${
-                    formData.type === 'COMIC'
-                      ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                      : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
-                  }`}
-                >
-                  <ImageIcon size={18} />
-                  <span className="font-semibold">漫画</span>
-                </button>
-              </div>
-            </div>
-
             {/* 作品名称 */}
             <div>
               <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
@@ -372,7 +338,7 @@ export const ImportBookModal: React.FC<ImportBookModalProps> = ({
             {/* 原文 */}
             <div>
               <label className="block text-xs font-bold text-white/40 uppercase tracking-widest mb-2">
-                小说/漫画原文
+                作品原文
               </label>
               <div
                 className={`rounded-xl border bg-white/5 p-4 transition-colors ${

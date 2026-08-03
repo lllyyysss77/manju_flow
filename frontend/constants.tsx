@@ -36,10 +36,12 @@ export interface StatusFilterOption {
   key: string;
   label: string;
   statuses?: string; // undefined = 全部
+  favorite?: boolean;
 }
 
 export const STATUS_FILTERS: StatusFilterOption[] = [
   { key: 'ALL', label: '全部' },
+  { key: 'FAVORITES', label: '我的收藏', favorite: true },
   { key: 'IN_PROGRESS_WITH_DRAFT', label: '进行中', statuses: 'NONE,IN_PROGRESS' },
   { key: 'COMPLETED', label: '已完成', statuses: 'COMPLETED' },
   { key: 'ARCHIVED', label: '已归档', statuses: 'ARCHIVED' },

@@ -234,7 +234,6 @@ export interface Project {
   title: string;
   author: string;
   cover: string;
-  originalWorkType: 'NOVEL' | 'COMIC';
   productionStatus: Status;
   episodes: Episode[];
   assignedWriter?: string;
@@ -244,6 +243,7 @@ export interface Project {
   originalTextKey?: string;
   originalTextPreview?: string;
   characters?: Character[];
+  isFavorite: boolean;
 }
 
 export interface Character {

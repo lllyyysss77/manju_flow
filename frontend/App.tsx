@@ -4,7 +4,7 @@ import { ProductionStage, Project, Episode } from './types';
 import { STAGE_CONFIG, STATUS_MAP, STATUS_FILTERS, DEFAULT_STATUS_FILTER_KEY } from './constants';
 import { ImportBookModal } from './components/ImportBookModal';
 import { LoraLibrary } from './components/LoraLibrary';
-import { authApi, authStorage, bookApi, chapterApi, booksToProjects, BookType, CreateBookRequest, AuthResponse } from './api';
+import { authApi, authStorage, bookApi, chapterApi, booksToProjects, CreateBookRequest, AuthResponse } from './api';
 import { AuthPage } from './components/AuthPage';
 import {
   Search,
@@ -23,6 +23,7 @@ import {
   Layers,
   Archive,
   ArchiveRestore,
+  Star,
 } from 'lucide-react';
 
 // 懒加载编辑器组件 - 按需加载减少首屏体积
@@ -61,13 +62,13 @@ const App: React.FC = () => {
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [activeSceneId, setActiveSceneId] = useState<number | null>(null);
 
-  const [filterType, setFilterType] = useState<'ALL' | 'NOVEL' | 'COMIC'>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>(DEFAULT_STATUS_FILTER_KEY);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [mutatingId, setMutatingId] = useState<number | null>(null);
+  const [favoriteMutatingIds, setFavoriteMutatingIds] = useState<Set<number>>(new Set());
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingBookId, setEditingBookId] = useState<number | null>(null);
   const [editingData, setEditingData] = useState<CreateBookRequest | null>(null);
@@ -111,16 +112,16 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const params: { type?: BookType; keyword?: string; status?: string; size?: number } = { size: 100 };
-      if (filterType !== 'ALL') {
-        params.type = filterType;
-      }
+      const params: { keyword?: string; status?: string; favorite?: boolean; size?: number } = { size: 100 };
       if (debouncedKeyword.trim()) {
         params.keyword = debouncedKeyword.trim();
       }
       const statusOption = STATUS_FILTERS.find(f => f.key === statusFilter);
       if (statusOption?.statuses) {
         params.status = statusOption.statuses;
+      }
+      if (statusOption?.favorite) {
+        params.favorite = true;
       }
       const response = await bookApi.list(params);
       setProjects(booksToProjects(response.data));
@@ -130,7 +131,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [filterType, statusFilter, debouncedKeyword, authToken]);
+  }, [statusFilter, debouncedKeyword, authToken]);
 
   // 初始加载和筛选变化时重新加载
   useEffect(() => {
@@ -273,6 +274,36 @@ const App: React.FC = () => {
     }
   };
 
+  const handleToggleFavorite = async (project: Project) => {
+    if (favoriteMutatingIds.has(project.id)) return;
+
+    const nextFavorite = !project.isFavorite;
+    setFavoriteMutatingIds(prev => new Set(prev).add(project.id));
+    setProjects(prev => prev.map(item => (
+      item.id === project.id ? { ...item, isFavorite: nextFavorite } : item
+    )));
+
+    try {
+      if (nextFavorite) {
+        await bookApi.favorite(project.id);
+      } else {
+        await bookApi.unfavorite(project.id);
+      }
+    } catch (err) {
+      console.error('Failed to update favorite:', err);
+      setProjects(prev => prev.map(item => (
+        item.id === project.id ? { ...item, isFavorite: project.isFavorite } : item
+      )));
+      alert(nextFavorite ? '收藏失败，请稍后再试' : '取消收藏失败，请稍后再试');
+    } finally {
+      setFavoriteMutatingIds(prev => {
+        const next = new Set(prev);
+        next.delete(project.id);
+        return next;
+      });
+    }
+  };
+
   const handleEditBook = async (project: Project) => {
     setEditingBookId(project.id);
     setIsEditModalOpen(true);
@@ -283,7 +314,6 @@ const App: React.FC = () => {
         title: book.title,
         author: book.author,
         cover: book.cover || '',
-        type: book.type,
         description: book.description || '',
         originalTextKey: book.originalTextKey || '',
         originalTextPreview: book.originalTextPreview || '',
@@ -294,7 +324,6 @@ const App: React.FC = () => {
         title: project.title,
         author: project.author,
         cover: project.cover,
-        type: project.originalWorkType,
         description: '',
         originalTextKey: project.originalTextKey || '',
         originalTextPreview: project.originalTextPreview || '',
@@ -321,7 +350,9 @@ const App: React.FC = () => {
     return <AuthPage onSuccess={handleAuthSuccess} />;
   }
 
-  const filteredProjects = projects;
+  const filteredProjects = statusFilter === 'FAVORITES'
+    ? projects.filter(project => project.isFavorite)
+    : projects;
 
   const renderDashboard = () => {
     // LoRA 库模式
@@ -342,7 +373,7 @@ const App: React.FC = () => {
                   className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all text-white/40 hover:text-white"
                 >
                   <BookOpen size={14} />
-                  书库
+                  作品库
                 </button>
                 <button
                   className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-purple-600 text-white shadow-lg"
@@ -384,7 +415,7 @@ const App: React.FC = () => {
       );
     }
 
-    // 书库模式
+    // 作品库模式
     return (
     <div className="flex flex-col h-full bg-[#0a0a0a]">
       {/* 媒体库顶栏 */}
@@ -400,7 +431,7 @@ const App: React.FC = () => {
               className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-blue-600 text-white shadow-lg"
             >
               <BookOpen size={14} />
-              书库
+              作品库
             </button>
             <button
               onClick={() => setLibraryType('LORA')}
@@ -434,41 +465,29 @@ const App: React.FC = () => {
       {/* 媒体库内容区 */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
-          {/* 书库子筛选栏 - 移到内容区内部 */}
-          <div className="sticky top-0 z-20 bg-[#0a0a0a] px-12 py-4 border-b border-white/5 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+          {/* 作品库筛选栏 */}
+          <div className="sticky top-0 z-20 bg-[#0a0a0a] px-4 md:px-12 py-4 border-b border-white/5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 overflow-x-auto max-w-full">
                 {STATUS_FILTERS.map(f => (
                   <button
                     key={f.key}
                     onClick={() => setStatusFilter(f.key)}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${statusFilter === f.key ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                    aria-pressed={statusFilter === f.key}
+                    className={`shrink-0 px-4 py-1.5 rounded-md text-xs font-bold transition-all ${statusFilter === f.key ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
                   >
-                    {f.label}
+                    <span className="flex items-center gap-1.5">
+                      {f.favorite && <Star size={12} fill="currentColor" />}
+                      {f.label}
+                    </span>
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
-                <button
-                  onClick={() => setFilterType('ALL')}
-                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'ALL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >全部</button>
-                <button
-                  onClick={() => setFilterType('NOVEL')}
-                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'NOVEL' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >小说库</button>
-                <button
-                  onClick={() => setFilterType('COMIC')}
-                  className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${filterType === 'COMIC' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >漫画库</button>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="relative">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="relative flex-1 lg:flex-none">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
                   <input
-                    className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                    className="bg-white/5 border border-white/10 rounded-full py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-full lg:w-56"
                     placeholder="搜索书名、作者..."
                     value={searchKeyword}
                     onChange={(e) => setSearchKeyword(e.target.value)}
@@ -476,7 +495,7 @@ const App: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsImportModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
+                  className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
                 >
                   <PlusCircle size={16} /> 导入新作品
                 </button>
@@ -485,7 +504,7 @@ const App: React.FC = () => {
           </div>
 
           {/* 内容区域 */}
-          <div className="p-12">
+          <div className="p-4 md:p-12">
             <header className="mb-10">
               <h2 className="text-3xl font-bold text-white mb-2">欢迎回来</h2>
               <p className="text-white/30 text-sm">
@@ -520,9 +539,13 @@ const App: React.FC = () => {
             <div className="flex flex-col items-center justify-center py-20">
               <BookOpen size={40} className="text-white/20 mb-4" />
               <p className="text-white/40 text-sm mb-4">
-                {searchKeyword ? '没有找到匹配的作品' : '暂无作品，点击上方按钮导入'}
+                {searchKeyword
+                  ? '没有找到匹配的作品'
+                  : statusFilter === 'FAVORITES'
+                  ? '还没有收藏作品，点击卡片右上角的星星即可收藏'
+                  : '暂无作品，点击上方按钮导入'}
               </p>
-              {!searchKeyword && (
+              {!searchKeyword && statusFilter !== 'FAVORITES' && (
                 <button
                   onClick={() => setIsImportModalOpen(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-500 transition-all"
@@ -535,7 +558,7 @@ const App: React.FC = () => {
 
           {/* 作品列表 */}
           {!isLoading && !error && filteredProjects.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-10">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-10">
               {filteredProjects.map(p => (
                 <div
                   key={p.id}
@@ -544,6 +567,24 @@ const App: React.FC = () => {
                 >
                   <div className="aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 relative shadow-2xl transition-all duration-500 group-hover:-translate-y-2 group-hover:border-blue-500/50">
                     <img src={p.cover} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={p.title} />
+                    <button
+                      type="button"
+                      aria-pressed={p.isFavorite}
+                      aria-label={p.isFavorite ? `取消收藏${p.title}` : `收藏${p.title}`}
+                      title={p.isFavorite ? '取消收藏' : '收藏'}
+                      disabled={favoriteMutatingIds.has(p.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFavorite(p);
+                      }}
+                      className={`absolute top-4 right-4 z-10 w-9 h-9 rounded-full border backdrop-blur-md flex items-center justify-center transition-all disabled:cursor-wait ${
+                        p.isFavorite
+                          ? 'bg-amber-400 border-amber-300 text-zinc-950 shadow-lg shadow-amber-950/30'
+                          : 'bg-black/55 border-white/20 text-white/70 hover:text-amber-300 hover:border-amber-300/60 hover:bg-black/75'
+                      } ${favoriteMutatingIds.has(p.id) ? 'animate-pulse' : ''}`}
+                    >
+                      <Star size={17} fill={p.isFavorite ? 'currentColor' : 'none'} />
+                    </button>
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
                       <div className="flex items-center gap-3">
                         <div className="flex-1 h-12 bg-white text-black rounded-xl flex items-center justify-center font-bold text-sm tracking-widest gap-2">
@@ -624,9 +665,6 @@ const App: React.FC = () => {
                     </div>
                     {/* 状态标 */}
                     <div className="absolute top-4 left-4 flex flex-col gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] font-black uppercase text-white tracking-widest">
-                        {p.originalWorkType}
-                      </span>
                       <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-widest ${
                         p.productionStatus === 'IN_PROGRESS' ? 'bg-blue-600/40 border-blue-500 text-blue-100' :
                         p.productionStatus === 'COMPLETED' ? 'bg-green-600/40 border-green-500 text-green-100' :

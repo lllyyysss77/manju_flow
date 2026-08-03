@@ -87,7 +87,6 @@ export const normalizeFileKey = (input?: string | null): { key: string | null; e
 };
 
 // 后端 Book 类型定义
-export type BookType = 'NOVEL' | 'COMIC';
 export type AdaptationStatus = 'NONE' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
 
 export interface Book {
@@ -95,7 +94,6 @@ export interface Book {
   title: string;
   author: string;
   cover: string;
-  type: BookType;
   description: string;
   outline: string;
   originalTextKey?: string;
@@ -103,6 +101,7 @@ export interface Book {
   adaptationStatus: AdaptationStatus;
   adaptedBy: string;
   chapterCount: number;
+  isFavorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,7 +117,6 @@ export interface CreateBookRequest {
   title: string;
   author: string;
   cover?: string;
-  type: BookType;
   description?: string;
   outline?: string;
   originalTextKey?: string;
@@ -128,9 +126,9 @@ export interface CreateBookRequest {
 export interface BookListParams {
   page?: number;
   size?: number;
-  type?: BookType;
   keyword?: string;
   status?: string; // 逗号分隔多状态，如 "NONE,IN_PROGRESS"
+  favorite?: boolean;
 }
 
 // API 错误处理
@@ -211,9 +209,9 @@ export const bookApi = {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.size) searchParams.set('size', String(params.size));
-    if (params?.type) searchParams.set('type', params.type);
     if (params?.keyword) searchParams.set('keyword', params.keyword);
     if (params?.status) searchParams.set('status', params.status);
+    if (params?.favorite) searchParams.set('favorite', 'true');
 
     const queryString = searchParams.toString();
     const endpoint = `/api/books${queryString ? `?${queryString}` : ''}`;
@@ -260,6 +258,18 @@ export const bookApi = {
   unarchive: async (id: number): Promise<Book> => {
     return request<Book>(`/api/books/${id}/unarchive`, {
       method: 'PUT',
+    });
+  },
+
+  favorite: async (id: number): Promise<{ isFavorite: boolean }> => {
+    return request<{ isFavorite: boolean }>(`/api/books/${id}/favorite`, {
+      method: 'PUT',
+    });
+  },
+
+  unfavorite: async (id: number): Promise<{ isFavorite: boolean }> => {
+    return request<{ isFavorite: boolean }>(`/api/books/${id}/favorite`, {
+      method: 'DELETE',
     });
   },
 
@@ -313,13 +323,13 @@ export function bookToProject(book: Book): Project {
     title: book.title,
     author: book.author,
     cover: book.cover || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop',
-    originalWorkType: book.type,
     productionStatus: statusMap[book.adaptationStatus],
     episodes: [], // 初始化为空数组，后续可以从其他 API 获取
     assignedWriter: book.adaptedBy || undefined,
     outline: book.outline || '',
     originalTextKey: book.originalTextKey || '',
     originalTextPreview: book.originalTextPreview || '',
+    isFavorite: Boolean(book.isFavorite),
   };
 }
 

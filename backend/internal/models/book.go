@@ -6,14 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// BookType 书籍类型
-type BookType string
-
-const (
-	BookTypeNovel BookType = "NOVEL" // 小说
-	BookTypeComic BookType = "COMIC" // 漫画
-)
-
 // AdaptationStatus 改编状态
 type AdaptationStatus string
 
@@ -24,13 +16,14 @@ const (
 	AdaptationStatusArchived   AdaptationStatus = "ARCHIVED"    // 已归档
 )
 
-// Book 书库模型 - 存储小说和漫画的原始作品
+// Book 作品模型。
 type Book struct {
-	ID                  uint             `gorm:"primaryKey" json:"id"`
-	Title               string           `gorm:"size:255;not null" json:"title"`
-	Author              string           `gorm:"size:100;not null" json:"author"`
-	Cover               string           `gorm:"size:500" json:"cover"`
-	Type                BookType         `gorm:"size:20;not null;default:'NOVEL'" json:"type"`
+	ID     uint   `gorm:"primaryKey" json:"id"`
+	Title  string `gorm:"size:255;not null" json:"title"`
+	Author string `gorm:"size:100;not null" json:"author"`
+	Cover  string `gorm:"size:500" json:"cover"`
+	// Deprecated: 仅保留数据库列以兼容历史数据，业务不得再依赖该字段。
+	Type                string           `gorm:"size:20;not null;default:'NOVEL';comment:Deprecated - work category is no longer used" json:"-"`
 	Description         string           `gorm:"type:text" json:"description"`
 	AdaptationStatus    AdaptationStatus `gorm:"size:20;default:'NONE'" json:"adaptationStatus"`
 	AdaptedBy           string           `gorm:"size:100" json:"adaptedBy"` // 正在改编此作品的编剧
@@ -41,6 +34,7 @@ type Book struct {
 	CreatedAt           time.Time        `json:"createdAt"`
 	UpdatedAt           time.Time        `json:"updatedAt"`
 	DeletedAt           gorm.DeletedAt   `gorm:"index" json:"-"`
+	IsFavorite          bool             `gorm:"-" json:"isFavorite"`
 }
 
 // TableName 指定表名
@@ -58,14 +52,13 @@ type BookListResponse struct {
 
 // CreateBookRequest 创建书籍请求
 type CreateBookRequest struct {
-	Title               string   `json:"title" binding:"required"`
-	Author              string   `json:"author" binding:"required"`
-	Cover               string   `json:"cover"`
-	Type                BookType `json:"type" binding:"required,oneof=NOVEL COMIC"`
-	Description         string   `json:"description"`
-	Outline             string   `json:"outline"`
-	OriginalTextKey     string   `json:"originalTextKey"`
-	OriginalTextPreview string   `json:"originalTextPreview"`
+	Title               string `json:"title" binding:"required"`
+	Author              string `json:"author" binding:"required"`
+	Cover               string `json:"cover"`
+	Description         string `json:"description"`
+	Outline             string `json:"outline"`
+	OriginalTextKey     string `json:"originalTextKey"`
+	OriginalTextPreview string `json:"originalTextPreview"`
 }
 
 // UpdateOutlineRequest 更新大纲请求

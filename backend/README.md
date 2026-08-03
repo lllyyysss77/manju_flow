@@ -58,9 +58,9 @@ docker-compose up -d
 
 ## API 接口
 
-### 书库管理
+### 作品库管理
 
-#### 获取书籍列表
+#### 获取作品列表
 
 ```
 GET /api/books
@@ -69,7 +69,6 @@ GET /api/books
 查询参数：
 - `page` - 页码（默认 1）
 - `size` - 每页数量（默认 10）
-- `type` - 类型过滤：`NOVEL` 或 `COMIC`
 - `keyword` - 搜索关键词（标题/作者）
 
 响应示例：
@@ -84,7 +83,6 @@ GET /api/books
       "title": "仙剑遗志",
       "author": "林枫",
       "cover": "https://example.com/cover.jpg",
-      "type": "NOVEL",
       "description": "...",
       "adaptationStatus": "IN_PROGRESS",
       "adaptedBy": "陈艾利克斯",
@@ -96,7 +94,7 @@ GET /api/books
 }
 ```
 
-#### 创建书籍
+#### 创建作品
 
 ```
 POST /api/books
@@ -106,18 +104,17 @@ Content-Type: application/json
   "title": "仙剑遗志",
   "author": "林枫",
   "cover": "https://example.com/cover.jpg",
-  "type": "NOVEL",
   "description": "一段仙侠传奇..."
 }
 ```
 
-#### 获取书籍详情
+#### 获取作品详情
 
 ```
 GET /api/books/:id
 ```
 
-#### 更新书籍
+#### 更新作品
 
 ```
 PUT /api/books/:id
@@ -127,12 +124,11 @@ Content-Type: application/json
   "title": "仙剑遗志（修订版）",
   "author": "林枫",
   "cover": "https://example.com/cover2.jpg",
-  "type": "NOVEL",
   "description": "修订后的描述..."
 }
 ```
 
-#### 删除书籍
+#### 删除作品
 
 ```
 DELETE /api/books/:id

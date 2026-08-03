@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-将小说/漫画改编为漫剧的全流程管理工具，支持剧本创作、分镜绘制、配音制作等环节。
+将作品改编为漫剧的全流程管理工具，支持剧本创作、分镜绘制、配音制作等环节。
 
 ## 技术栈
 
@@ -123,14 +123,14 @@ manju_flow/
 
 ## 数据模型
 
-### Book (书库)
+### Book (作品库)
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | ID | uint | 主键 |
 | Title | string | 标题 |
 | Author | string | 作者 |
 | Cover | string | 封面 URL |
-| Type | BookType | NOVEL / COMIC |
+| Type | string | Deprecated：仅兼容历史数据，作品不再分类 |
 | Description | string | 描述 |
 | AdaptationStatus | AdaptationStatus | NONE / IN_PROGRESS / COMPLETED |
 | ChapterCount | int | 章节数 |

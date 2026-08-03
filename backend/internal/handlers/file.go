@@ -36,7 +36,7 @@ func isTxtUpload(filename string) bool {
 	return strings.EqualFold(filepath.Ext(filename), ".txt")
 }
 
-// UploadOriginalText 上传小说/漫画原文 txt，并返回前 800 个字符作为预览。
+// UploadOriginalText 上传作品原文 txt，并返回前 800 个字符作为预览。
 // POST /api/files/original-text
 func (h *FileHandler) UploadOriginalText(c *gin.Context) {
 	if !oss.IsConfigured() {

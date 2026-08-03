@@ -53,7 +53,7 @@ func Setup(r *gin.Engine) {
 			authorized.GET("/auth/me", authHandler.GetCurrentUser)
 
 			// 文件路由（需要认证）
-			authorized.POST("/files/original-text", fileHandler.UploadOriginalText) // 上传小说/漫画原文 txt
+			authorized.POST("/files/original-text", fileHandler.UploadOriginalText) // 上传作品原文 txt
 			authorized.POST("/files", fileHandler.Upload)                           // 上传文件
 			authorized.DELETE("/files/*key", fileHandler.Delete)                    // 删除文件
 
@@ -61,14 +61,16 @@ func Setup(r *gin.Engine) {
 			bookHandler := handlers.NewBookHandler()
 			books := authorized.Group("/books")
 			{
-				books.GET("", bookHandler.List)                          // 获取书籍列表
-				books.POST("", bookHandler.Create)                       // 创建书籍
-				books.GET("/:bookId", bookHandler.GetByID)               // 获取书籍详情
-				books.PUT("/:bookId", bookHandler.Update)                // 更新书籍
-				books.DELETE("/:bookId", bookHandler.Delete)             // 删除书籍
-				books.PUT("/:bookId/outline", bookHandler.UpdateOutline) // 更新大纲
-				books.PUT("/:bookId/archive", bookHandler.Archive)       // 归档书籍
-				books.PUT("/:bookId/unarchive", bookHandler.Unarchive)   // 取消归档
+				books.GET("", bookHandler.List)                           // 获取书籍列表
+				books.POST("", bookHandler.Create)                        // 创建书籍
+				books.GET("/:bookId", bookHandler.GetByID)                // 获取书籍详情
+				books.PUT("/:bookId", bookHandler.Update)                 // 更新书籍
+				books.DELETE("/:bookId", bookHandler.Delete)              // 删除书籍
+				books.PUT("/:bookId/outline", bookHandler.UpdateOutline)  // 更新大纲
+				books.PUT("/:bookId/archive", bookHandler.Archive)        // 归档书籍
+				books.PUT("/:bookId/unarchive", bookHandler.Unarchive)    // 取消归档
+				books.PUT("/:bookId/favorite", bookHandler.Favorite)      // 收藏书籍
+				books.DELETE("/:bookId/favorite", bookHandler.Unfavorite) // 取消收藏书籍
 			}
 
 			// 角色人设路由
