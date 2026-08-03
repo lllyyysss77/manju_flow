@@ -89,8 +89,11 @@ func Setup(r *gin.Engine) {
 			chapterHandler := handlers.NewChapterHandler()
 			chapters := authorized.Group("/books/:bookId/chapters")
 			{
-				chapters.GET("", chapterHandler.List)                 // 获取章节列表
-				chapters.POST("", chapterHandler.Create)              // 创建章节
+				chapters.GET("", chapterHandler.List)           // 获取章节列表
+				chapters.POST("", chapterHandler.Create)        // 创建章节
+				chapters.POST("/import", chapterHandler.Import) // 从 txt 脚本导入章节
+				chapters.GET("/import-tasks", chapterHandler.ListImportTasks)
+				chapters.GET("/import-tasks/:taskId", chapterHandler.GetImportTask)
 				chapters.GET("/:chapterId", chapterHandler.GetByID)   // 获取章节详情
 				chapters.PUT("/:chapterId", chapterHandler.Update)    // 更新章节
 				chapters.DELETE("/:chapterId", chapterHandler.Delete) // 删除章节

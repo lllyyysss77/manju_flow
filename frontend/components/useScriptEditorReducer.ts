@@ -730,6 +730,10 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     savedSignaturesRef.current[scene.id] = getSignature(scene);
   }, [getSignature]);
 
+  const storeChapterSynopsisSignature = useCallback((chapterId: number, synopsis?: string) => {
+    savedChapterSynopsisRef.current[chapterId] = getSynopsisSignature(synopsis);
+  }, [getSynopsisSignature]);
+
   // Clean up scene signatures when chapter deleted
   const cleanupChapterSignatures = useCallback((chapterId: number, remainingChapters: Episode[]) => {
     delete savedChapterSynopsisRef.current[chapterId];
@@ -757,6 +761,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
     checkSceneDirty,
     checkSynopsisDirty,
     storeSceneSignature,
+    storeChapterSynopsisSignature,
     cleanupChapterSignatures,
     referenceUrlCache,
   };

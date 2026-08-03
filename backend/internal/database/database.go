@@ -46,7 +46,8 @@ func Init(cfg *config.DatabaseConfig) error {
 		&models.BookFavorite{},
 		&models.Chapter{},
 		&models.Scene{},
-		&models.SceneReference{}, // 场景参考资料（一对多）
+		&models.ChapterImportTask{}, // AI 章节导入任务
+		&models.SceneReference{},    // 场景参考资料（一对多）
 		&models.File{},
 		&models.SceneFrameSet{},                // 场景帧集（支持多套首尾帧）
 		&models.SceneFrameSetVersion{},         // 帧集版本历史

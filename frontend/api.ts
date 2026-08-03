@@ -348,6 +348,24 @@ export interface Chapter {
   scenes?: Scene[];
 }
 
+export type ChapterImportTaskStatus = 'PENDING' | 'ANALYZING' | 'IMPORTING' | 'SUCCEEDED' | 'FAILED';
+
+export interface ChapterImportTask {
+  id: number;
+  bookId: number;
+  status: ChapterImportTaskStatus;
+  originalFilename: string;
+  model: string;
+  outputChapterId?: number;
+  errorMessage?: string;
+  attemptCount: number;
+  startedAt?: string;
+  completedAt?: string;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ScenePayload {
   description: string;
   cameraMovement: string;
@@ -361,11 +379,25 @@ export interface ScenePayload {
 export const chapterApi = {
   list: (bookId: number, includeScenes = true) =>
     request<{ total: number; data: Chapter[] }>(`/api/books/${bookId}/chapters?includeScenes=${includeScenes}`),
+  get: (bookId: number, chapterId: number, includeScenes = true) =>
+    request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}?includeScenes=${includeScenes}`),
   create: (bookId: number, payload: { title: string; index: number; status?: Status; synopsis?: string }) =>
     request<Chapter>(`/api/books/${bookId}/chapters`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  import: (bookId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<ChapterImportTask>(`/api/books/${bookId}/chapters/import`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+  listImportTasks: (bookId: number) =>
+    request<{ total: number; data: ChapterImportTask[] }>(`/api/books/${bookId}/chapters/import-tasks`),
+  getImportTask: (bookId: number, taskId: number) =>
+    request<ChapterImportTask>(`/api/books/${bookId}/chapters/import-tasks/${taskId}`),
   update: (bookId: number, chapterId: number, payload: Partial<{ title: string; index: number; status: Status; synopsis?: string }>) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, {
       method: 'PUT',

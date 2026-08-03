@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Episode, Scene, SceneReference } from '../types';
 import {
   Plus,
@@ -20,9 +20,10 @@ import {
   Trash2,
   Download,
   Lock,
-  Unlock
+  Unlock,
+  Loader2
 } from 'lucide-react';
-import { chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
+import { Chapter, ChapterImportTask, ChapterImportTaskStatus, chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { CommentInput } from './CommentInput';
@@ -81,6 +82,31 @@ const getExportTimestamp = () => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 };
+
+const CHAPTER_IMPORT_STATUS_TEXT: Record<ChapterImportTaskStatus, string> = {
+  PENDING: '等待后台处理',
+  ANALYZING: 'AI 正在分析脚本内容',
+  IMPORTING: '分析完成，正在导入章节和场景',
+  SUCCEEDED: '章节导入完成',
+  FAILED: '章节导入失败',
+};
+
+const chapterToEpisode = (chapter: Chapter): Episode => ({
+  id: chapter.id,
+  title: chapter.title,
+  index: chapter.index,
+  synopsis: chapter.synopsis || '',
+  status: chapter.status,
+  scenes: (chapter.scenes || []).map(scene => ({
+    ...scene,
+    chapterId: scene.chapterId ?? chapter.id,
+    description: scene.description || '',
+    cameraMovement: scene.cameraMovement || '',
+    dialogue: scene.dialogue || '',
+    transitionEffect: scene.transitionEffect || '',
+    comments: scene.comments || [],
+  })).sort((a, b) => a.index - b.index),
+});
 
 const getExportFileStamp = () => {
   const now = new Date();
@@ -1099,7 +1125,9 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     checkSceneDirty,
     checkSynopsisDirty,
     storeSceneSignature,
+    storeChapterSynopsisSignature,
     cleanupChapterSignatures,
+    commitChapters,
   } = useScriptEditorReducer({
     bookId,
     episodes,
@@ -1150,12 +1178,22 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const [synopsisDraft, setSynopsisDraft] = useState('');
   const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [isSubmittingChapterImport, setIsSubmittingChapterImport] = useState(false);
+  const [chapterImportTasks, setChapterImportTasks] = useState<ChapterImportTask[]>([]);
+  const chapterImportInputRef = useRef<HTMLInputElement>(null);
+  const chaptersRef = useRef(chapters);
+  const chapterImportStatusesRef = useRef<Record<number, ChapterImportTaskStatus>>({});
+  const isPollingChapterImportsRef = useRef(false);
   // 场景参考资料
   const [sceneReferences, setSceneReferences] = useState<SceneReference[]>([]);
   const [loadingReferences, setLoadingReferences] = useState(false);
   // 本地备份恢复提示
   const [localBackup, setLocalBackup] = useState<{ sceneId: number; data: any } | null>(null);
   const isReadOnly = !isEditMode;
+
+  useEffect(() => {
+    chaptersRef.current = chapters;
+  }, [chapters]);
 
   // ============ Hooks ============
   const {
@@ -1277,6 +1315,73 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   }, [activeScene?.id]);
 
   // ============ 事件处理函数 ============
+  const appendCompletedImport = useCallback(async (task: ChapterImportTask) => {
+    if (!task.outputChapterId || chaptersRef.current.some(chapter => chapter.id === task.outputChapterId)) return;
+    const imported = chapterToEpisode(await chapterApi.get(bookId, task.outputChapterId, true));
+    imported.scenes.forEach(storeSceneSignature);
+    storeChapterSynopsisSignature(imported.id, imported.synopsis);
+    const nextChapters = [...chaptersRef.current, imported]
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    chaptersRef.current = nextChapters;
+    commitChapters(nextChapters);
+  }, [bookId, commitChapters, storeChapterSynopsisSignature, storeSceneSignature]);
+
+  const loadChapterImportTasks = useCallback(async () => {
+    if (isPollingChapterImportsRef.current) return;
+    isPollingChapterImportsRef.current = true;
+    try {
+      const response = await chapterApi.listImportTasks(bookId);
+      const tasks = response.data || [];
+      const previousStatuses = chapterImportStatusesRef.current;
+
+      for (const task of tasks) {
+        if (task.status === 'SUCCEEDED') {
+          await appendCompletedImport(task);
+        }
+        const previousStatus = previousStatuses[task.id];
+        if (previousStatus && previousStatus !== task.status) {
+          if (task.status === 'SUCCEEDED') {
+            setToast({ message: `${task.originalFilename} 已导入完成`, tone: 'success' });
+          } else if (task.status === 'FAILED') {
+            setToast({ message: task.errorMessage || `${task.originalFilename} 导入失败`, tone: 'error' });
+          }
+        }
+      }
+
+      chapterImportStatusesRef.current = Object.fromEntries(tasks.map(task => [task.id, task.status]));
+      setChapterImportTasks(tasks);
+    } catch (err) {
+      console.error('Failed to load chapter import tasks', err);
+    } finally {
+      isPollingChapterImportsRef.current = false;
+    }
+  }, [appendCompletedImport, bookId]);
+
+  useEffect(() => {
+    chapterImportStatusesRef.current = {};
+    setChapterImportTasks([]);
+    loadChapterImportTasks();
+  }, [bookId, loadChapterImportTasks]);
+
+  const hasActiveChapterImport = chapterImportTasks.some(task =>
+    task.status === 'PENDING' || task.status === 'ANALYZING' || task.status === 'IMPORTING'
+  );
+  const activeChapterImportTasks = chapterImportTasks.filter(task =>
+    task.status === 'PENDING' || task.status === 'ANALYZING' || task.status === 'IMPORTING'
+  );
+  const latestTerminalImportTask = chapterImportTasks.find(task =>
+    task.status === 'SUCCEEDED' || task.status === 'FAILED'
+  );
+  const displayedChapterImportTasks = [
+    ...activeChapterImportTasks,
+    ...(latestTerminalImportTask ? [latestTerminalImportTask] : []),
+  ].slice(0, 3);
+
+  useEffect(() => {
+    const timer = window.setInterval(loadChapterImportTasks, hasActiveChapterImport ? 2000 : 10000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveChapterImport, loadChapterImportTasks]);
+
   const handleAddChapterAt = (insertIndex: number) => {
     if (!requireEditMode()) return;
     const index = computeInsertIndex(chapters, insertIndex);
@@ -1288,6 +1393,32 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       console.error('Failed to create chapter', err);
       setToast({ message: '创建章节失败，请稍后再试', tone: 'error' });
     });
+  };
+
+  const handleImportChapter = async (file?: File) => {
+    if (!file || !requireEditMode()) return;
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+      setToast({ message: '仅支持导入 txt 格式的脚本', tone: 'error' });
+      return;
+    }
+    if (file.size <= 0 || file.size > 1024 * 1024) {
+      setToast({ message: '脚本文件不能为空且不能超过 1MB', tone: 'error' });
+      return;
+    }
+
+    setIsSubmittingChapterImport(true);
+    try {
+      const task = await chapterApi.import(bookId, file);
+      chapterImportStatusesRef.current[task.id] = task.status;
+      setChapterImportTasks(previous => [task, ...previous.filter(item => item.id !== task.id)]);
+      setToast({ message: '导入任务已提交，可以继续编辑其他内容', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to import chapter', err);
+      setToast({ message: err instanceof Error ? err.message : '导入章节失败，请稍后再试', tone: 'error' });
+    } finally {
+      setIsSubmittingChapterImport(false);
+      if (chapterImportInputRef.current) chapterImportInputRef.current.value = '';
+    }
   };
 
   const handleAddSceneAt = (chapterId: number, insertIndex: number) => {
@@ -1932,13 +2063,70 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             {isEditMode ? <Unlock size={14} /> : <Lock size={14} />}
             {isEditMode ? '编辑模式' : '只读模式'}
           </button>
+          {displayedChapterImportTasks.map(task => {
+            const isActive = task.status === 'PENDING' || task.status === 'ANALYZING' || task.status === 'IMPORTING';
+            const isFailed = task.status === 'FAILED';
+            const canOpen = task.status === 'SUCCEEDED' && Boolean(task.outputChapterId);
+            return (
+              <button
+                key={task.id}
+                type="button"
+                disabled={!canOpen}
+                onClick={() => {
+                  if (task.outputChapterId) {
+                    dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: task.outputChapterId, scene: null } });
+                  }
+                }}
+                className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                  isFailed
+                    ? 'bg-red-500/10 border-red-400/20 text-red-100'
+                    : isActive
+                    ? 'bg-amber-500/10 border-amber-400/20 text-amber-50'
+                    : 'bg-emerald-500/10 border-emerald-400/20 text-emerald-100 enabled:hover:bg-emerald-500/20'
+                } disabled:cursor-default`}
+              >
+                <span className="flex items-center gap-2 text-[11px] font-bold">
+                  {isActive ? <Loader2 size={12} className="animate-spin shrink-0" /> : isFailed ? <AlertCircle size={12} className="shrink-0" /> : <Check size={12} className="shrink-0" />}
+                  <span className="truncate">{CHAPTER_IMPORT_STATUS_TEXT[task.status]}</span>
+                </span>
+                <span className="mt-1 block truncate text-[10px] opacity-60" title={task.originalFilename}>
+                  {task.originalFilename}{canOpen ? ' · 点击查看章节' : ''}
+                </span>
+                {isFailed && task.errorMessage && (
+                  <span className="mt-1 block text-[10px] opacity-70 line-clamp-2">{task.errorMessage}</span>
+                )}
+              </button>
+            );
+          })}
           {isEditMode ? (
             <>
               <button
                 onClick={() => handleAddChapterAt(chapters.length)}
+                disabled={isSubmittingChapterImport}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 rounded-xl text-xs font-bold transition-all hover:border-blue-500/50"
               >
                 <Plus size={14} /> 添加章节
+              </button>
+              <input
+                ref={chapterImportInputRef}
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  handleImportChapter(file);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => chapterImportInputRef.current?.click()}
+                disabled={isSubmittingChapterImport || hasActiveChapterImport}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 text-amber-100 rounded-xl text-xs font-bold transition-all hover:border-amber-300/50 disabled:opacity-50 disabled:cursor-wait"
+                title="上传 UTF-8 编码的 txt 脚本，由 AI 自动生成章节梗概和场景"
+              >
+                {isSubmittingChapterImport ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {isSubmittingChapterImport ? '正在提交...' : hasActiveChapterImport ? '章节导入进行中' : '导入章节'}
               </button>
               <button
                 onClick={() => {

@@ -59,6 +59,8 @@ func main() {
 
 	// 启动后台动画生成任务轮询器，避免页面关闭后任务长时间无人轮询而过期
 	handlers.NewAnimationHandler().StartGenerationTaskPoller(context.Background())
+	// 启动章节导入任务工作器，服务重启后会从数据库继续未完成任务
+	handlers.NewChapterHandler().StartImportTaskWorker(context.Background())
 
 	// 配置路由
 	routes.Setup(r)
