@@ -184,6 +184,8 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
   const [newSetName, setNewSetName] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SceneFrameSet | null>(null);
+  const [frameRemoveTarget, setFrameRemoveTarget] = useState<'start' | 'end' | null>(null);
+  const [isRemovingFrame, setIsRemovingFrame] = useState(false);
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(280);
@@ -471,6 +473,36 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
     }
   };
 
+  const handleRemoveFrame = async (type: 'start' | 'end') => {
+    if (!activeScene?.id || !selectedFrameSetId) return;
+    setIsRemovingFrame(true);
+    try {
+      if (type === 'start') {
+        await storyboardApi.updateStartFrame(activeScene.id, selectedFrameSetId, '');
+      } else {
+        await storyboardApi.updateEndFrame(activeScene.id, selectedFrameSetId, '');
+      }
+      setFrameSets(prev =>
+        prev.map(fs =>
+          fs.id === selectedFrameSetId
+            ? { ...fs, [type === 'start' ? 'startFrameUrl' : 'endFrameUrl']: undefined }
+            : fs
+        )
+      );
+      setFramePreviewCache(prev => ({
+        ...prev,
+        [selectedFrameSetId]: { ...prev[selectedFrameSetId], [type]: undefined },
+      }));
+      showToast(`${type === 'start' ? '起始帧' : '结束帧'}已移除`, 'success');
+    } catch (err) {
+      console.error(`Failed to remove ${type} frame`, err);
+      showToast('移除失败', 'error');
+    } finally {
+      setIsRemovingFrame(false);
+      setFrameRemoveTarget(null);
+    }
+  };
+
   const handleFrameDrop = (type: 'start' | 'end') => (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -748,6 +780,15 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
           itemName={deleteTarget?.name || '未命名'}
           onConfirm={() => deleteTarget && handleDeleteFrameSet(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}
+        />
+        <DeleteConfirmDialog
+          isOpen={!!frameRemoveTarget}
+          title={`移除${frameRemoveTarget === 'start' ? '起始帧' : '结束帧'}`}
+          message="确认移除当前{name}吗？"
+          itemName={frameRemoveTarget === 'start' ? '起始帧' : '结束帧'}
+          isDeleting={isRemovingFrame}
+          onConfirm={() => frameRemoveTarget && handleRemoveFrame(frameRemoveTarget)}
+          onCancel={() => setFrameRemoveTarget(null)}
         />
         {storyboardError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
@@ -1126,28 +1167,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={async () => {
-                                    if (!activeScene?.id || !selectedFrameSetId) return;
-                                    try {
-                                      await storyboardApi.updateStartFrame(activeScene.id, selectedFrameSetId, '');
-                                      setFrameSets(prev =>
-                                        prev.map(fs =>
-                                          fs.id === selectedFrameSetId
-                                            ? { ...fs, startFrameUrl: undefined }
-                                            : fs
-                                        )
-                                      );
-                                      // 清除预览缓存
-                                      setFramePreviewCache(prev => ({
-                                        ...prev,
-                                        [selectedFrameSetId]: { ...prev[selectedFrameSetId], start: undefined }
-                                      }));
-                                      showToast('起始帧已移除', 'success');
-                                    } catch (err) {
-                                      console.error('Failed to remove start frame', err);
-                                      showToast('移除失败', 'error');
-                                    }
-                                  }}
+                                  onClick={() => setFrameRemoveTarget('start')}
                                   className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300"
                                   title="移除起始帧"
                                 >
@@ -1238,28 +1258,7 @@ export const StoryboardEditor: React.FC<StoryboardEditorProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={async () => {
-                                    if (!activeScene?.id || !selectedFrameSetId) return;
-                                    try {
-                                      await storyboardApi.updateEndFrame(activeScene.id, selectedFrameSetId, '');
-                                      setFrameSets(prev =>
-                                        prev.map(fs =>
-                                          fs.id === selectedFrameSetId
-                                            ? { ...fs, endFrameUrl: undefined }
-                                            : fs
-                                        )
-                                      );
-                                      // 清除预览缓存
-                                      setFramePreviewCache(prev => ({
-                                        ...prev,
-                                        [selectedFrameSetId]: { ...prev[selectedFrameSetId], end: undefined }
-                                      }));
-                                      showToast('结束帧已移除', 'success');
-                                    } catch (err) {
-                                      console.error('Failed to remove end frame', err);
-                                      showToast('移除失败', 'error');
-                                    }
-                                  }}
+                                  onClick={() => setFrameRemoveTarget('end')}
                                   className="p-1.5 rounded-lg bg-black/70 text-red-400 border border-white/10 shadow hover:bg-black/80 hover:text-red-300"
                                   title="移除结束帧"
                                 >

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { bookApi, characterApi, fileApi, getFileUrl, downloadFile, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
 import { useAudioTrimmer } from './AudioTrimmerModal';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface OutlineEditorProps {
   bookId: number;
@@ -662,6 +663,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ characterId: number; name: string } | null>(null);
+  const [referenceRemoveTarget, setReferenceRemoveTarget] = useState<CharacterImageSlot | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // 面板宽度
@@ -1016,6 +1018,19 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         </div>
       )}
 
+      <DeleteConfirmDialog
+        isOpen={!!referenceRemoveTarget}
+        title="移除角色参考图"
+        message="确认移除「{name}」吗？"
+        itemName={referenceRemoveTarget?.label}
+        onConfirm={() => {
+          if (!referenceRemoveTarget) return;
+          handleRemoveReference(referenceRemoveTarget.field);
+          setReferenceRemoveTarget(null);
+        }}
+        onCancel={() => setReferenceRemoveTarget(null)}
+      />
+
       {/* Toast */}
       {toast && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
@@ -1306,7 +1321,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                         description={slot.description}
                         initialImage={getFileUrl(getCharacterImageValue(activeCharacter, slot.field)) || undefined}
                         onUpload={(file) => handleUploadReference(slot.field, file)}
-                        onRemove={() => handleRemoveReference(slot.field)}
+                        onRemove={() => setReferenceRemoveTarget(slot)}
                         isUploading={isUploadingReference}
                       />
                     ))}
