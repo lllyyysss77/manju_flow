@@ -323,6 +323,7 @@ const VoiceAudioSection: React.FC<{
   const [localUploading, setLocalUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [pendingReplacement, setPendingReplacement] = useState<File | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -380,7 +381,13 @@ const VoiceAudioSection: React.FC<{
     if (busy) return;
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      handleUpload(file);
+      if (!file.type.startsWith('audio/')) {
+        setError('只支持上传音频文件');
+      } else if (audioUrl) {
+        setPendingReplacement(file);
+      } else {
+        handleUpload(file);
+      }
     }
   };
 
@@ -417,7 +424,15 @@ const VoiceAudioSection: React.FC<{
   if (audioUrl) {
     return (
       <>
-        <div className="bg-[#0b0b0b] border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+        <div
+          className={`relative bg-[#0b0b0b] border rounded-xl p-4 flex flex-col gap-3 transition-all ${
+            isDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/5'
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+        >
           <div className="flex items-center gap-3">
             {/* 圆形播放按钮 */}
             <button
@@ -501,7 +516,59 @@ const VoiceAudioSection: React.FC<{
             className="hidden"
             accept="audio/*"
           />
+
+          {isDragOver && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-blue-900/30 backdrop-blur-sm pointer-events-none">
+              <div className="flex flex-col items-center gap-2 text-blue-200">
+                <Upload size={32} />
+                <span className="text-sm font-bold">释放以替换音频</span>
+              </div>
+            </div>
+          )}
         </div>
+        {pendingReplacement && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="replace-voice-audio-title"
+              className="w-full max-w-[380px] rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-full border border-amber-400/30 bg-amber-400/10 p-2 text-amber-300">
+                  <Upload size={18} />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p id="replace-voice-audio-title" className="text-sm font-bold text-white">覆盖当前音频？</p>
+                  <p className="text-xs leading-5 text-white/55">当前角色已有音色样本，确认使用新文件覆盖吗？</p>
+                  <p className="truncate text-[11px] text-white/35" title={pendingReplacement.name}>
+                    {pendingReplacement.name}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingReplacement(null)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const file = pendingReplacement;
+                    setPendingReplacement(null);
+                    handleUpload(file);
+                  }}
+                  className="rounded-lg border border-amber-400/40 bg-amber-500 px-3 py-2 text-sm font-bold text-black shadow-md hover:bg-amber-400"
+                >
+                  确认覆盖
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {modal}
       </>
     );
@@ -511,7 +578,7 @@ const VoiceAudioSection: React.FC<{
   return (
     <>
       <div
-        className={`bg-[#0b0b0b] border border-dashed rounded-xl p-6 flex flex-col items-center text-center gap-4 transition-all ${
+        className={`relative bg-[#0b0b0b] border border-dashed rounded-xl p-6 flex flex-col items-center text-center gap-4 transition-all ${
           isDragOver ? 'border-blue-500/60 bg-blue-900/20' : 'border-white/10'
         }`}
         onDrop={handleDrop}
