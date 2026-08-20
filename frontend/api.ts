@@ -817,6 +817,9 @@ export interface AudioVersion {
   generationParams?: {
     textPrompt: string;
     referenceAudios?: Array<{ key: string; name: string }>;
+    pitchRate?: number;
+    speechRate?: number;
+    loudnessRate?: number;
   };
   createdBy: number;
   createdAt: string;
@@ -835,6 +838,9 @@ export interface SceneAudioListResponse {
 export interface GenerateSceneAudioPayload {
   textPrompt: string;
   referenceAudioKeys?: string[];
+  pitchRate?: number;
+  speechRate?: number;
+  loudnessRate?: number;
 }
 
 export const audioApi = {

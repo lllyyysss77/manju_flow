@@ -24,7 +24,8 @@ import {
   Sparkles,
   SlidersHorizontal,
   UserRound,
-  UploadCloud
+  UploadCloud,
+  HelpCircle
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -77,6 +78,101 @@ const formatTime = (seconds: number): string => {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
+// Seed Audio 语调/语速/音量控制
+interface VoiceParams {
+  pitchRate: number;
+  speechRate: number;
+  loudnessRate: number;
+}
+
+const DEFAULT_VOICE_PARAMS: VoiceParams = { pitchRate: 0, speechRate: 0, loudnessRate: 0 };
+
+const VOICE_PARAM_CONFIG: Array<{
+  key: keyof VoiceParams;
+  label: string;
+  min: number;
+  max: number;
+  tip: string;
+}> = [
+  { key: 'pitchRate', label: '语调', min: -12, max: 12, tip: '音调取值范围为 -12 到 12，0 表示默认语调。' },
+  { key: 'speechRate', label: '语速', min: -50, max: 100, tip: '语速取值范围为 -50 到 100，-50 表示 0.5 倍语速，0 表示 1 倍语速，100 表示 2 倍语速。' },
+  { key: 'loudnessRate', label: '音量', min: -50, max: 100, tip: '音量取值范围为 -50 到 100，-50 表示 0.5 倍音量，0 表示 1 倍音量，100 表示 2 倍音量。' },
+];
+
+const clampVoiceParam = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Number.isNaN(value) ? 0 : Math.round(value)));
+
+// 默认只显示当前参数值，hover 展开滑动调节面板
+const VoiceParamsControl: React.FC<{
+  value: VoiceParams;
+  onChange: (next: VoiceParams) => void;
+  disabled?: boolean;
+}> = ({ value, onChange, disabled }) => (
+  <div className="relative group/voice">
+    {/* 展开面板（hover 显示） */}
+    <div className="absolute bottom-full left-0 mb-2 w-80 rounded-2xl border border-white/10 bg-[#161616] p-4 shadow-2xl space-y-4 opacity-0 translate-y-1 pointer-events-none transition-all duration-200 group-hover/voice:opacity-100 group-hover/voice:translate-y-0 group-hover/voice:pointer-events-auto z-40">
+      {VOICE_PARAM_CONFIG.map(config => {
+        const current = value[config.key];
+        const percent = ((current - config.min) / (config.max - config.min)) * 100;
+        return (
+          <div key={config.key} className="flex items-center gap-3">
+            <div className="flex items-center gap-1 w-12 shrink-0">
+              <span className="text-[12px] text-white/70">{config.label}</span>
+              <span className="relative group/tip">
+                <HelpCircle size={12} className="text-white/30 hover:text-white/60 transition-colors cursor-help" />
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 rounded-lg border border-white/10 bg-[#1e1e1e] px-2.5 py-2 text-[10px] leading-relaxed text-white/70 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50">
+                  {config.tip}
+                </span>
+              </span>
+            </div>
+            <div className="relative flex-1 h-4 flex items-center">
+              <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-blue-400" style={{ width: `${percent}%` }} />
+              </div>
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow border border-black/30 pointer-events-none"
+                style={{ left: `calc(${percent}% - 6px)` }}
+              />
+              <input
+                type="range"
+                min={config.min}
+                max={config.max}
+                step={1}
+                value={current}
+                disabled={disabled}
+                onChange={e => onChange({ ...value, [config.key]: clampVoiceParam(Number(e.target.value), config.min, config.max) })}
+                className="absolute inset-0 w-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              />
+            </div>
+            <input
+              type="number"
+              min={config.min}
+              max={config.max}
+              value={current}
+              disabled={disabled}
+              onChange={e => onChange({ ...value, [config.key]: clampVoiceParam(Number(e.target.value), config.min, config.max) })}
+              className="w-14 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-center text-[12px] text-white/80 tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+        );
+      })}
+    </div>
+
+    {/* 折叠条（默认显示） */}
+    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 cursor-default select-none">
+      <SlidersHorizontal size={12} className="text-white/40" />
+      {VOICE_PARAM_CONFIG.map((config, index) => (
+        <span key={config.key} className="flex items-center gap-2">
+          {index > 0 && <span className="w-px h-3 bg-white/10" />}
+          <span>
+            {config.label} <span className="text-white/85 tabular-nums">{value[config.key]}</span>
+          </span>
+        </span>
+      ))}
+    </div>
+  </div>
+);
 
 export const AudioEditor: React.FC<AudioEditorProps> = ({
   bookId,
@@ -209,6 +305,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
   const [loadingCharacters, setLoadingCharacters] = useState(false);
   const [referenceAudios, setReferenceAudios] = useState<ReferenceAudio[]>([]);
   const [textPrompt, setTextPrompt] = useState('');
+  const [voiceParams, setVoiceParams] = useState<VoiceParams>(DEFAULT_VOICE_PARAMS);
   const [promptMentions, setPromptMentions] = useState<Record<string, ReferenceAudio>>({});
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -815,6 +912,9 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       const version = await audioApi.generate(activeScene.id, selectedTrack.id, {
         textPrompt: prompt,
         referenceAudioKeys: referenceAudios.map(reference => reference.key),
+        pitchRate: voiceParams.pitchRate,
+        speechRate: voiceParams.speechRate,
+        loudnessRate: voiceParams.loudnessRate,
       });
       await applyNewVersion(version, 'AI 音频已生成并保存为新版本');
     } catch (err) {
@@ -1037,6 +1137,11 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     setReferenceAudios(references);
     setPromptMentions(Object.fromEntries(references.map(reference => [reference.key, reference])));
     setPlainTextPrompt(restoredPrompt);
+    setVoiceParams({
+      pitchRate: params.pitchRate ?? 0,
+      speechRate: params.speechRate ?? 0,
+      loudnessRate: params.loudnessRate ?? 0,
+    });
     showToast('已复用该版本的创作参数与参考音频', 'success');
   };
 
@@ -1472,10 +1577,17 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[11px] text-white/40">
-          {selectedTrack
-            ? `${selectedTrack.role || '当前音轨'} 的生成结果会立即成为当前版本，并自动保留历史记录。`
-            : '选择音轨后即可开始合成。'}
+        <div className="flex items-center gap-3 flex-wrap">
+          <VoiceParamsControl
+            value={voiceParams}
+            onChange={setVoiceParams}
+            disabled={generatingAudio}
+          />
+          <div className="text-[11px] text-white/40">
+            {selectedTrack
+              ? `${selectedTrack.role || '当前音轨'} 的生成结果会立即成为当前版本，并自动保留历史记录。`
+              : '选择音轨后即可开始合成。'}
+          </div>
         </div>
         <button
           type="button"

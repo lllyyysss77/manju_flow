@@ -53,6 +53,9 @@ type AudioReferenceAsset struct {
 type AudioGenerationParams struct {
 	TextPrompt      string                `json:"textPrompt"`
 	ReferenceAudios []AudioReferenceAsset `json:"referenceAudios"`
+	PitchRate       int                   `json:"pitchRate"`     // 语调 [-12, 12]，0 为默认
+	SpeechRate      int                   `json:"speechRate"`    // 语速 [-50, 100]，0 为 1 倍速
+	LoudnessRate    int                   `json:"loudnessRate"`  // 音量 [-50, 100]，0 为 1 倍音量
 }
 
 // TableName 指定表名
@@ -93,4 +96,7 @@ type UploadAudioRequest struct {
 type GenerateSceneAudioRequest struct {
 	TextPrompt         string   `json:"textPrompt" binding:"required"`
 	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
+	PitchRate          int      `json:"pitchRate"`     // 语调 [-12, 12]，0 为默认
+	SpeechRate         int      `json:"speechRate"`    // 语速 [-50, 100]，0 为 1 倍速
+	LoudnessRate       int      `json:"loudnessRate"`  // 音量 [-50, 100]，0 为 1 倍音量
 }

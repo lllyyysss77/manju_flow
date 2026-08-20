@@ -35,7 +35,10 @@ type seedAudioReference struct {
 }
 
 type seedAudioConfig struct {
-	Format string `json:"format,omitempty"`
+	Format       string `json:"format,omitempty"`
+	PitchRate    int    `json:"pitch_rate,omitempty"`    // 语调 [-12, 12]，0 为默认
+	SpeechRate   int    `json:"speech_rate,omitempty"`   // 语速 [-50, 100]，0 为 1 倍速
+	LoudnessRate int    `json:"loudness_rate,omitempty"` // 音量 [-50, 100]，0 为 1 倍音量
 }
 
 type seedAudioRequest struct {
@@ -564,6 +567,24 @@ func (h *AudioHandler) Generate(c *gin.Context) {
 		})
 		return
 	}
+	if req.PitchRate < -12 || req.PitchRate > 12 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "pitchRate must be between -12 and 12",
+		})
+		return
+	}
+	if req.SpeechRate < -50 || req.SpeechRate > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "speechRate must be between -50 and 100",
+		})
+		return
+	}
+	if req.LoudnessRate < -50 || req.LoudnessRate > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "loudnessRate must be between -50 and 100",
+		})
+		return
+	}
 
 	references := make([]seedAudioReference, 0, len(req.ReferenceAudioKeys))
 	referenceAssets := make([]models.AudioReferenceAsset, 0, len(req.ReferenceAudioKeys))
@@ -605,10 +626,15 @@ func (h *AudioHandler) Generate(c *gin.Context) {
 	}
 
 	ttsReq := seedAudioRequest{
-		Model:       ttsModel,
-		TextPrompt:  textPrompt,
-		References:  references,
-		AudioConfig: seedAudioConfig{Format: audioFormat},
+		Model:      ttsModel,
+		TextPrompt: textPrompt,
+		References: references,
+		AudioConfig: seedAudioConfig{
+			Format:       audioFormat,
+			PitchRate:    req.PitchRate,
+			SpeechRate:   req.SpeechRate,
+			LoudnessRate: req.LoudnessRate,
+		},
 	}
 
 	body, err := json.Marshal(ttsReq)
@@ -738,6 +764,9 @@ func (h *AudioHandler) Generate(c *gin.Context) {
 		GenerationParams: &models.AudioGenerationParams{
 			TextPrompt:      textPrompt,
 			ReferenceAudios: referenceAssets,
+			PitchRate:       req.PitchRate,
+			SpeechRate:      req.SpeechRate,
+			LoudnessRate:    req.LoudnessRate,
 		},
 		CreatedBy: userID,
 	}
