@@ -47,9 +47,10 @@ docker-compose up -d
 | OSS_ACCESS_KEY_ID | OSS AccessKey ID | - |
 | OSS_ACCESS_KEY_SECRET | OSS AccessKey Secret | - |
 | OSS_BUCKET_NAME | OSS Bucket 名称 | - |
-| TTS_API_URL | 音频克隆服务地址 | - |
-| TTS_JWT_PRIVATE_KEY | 音频克隆服务 JWT 私钥 | - |
-| TTS_JWT_EXPIRE_SECONDS | 音频克隆服务 JWT 时长 | 60 |
+| TTS_API_URL | 豆包音频生成服务地址 | https://openspeech.bytedance.com/api/v3/tts/create |
+| TTS_API_KEY | 豆包音频生成服务 API Key | - |
+| TTS_MODEL | 音频生成模型 | seed-audio-1.0 |
+| TTS_AUDIO_FORMAT | 生成音频格式（wav/mp3/pcm/ogg_opus） | mp3 |
 | ARK_API_BASE_URL | 火山引擎 Ark 服务地址 | https://ark.cn-beijing.volces.com |
 | ARK_API_KEY | 火山引擎 Ark API Key | - |
 | ARK_AGENT_PLAN_API_BASE_URL | 火山引擎 Ark Agent Plan 服务地址，用于 LLM / 图片理解 | https://ark.cn-beijing.volces.com/api/plan |

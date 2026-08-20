@@ -29,17 +29,30 @@ func (SceneAudio) TableName() string {
 
 // SceneAudioVersion 音频版本模型 - 记录每个音频轨道的版本历史
 type SceneAudioVersion struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	SceneAudioID uint           `gorm:"not null;index" json:"sceneAudioId"`
-	AudioUrl     string         `gorm:"type:text;not null" json:"audioUrl"` // 音频URL
-	Version      int            `gorm:"not null" json:"version"`            // 版本号，从1开始递增
-	CreatedBy    uint           `gorm:"not null" json:"createdBy"`          // 创建者ID
-	CreatedAt    time.Time      `json:"createdAt"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID               uint                   `gorm:"primaryKey" json:"id"`
+	SceneAudioID     uint                   `gorm:"not null;index" json:"sceneAudioId"`
+	AudioUrl         string                 `gorm:"type:text;not null" json:"audioUrl"` // 音频URL
+	Version          int                    `gorm:"not null" json:"version"`            // 版本号，从1开始递增
+	GenerationParams *AudioGenerationParams `gorm:"serializer:json;type:text" json:"generationParams"`
+	CreatedBy        uint                   `gorm:"not null" json:"createdBy"` // 创建者ID
+	CreatedAt        time.Time              `json:"createdAt"`
+	DeletedAt        gorm.DeletedAt         `gorm:"index" json:"-"`
 
 	// 关联（无外键约束，通过业务逻辑保证数据完整性）
 	SceneAudio SceneAudio `gorm:"foreignKey:SceneAudioID;constraint:false" json:"-"`
 	Creator    User       `gorm:"foreignKey:CreatedBy;constraint:false" json:"-"`
+}
+
+// AudioReferenceAsset 音频生成参考资产
+type AudioReferenceAsset struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// AudioGenerationParams Seed Audio 生成参数快照
+type AudioGenerationParams struct {
+	TextPrompt      string                `json:"textPrompt"`
+	ReferenceAudios []AudioReferenceAsset `json:"referenceAudios"`
 }
 
 // TableName 指定表名
@@ -78,9 +91,6 @@ type UploadAudioRequest struct {
 
 // GenerateSceneAudioRequest AI 合成音频请求
 type GenerateSceneAudioRequest struct {
-	Text              string    `json:"text" binding:"required"`
-	ReferenceAudioKey string    `json:"referenceAudioKey" binding:"required"`
-	EmotionPromptKey  string    `json:"emotionPromptKey"`
-	EmotionVector     []float64 `json:"emotionVector"`
-	EmotionAlpha      *float64  `json:"emotionAlpha"`
+	TextPrompt         string   `json:"textPrompt" binding:"required"`
+	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
 }

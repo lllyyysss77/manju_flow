@@ -48,9 +48,10 @@ type OSSConfig struct {
 
 // TTSConfig 音频合成服务配置
 type TTSConfig struct {
-	APIURL           string
-	JWTPrivateKey    string
-	JWTExpireSeconds int
+	APIURL string
+	APIKey string
+	Model  string
+	Format string
 }
 
 // ArkConfig 火山引擎内容生成服务配置（Seedance 视频生成）
@@ -110,9 +111,10 @@ func Load() *Config {
 			BucketName:      utils.GetEnv("OSS_BUCKET_NAME", ""),
 		},
 		TTS: TTSConfig{
-			APIURL:           utils.GetEnv("TTS_API_URL", "http://localhost:8000/api/v1/tts"),
-			JWTPrivateKey:    strings.ReplaceAll(utils.GetEnv("TTS_JWT_PRIVATE_KEY", ""), `\n`, "\n"),
-			JWTExpireSeconds: parseIntEnv("TTS_JWT_EXPIRE_SECONDS", 60),
+			APIURL: utils.GetEnv("TTS_API_URL", "https://openspeech.bytedance.com/api/v3/tts/create"),
+			APIKey: utils.GetEnv("TTS_API_KEY", ""),
+			Model:  utils.GetEnv("TTS_MODEL", "seed-audio-1.0"),
+			Format: utils.GetEnv("TTS_AUDIO_FORMAT", "mp3"),
 		},
 		Ark: ArkConfig{
 			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com/api"),

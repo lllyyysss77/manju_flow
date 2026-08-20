@@ -814,6 +814,10 @@ export interface AudioVersion {
   sceneAudioId: number;
   audioUrl: string;
   version: number;
+  generationParams?: {
+    textPrompt: string;
+    referenceAudios?: Array<{ key: string; name: string }>;
+  };
   createdBy: number;
   createdAt: string;
 }
@@ -829,11 +833,8 @@ export interface SceneAudioListResponse {
 }
 
 export interface GenerateSceneAudioPayload {
-  text: string;
-  referenceAudioKey: string;
-  emotionPromptKey?: string;
-  emotionVector?: number[];
-  emotionAlpha?: number;
+  textPrompt: string;
+  referenceAudioKeys?: string[];
 }
 
 export const audioApi = {
