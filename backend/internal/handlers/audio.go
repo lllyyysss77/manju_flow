@@ -54,14 +54,14 @@ type seedAudioResponse struct {
 	OriginalDuration float64 `json:"original_duration"`
 }
 
-func (h *AudioHandler) findOwnedFile(db *gorm.DB, userID uint, key string) (*models.File, error) {
+func (h *AudioHandler) findReferenceFile(db *gorm.DB, key string) (*models.File, error) {
 	normalizedKey := strings.TrimSpace(key)
 	if normalizedKey == "" {
 		return nil, fmt.Errorf("file key is required")
 	}
 
 	var file models.File
-	if err := db.Where("`key` = ? AND uploader_id = ?", normalizedKey, userID).First(&file).Error; err != nil {
+	if err := db.Where("`key` = ?", normalizedKey).First(&file).Error; err != nil {
 		return nil, err
 	}
 
@@ -568,7 +568,7 @@ func (h *AudioHandler) Generate(c *gin.Context) {
 	references := make([]seedAudioReference, 0, len(req.ReferenceAudioKeys))
 	referenceAssets := make([]models.AudioReferenceAsset, 0, len(req.ReferenceAudioKeys))
 	for _, key := range req.ReferenceAudioKeys {
-		referenceFile, err := h.findOwnedFile(db, userID, key)
+		referenceFile, err := h.findReferenceFile(db, key)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "Reference audio not found",
