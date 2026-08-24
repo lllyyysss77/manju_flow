@@ -1,0 +1,6 @@
+interface:
+  display_name: "Manju Flow"
+  short_description: "Repo-specific patterns and workflows for manju_flow"
+  default_prompt: "Use the manju_flow repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
