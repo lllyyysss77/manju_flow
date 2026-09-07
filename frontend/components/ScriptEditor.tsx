@@ -1180,6 +1180,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   const [editingTitle, setEditingTitle] = useState('');
   const [isSubmittingChapterImport, setIsSubmittingChapterImport] = useState(false);
   const [chapterImportTasks, setChapterImportTasks] = useState<ChapterImportTask[]>([]);
+  const [dismissedImportTaskIds, setDismissedImportTaskIds] = useState<Set<number>>(new Set());
   const chapterImportInputRef = useRef<HTMLInputElement>(null);
   const chaptersRef = useRef(chapters);
   const chapterImportStatusesRef = useRef<Record<number, ChapterImportTaskStatus>>({});
@@ -1360,6 +1361,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   useEffect(() => {
     chapterImportStatusesRef.current = {};
     setChapterImportTasks([]);
+    setDismissedImportTaskIds(new Set());
     loadChapterImportTasks();
   }, [bookId, loadChapterImportTasks]);
 
@@ -1370,7 +1372,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
     task.status === 'PENDING' || task.status === 'ANALYZING' || task.status === 'IMPORTING'
   );
   const latestTerminalImportTask = chapterImportTasks.find(task =>
-    task.status === 'SUCCEEDED' || task.status === 'FAILED'
+    (task.status === 'SUCCEEDED' || task.status === 'FAILED') && !dismissedImportTaskIds.has(task.id)
   );
   const displayedChapterImportTasks = [
     ...activeChapterImportTasks,
@@ -1411,6 +1413,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
       const task = await chapterApi.import(bookId, file);
       chapterImportStatusesRef.current[task.id] = task.status;
       setChapterImportTasks(previous => [task, ...previous.filter(item => item.id !== task.id)]);
+      // 新任务开始时，收起上一个已完成/失败的常驻提示
+      setDismissedImportTaskIds(previous => {
+        const next = new Set(previous);
+        chapterImportTasks.forEach(item => {
+          if (item.status === 'SUCCEEDED' || item.status === 'FAILED') next.add(item.id);
+        });
+        return next;
+      });
       setToast({ message: '导入任务已提交，可以继续编辑其他内容', tone: 'success' });
     } catch (err) {
       console.error('Failed to import chapter', err);
@@ -2014,7 +2024,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                                     </button>}
                                   </div>
                                 </div>
-                                <p className={`text-sm line-clamp-2 leading-snug font-medium transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
+                                <p className={`text-sm line-clamp-2 leading-snug font-medium whitespace-pre-line transition-colors ${activeScene?.id === scene.id ? 'text-white' : 'text-white/60 group-hover:text-white'}`}>
                                   {scene.description || '点击添加描述...'}
                                 </p>
                               </div>
@@ -2068,34 +2078,46 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             const isFailed = task.status === 'FAILED';
             const canOpen = task.status === 'SUCCEEDED' && Boolean(task.outputChapterId);
             return (
-              <button
-                key={task.id}
-                type="button"
-                disabled={!canOpen}
-                onClick={() => {
-                  if (task.outputChapterId) {
-                    dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: task.outputChapterId, scene: null } });
-                  }
-                }}
-                className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
-                  isFailed
-                    ? 'bg-red-500/10 border-red-400/20 text-red-100'
-                    : isActive
-                    ? 'bg-amber-500/10 border-amber-400/20 text-amber-50'
-                    : 'bg-emerald-500/10 border-emerald-400/20 text-emerald-100 enabled:hover:bg-emerald-500/20'
-                } disabled:cursor-default`}
-              >
-                <span className="flex items-center gap-2 text-[11px] font-bold">
-                  {isActive ? <Loader2 size={12} className="animate-spin shrink-0" /> : isFailed ? <AlertCircle size={12} className="shrink-0" /> : <Check size={12} className="shrink-0" />}
-                  <span className="truncate">{CHAPTER_IMPORT_STATUS_TEXT[task.status]}</span>
-                </span>
-                <span className="mt-1 block truncate text-[10px] opacity-60" title={task.originalFilename}>
-                  {task.originalFilename}{canOpen ? ' · 点击查看章节' : ''}
-                </span>
-                {isFailed && task.errorMessage && (
-                  <span className="mt-1 block text-[10px] opacity-70 line-clamp-2">{task.errorMessage}</span>
+              <div key={task.id} className="relative">
+                <button
+                  type="button"
+                  disabled={!canOpen}
+                  onClick={() => {
+                    if (task.outputChapterId) {
+                      dispatch({ type: 'SELECT_CHAPTER', payload: { chapterId: task.outputChapterId, scene: null } });
+                      setDismissedImportTaskIds(previous => new Set(previous).add(task.id));
+                    }
+                  }}
+                  className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${isActive ? '' : 'pr-8'} ${
+                    isFailed
+                      ? 'bg-red-500/10 border-red-400/20 text-red-100'
+                      : isActive
+                      ? 'bg-amber-500/10 border-amber-400/20 text-amber-50'
+                      : 'bg-emerald-500/10 border-emerald-400/20 text-emerald-100 enabled:hover:bg-emerald-500/20'
+                  } disabled:cursor-default`}
+                >
+                  <span className="flex items-center gap-2 text-[11px] font-bold">
+                    {isActive ? <Loader2 size={12} className="animate-spin shrink-0" /> : isFailed ? <AlertCircle size={12} className="shrink-0" /> : <Check size={12} className="shrink-0" />}
+                    <span className="truncate">{CHAPTER_IMPORT_STATUS_TEXT[task.status]}</span>
+                  </span>
+                  <span className="mt-1 block truncate text-[10px] opacity-60" title={task.originalFilename}>
+                    {task.originalFilename}{canOpen ? ' · 点击查看章节' : ''}
+                  </span>
+                  {isFailed && task.errorMessage && (
+                    <span className="mt-1 block text-[10px] opacity-70 line-clamp-2">{task.errorMessage}</span>
+                  )}
+                </button>
+                {!isActive && (
+                  <button
+                    type="button"
+                    onClick={() => setDismissedImportTaskIds(previous => new Set(previous).add(task.id))}
+                    className="absolute top-1.5 right-1.5 p-1 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                    title="关闭提示"
+                  >
+                    <X size={12} />
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
           {isEditMode ? (

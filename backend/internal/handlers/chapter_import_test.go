@@ -47,6 +47,22 @@ func TestChapterImportPromptPreservesNumberedShots(t *testing.T) {
 	}
 }
 
+func TestChapterImportPromptPreservesOriginalFormatting(t *testing.T) {
+	prompt := buildChapterImportSystemPrompt()
+	for _, expected := range []string{
+		"逐字摘录原文",
+		"换行必须用 \\n 保留",
+		"【】",
+		"每行单独一行并用 \\n 分隔",
+		"一行都不能遗漏",
+		"不得抄进 description",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Errorf("system prompt is missing %q", expected)
+		}
+	}
+}
+
 func TestChapterImportTaskJSONHidesPersistedPayload(t *testing.T) {
 	task := models.ChapterImportTask{
 		Status:          models.ChapterImportTaskStatusAnalyzing,

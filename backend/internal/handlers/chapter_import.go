@@ -60,9 +60,12 @@ func buildChapterImportSystemPrompt() string {
 3. JSON 结构必须严格为：
 {"title":"章节标题","synopsis":"完整的章节故事梗概","scenes":[{"description":"场景环境、时间、人物动作和画面内容","cameraMovement":"脚本明确给出的景别或运镜；没有则为空字符串","dialogue":"该场景全部角色台词、旁白、OS/VO和音效，保留角色标注与原意","transitionEffect":"明确写出的转场或剪辑手法；没有则为空字符串"}]}
 4. 按原脚本顺序拆分场景。脚本中有编号镜头时，每个编号都生成一个 scene，不得合并、遗漏或改变顺序。
-5. description 要保留地点、室内外、时间、回顾等标记及关键画面信息，但不要把台词重复写入 description。
-6. 不得杜撰原文没有的剧情、台词、运镜或转场。
-7. title 应简洁准确；原文有集名或章节名时优先沿用。synopsis 应概括本章完整剧情走向。`
+5. 原文摘录：description 和 dialogue 必须逐字摘录原文，不得改写、缩写、润色、合并或重复原句；把你摘录的行原封不动放进对应字段。
+6. 保留排版：原文的换行必须用 \n 保留在字段值中，不得把多行合并成一行；场景标题行的【】、（）等符号必须原样保留。但用于分隔场景/镜头的编号行（如"9、"、"第9幕"）只是结构标记，不得抄进 description。
+7. description 收录场景标题行（如【破庙大殿内、室内、白天】）和"画面：xxx"等画面描述行，按原有行结构拼接；台词、旁白、OS/VO 和"音效：xxx"行不得写入 description。
+8. dialogue 收录该场景全部台词、旁白、OS/VO 和"音效：xxx"行，每行单独一行并用 \n 分隔，保留"旁白："、"音效："等原始前缀标注，一行都不能遗漏。
+9. 不得杜撰原文没有的剧情、台词、运镜或转场。
+10. title 应简洁准确；原文有集名或章节名时优先沿用。synopsis 应概括本章完整剧情走向。`
 }
 
 func buildChapterImportUserPrompt(script string) string {
