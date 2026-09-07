@@ -725,7 +725,7 @@ export interface GenerateAnimationPayload {
   referenceVideoKeys?: string[];
 }
 
-export interface PolishAnimationPromptPayload {
+export interface OptimizeAnimationPromptPayload {
   text: string;
   model?: string;
   referenceImageKeys?: string[];
@@ -733,7 +733,7 @@ export interface PolishAnimationPromptPayload {
   referenceVideoKeys?: string[];
 }
 
-export interface PolishAnimationPromptResponse {
+export interface OptimizeAnimationPromptResponse {
   prompt: string;
   model: string;
 }
@@ -768,13 +768,8 @@ export const animationApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  polishPrompt: (sceneId: number, payload: PolishAnimationPromptPayload) =>
-    request<PolishAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/polish`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  optimizePrompt: (sceneId: number, payload: PolishAnimationPromptPayload) =>
-    request<PolishAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/optimize`, {
+  optimizePrompt: (sceneId: number, payload: OptimizeAnimationPromptPayload) =>
+    request<OptimizeAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/optimize`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

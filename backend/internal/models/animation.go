@@ -153,8 +153,8 @@ type GenerateSceneAnimationRequest struct {
 	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
 }
 
-// PolishSceneAnimationPromptRequest 规范化视频提示词请求
-type PolishSceneAnimationPromptRequest struct {
+// OptimizeSceneAnimationPromptRequest 优化视频提示词请求
+type OptimizeSceneAnimationPromptRequest struct {
 	Text               string   `json:"text" binding:"required"`
 	Model              string   `json:"model"`
 	ReferenceImageKeys []string `json:"referenceImageKeys"`
@@ -162,8 +162,8 @@ type PolishSceneAnimationPromptRequest struct {
 	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
 }
 
-// PolishSceneAnimationPromptResponse 规范化视频提示词响应
-type PolishSceneAnimationPromptResponse struct {
+// OptimizeSceneAnimationPromptResponse 优化视频提示词响应
+type OptimizeSceneAnimationPromptResponse struct {
 	Prompt string `json:"prompt"`
 	Model  string `json:"model"`
 }

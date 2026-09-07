@@ -325,7 +325,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationDuration, setGenerationDuration] = useState(DEFAULT_VIDEO_DURATION);
   const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
   const [generatingVideo, setGeneratingVideo] = useState(false);
-  const [polishingPrompt, setPolishingPrompt] = useState(false);
   const [optimizingPrompt, setOptimizingPrompt] = useState(false);
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
@@ -1026,37 +1025,6 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       text = text.split(mention.label).join(promptMentionOrder[mention.id] || '');
     });
     return text.trim();
-  };
-
-  const handlePolishPrompt = async () => {
-    if (!activeScene?.id) return;
-    const currentPrompt = serializePromptEditor();
-    setGenerationPrompt(currentPrompt);
-    const text = renderPromptForSubmission(currentPrompt);
-    if (!text) {
-      showToast('请先输入需要规范的提示词', 'error');
-      return;
-    }
-
-    setPolishingPrompt(true);
-    setAnimationError(null);
-    try {
-      const res = await animationApi.polishPrompt(activeScene.id, { text });
-      const nextPrompt = (res.prompt || '').trim();
-      if (!nextPrompt) {
-        throw new Error('规范化结果为空');
-      }
-      setGenerationPrompt(nextPrompt);
-      setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
-      showToast('提示词已按 Seedance 2.0 规范更新', 'success');
-    } catch (err) {
-      console.error('Polish animation prompt failed', err);
-      const message = err instanceof Error ? err.message : '提示词规范化失败，请重试';
-      setAnimationError(message);
-      showToast(message, 'error');
-    } finally {
-      setPolishingPrompt(false);
-    }
   };
 
   const getReferenceKeys = (type: ReferenceMediaType) =>
@@ -2573,17 +2541,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           <div className="flex flex-wrap items-center justify-end gap-3">
                             <button
                               type="button"
-                              onClick={handlePolishPrompt}
-                              disabled={polishingPrompt || optimizingPrompt}
-                              className="inline-flex items-center gap-1.5 text-[11px] text-emerald-200/80 hover:text-emerald-100 transition-colors disabled:cursor-not-allowed disabled:text-white/25"
-                            >
-                              {polishingPrompt && <Loader2 size={12} className="animate-spin" />}
-                              {polishingPrompt ? '规范中...' : '一键规范提示词'}
-                            </button>
-                            <button
-                              type="button"
                               onClick={handleOptimizePrompt}
-                              disabled={polishingPrompt || optimizingPrompt}
+                              disabled={optimizingPrompt}
                               className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100/90 transition-colors hover:border-amber-200/40 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
                             >
                               {optimizingPrompt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}

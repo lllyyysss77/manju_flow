@@ -129,7 +129,6 @@ func Setup(r *gin.Engine) {
 
 			// 动画路由（支持多套动画）
 			animationHandler := handlers.NewAnimationHandler()
-			authorized.POST("/scenes/:sceneId/animation-prompt/polish", animationHandler.PolishPrompt)     // 一键规范动画提示词
 			authorized.POST("/scenes/:sceneId/animation-prompt/optimize", animationHandler.OptimizePrompt) // 一键优化动画提示词
 			animations := authorized.Group("/scenes/:sceneId/animations")
 			{
