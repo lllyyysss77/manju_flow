@@ -738,6 +738,15 @@ export interface OptimizeAnimationPromptResponse {
   model: string;
 }
 
+export interface GenerateAnimationPromptDraftPayload {
+  model?: string;
+}
+
+export interface GenerateAnimationPromptDraftResponse {
+  prompt: string;
+  model: string;
+}
+
 export const animationApi = {
   list: (sceneId: number) => request<SceneAnimationListResponse>(`/api/scenes/${sceneId}/animations`),
   create: (sceneId: number, payload: CreateAnimationPayload) =>
@@ -770,6 +779,11 @@ export const animationApi = {
     }),
   optimizePrompt: (sceneId: number, payload: OptimizeAnimationPromptPayload) =>
     request<OptimizeAnimationPromptResponse>(`/api/scenes/${sceneId}/animation-prompt/optimize`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  generatePromptDraft: (sceneId: number, payload: GenerateAnimationPromptDraftPayload) =>
+    request<GenerateAnimationPromptDraftResponse>(`/api/scenes/${sceneId}/animation-prompt/draft`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

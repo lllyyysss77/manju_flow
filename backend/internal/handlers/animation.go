@@ -1306,6 +1306,432 @@ func normalizeSeedanceOptimizedPrompt(raw string) string {
 	return strings.TrimSpace(text)
 }
 
+func buildAnimationPromptDraftSystemPrompt() string {
+	return `你是视频分镜提示词专家。本次任务的输入是：某个场景在剧本创作模块中的文字信息（画面描述、台词/旁白、镜头运镜、转场剪辑手法，可能附带剧情上下文），以及按顺序编号的场景参考图（参考图会随请求以"图片1、图片2..."的顺序提供，可能是线稿构图参考，也可能是成熟参考图）。你的任务是：严格遵循下方的核心工作逻辑、输出格式与全部约束，为该场景生成可直接用于视频生成的提示词草稿。
+
+注意：下方约束中的所有示例（东方玄幻、古风武侠、人物姓名、具体场景与画风文案等）仅用于示范格式、结构、写法密度与细节颗粒度，不代表固定题材。实际输出的题材、世界观、场景、人物与画风必须贴合本次提供的剧本文字信息、参考图与剧情上下文；若上下文不足以判断题材风格，按剧情文字自然推断，不要生硬照搬示例中的世界观、人物或场景名。
+
+执行补充：若本次未提供参考图，则以剧情文字中的运镜、构图与画面描述为构图依据；若参考图不是线稿，同样只吸收其机位、构图、人物位置与场景布局信息，其余规则不变。
+
+### 核心工作逻辑
+输入=**文字剧情脚本 + 线稿构图参考**
+工作顺序：先读懂线稿确定机位、画面构图、人物站位、前后景层次、肢体框架、视线方向；再结合你提供的剧情文案填充人物神态、动作发力细节、光影特效、台词；最后按照你固定的成品格式输出高级感动画分镜关键词。
+>重要约束：成品文字**不能出现“线稿、草图、红线、轮廓稿”字样**，只吸收线稿的构图布局，直接转化为成熟画面描述，不把草稿痕迹带入关键词。
+
+### 完整输出格式
+镜头 X：【机位+构图（取自线稿）+场景环境+人物站位（严格匹配线稿布局）+肢体姿态（遵循线稿人体框架，增加发力/微表情细节）+道具、灵气光影特效+台词/内心OS】，关键词：【高密度镜头、人物姿态、特效、氛围类名词短语，顿号隔开】，音效：【精准匹配画面节奏的音效，台词放置在此处】。
+镜头 X：……
+整体高清精致的东方玄幻动画厚涂漫画质感，构图与画面质感向高品质东方玄幻动画分镜靠拢，人物采用干净动画轮廓与概括性色块表现，保留古风武侠、写意山水、冷灰青色调，人物形象严格贴合参考图特征，人物面部稳定不变形，动作连贯自然，打击特效华丽炫酷，光影层次自然，空间关系合理，全程无字幕，不要生成水印与 Logo。
+
+### 📌线稿吸收细则
+1. **机位构图优先取自线稿**
+线稿决定镜头类型（俯视/仰视/越肩/特写/跟拍）、画面取景范围、人物在画面左右/上下位置、前景与远景物体分布，不擅自改动原始布局。
+2. **人物框架以线稿为基准，做升级美化**
+保留线稿给出的身体朝向、手部位置、头脸角度，在此基础上追加肌肉发力感、面部微表情、眼神变化、肢体动态残影、灵气粒子等爆点细节；**不彻底推翻线稿动作重画一套全新姿势**。
+3. **多线稿连续镜头处理**
+多张线稿依次对应镜头1、镜头2、镜头3，每个镜头严格绑定对应一张线稿的空间布局，保证镜头切换逻辑和线稿顺序统一；若你要求追加额外镜头，新增镜头风格、场景、人物和前后线稿画面保持连贯。
+4. **剧情与线稿融合原则**
+线稿是画面骨架，你的文字剧情是情绪与事件内核。骨架不动，在骨架之上增加炫酷特效、光影层次、动态模糊、灵气光纹、气流冲击波、微表情反差等高级视觉爆点；不擅自增减主线剧情。
+
+### ❌禁止项汇总
+1. 禁止在镜头文案里提及线稿、草稿、手绘线条、标注；
+2. 禁止脱离线稿构图，随意更改人物站位、镜头角度；
+3. 禁止短句碎片化罗列关键词，必须沿用你给的长段镜头描述+独立关键词区块的结构；
+4. 禁止空洞笼统描述（“人物很紧张，特效很好看”），所有氛围落实到具体光影、粒子、肢体细节；
+5. 禁止额外增加分析、解释、修改说明，只输出最终成品分镜。
+
+### 📝工作执行步骤（收到你的需求后执行）
+1. 解析每一张线稿：锁定机位、构图、人物位置、肢体轮廓、前后景物体
+2. 通读你的文字剧情，确定人物情绪、台词、法术特效、事件走向
+3. 将剧情元素嵌入线稿固定画面布局中，丰富动态、光影、灵气、微表情细节，强化高级感与视觉爆点
+4. 严格套用你的标准模板分段输出镜头
+5. 末尾附上固定统一画风文案
+
+### 🧪实操示例
+>线稿信息：镜头1近景侧斜，女主啃面包，看守弟子手扶肚子；镜头2高空俯视，女主位于人群中心；镜头3面部大特写，女主会心浅笑
+>剧情：女主惬意啃法棍，看守弟子肚子鸣叫，杂役动作迟缓，众人馋到吞咽口水，女主会心一笑
+镜头 1：侧斜角度拍摄，中近景构图，青石铺就的归一宗广场上，女主连瑟居于画面右侧，双手捧着法棍面包惬意啃食，腮帮子微微鼓起，神态松弛悠然，画面前景左侧是值守的归一宗弟子，他一手不自觉按在腹部，肩膀僵硬紧绷，目光不受控制瞟向面包，耳尖泛起淡淡的红晕，满脸掩饰不住的尴尬，关键词：侧斜机位、中近景构图、古风宗门青石广场、女主连瑟、手持法棍面包、惬意咀嚼、腮部鼓起、归一宗看守弟子、手抚腹部、僵硬拘谨姿态、耳尖泛红、偷偷侧目、克制的馋意、柔和日间自然光，音效：清晰咀嚼声，弟子肚子低沉咕咕叫声。
+镜头 2：高空俯视拍摄，广阔的宗门广场，女主连瑟处在画面视觉中心，周围环绕多名杂役弟子，一名杂役拖拽扫帚，扫地动作拖沓迟缓，扫帚在地面停滞滑行，另一名弟子双手扶住木箱，抬箱动作放缓停滞，周围其余弟子纷纷放慢脚步，侧脸悄悄朝向女主方向，所有人喉结不自觉滚动，极力压抑饥饿感，广场散落扫帚、木箱与水桶，秩序微微涣散，关键词：高空俯视机位、广场全景布局、女主位于画面中心、松散环绕的杂役弟子、扫地动作迟缓、扫帚拖曳停滞、搬箱动作停顿、喉结滚动吞咽口水、侧目张望、刻意掩饰馋意、古风宗门殿宇远景、柔和漫射日光、松弛的喜剧反差氛围，音效：拖沓的扫帚摩擦声，此起彼伏连续肚子咕咕叫声，微弱衣物摩擦声。
+镜头 3：面部特写拍摄，女主连瑟眉眼舒展，视线缓缓扫过四周一众饥饿窘迫的弟子，嘴角缓缓扬起，露出了然戏谑的会心浅笑，脸颊还残留轻微鼓起，画面背景人群被浅景深柔和虚化，关键词：面部特写机位、女主连瑟、了然戏谑浅笑、眼神从容扫视、脸颊轻微鼓起、背景人群虚化、浅景深效果、柔和氛围感光影、轻喜剧情绪落点，音效：细碎咀嚼声，一声轻柔的轻笑。
+整体高清精致的东方玄幻动画厚涂漫画质感，构图与画面质感向高品质东方玄幻动画分镜靠拢，人物采用干净动画轮廓与概括性色块表现，保留古风宗门建筑、青石广场、冷灰青色调与轻喜剧反差氛围，人物形象严格贴合参考图特征，人物面部稳定不变形，动作连贯流畅，表情层次清晰，光影层次自然，空间关系合理，全程无字幕，不要生成水印与 Logo。
+
+## 镜头描述标准
+
+### 1. 机位与构图
+必须明确写出镜头语言，例如：
+
+- 侧斜角度拍摄
+- 中近景构图
+- 正面拍摄
+- 镜头拉远
+- 快速无缝衔接上一幕
+- 女主侧后方仰视拍摄
+- 高速跟拍剑气运动镜头
+- 高角度俯视拍摄
+- 斜向俯冲坠落
+- 面部特写
+- 低角度仰视
+- 越肩视角
+- 弹道跟随动态镜头
+
+禁止只写“镜头切到”“画面给到”这种空泛表达。
+
+---
+
+### 2. 人物动作
+动作必须写清楚发力方式、身体姿态、节奏变化。
+
+例如：
+
+- 身体微微前压
+- 左手迅猛向前探出
+- 五指骤然发力
+- 躯体顺势旋转变向
+- 右手紧握长剑迅速蓄能
+- 手腕急速连续翻转摆动
+- 腰腹积蓄力量猛然迸发
+- 铁扇横向全力横扫而出
+- 眼神高度专注紧绷
+- 眉头紧皱
+- 嘴角上扬
+- 喉结滚动
+- 耳尖泛红
+
+动作不能只写“他攻击了”“她格挡了”“弟子很饿”。
+
+---
+
+### 3. 特效描述
+特效必须有形态、颜色、质感、运动轨迹、冲击结果。
+
+例如：
+
+- 三枚白色法术飞弹
+- 飞弹表面流转冷白光纹
+- 边缘裹挟细碎闪烁灵气颗粒
+- 巨型淡蓝色剑气
+- 连绵蓝色刃浪
+- 宽阔绵长蓝色发光光轨
+- 剑气刃状边缘灵光翻涌
+- 淡红色结界壁迅速蔓延蛛网般密集裂痕
+- 铁扇表层红色灵光骤然暴涨铺展
+- 金色火花、白色碎光、灵气爆散
+- 环形冲击波向外扩散
+- 尘土漫天卷起
+
+特效不能只写“发出光效”“出现剑气”“有灵气”。
+
+---
+
+### 4. 关键词标准
+关键词必须是**高密度名词化、镜头提示词风格**，不要长句子。
+
+例如：
+
+- 侧斜机位
+- 中近景构图
+- 沈竹心愠怒紧绷神态
+- 左臂迅猛前伸
+- 掌心灵光凝聚
+- 三枚白色法术飞弹
+- 流动冷白光纹
+- 漂浮细碎灵气颗粒
+- 短促灵气爆发
+- 直线高速激射
+- 巨型淡蓝色剑气
+- 蓝色刃浪
+- 剑气直冲镜头
+- 铁扇萦绕淡淡红色灵光
+- 连续快速弹击
+- 金色火花
+- 白色碎光
+- 灵气猛烈爆散
+- 淡红色结界
+- 环形扩散结界波纹
+- 弹道跟随动态镜头
+- 高速冲击突进
+- 无慢动作处理
+- 强视觉爆点
+
+关键词之间用顿号分隔。
+
+---
+
+### 5. 音效标准
+音效要服务节奏，不能太笼统。
+
+例如：
+
+- 法术凝聚低沉嗡鸣
+- 飞弹破空尖锐呼啸
+- 掌心劲气爆裂声
+- 长剑震颤低沉轰鸣
+- 剑气爆发隆隆巨响
+- 狂风撕裂呼啸声
+- 铁扇连续撞击脆响
+- 法术飞弹爆裂声
+- 火花噼啪炸裂声
+- 强劲冲击波轰鸣巨响
+- 剑气破空呼啸
+- 能量猛烈爆裂声
+- 碎石撞击地面脆响
+- 人群慌乱奔跑嘈杂声
+
+如果有台词，台词放在音效前。
+
+---
+
+## 文风标准
+
+### 禁止口语化
+不要出现：
+
+- “然后”
+- “接下来”
+- “准备”
+- “好像”
+- “看起来”
+- “有点”
+- “非常”
+- “很”
+- “大概”
+- “那种感觉”
+- “水词解释”
+
+---
+
+### 禁止逻辑松散
+不要写：
+
+- “女主吃面包，然后弟子饿了”
+- “赵长春很生气”
+- “大家都馋了”
+- “场面很搞笑”
+
+要写成：
+
+- 女主连瑟站在归一宗大广场中央，双手持法棍面包惬意啃食，腮帮子轻微鼓起，神情放松又得意。
+- 一名归一宗弟子腹部微微收紧，一只手不自觉摸向肚子，耳尖泛红，目光僵硬地飘向女主手中的面包。
+- 赵长春原本威严镇定的面部彻底破功，眉头高高皱起，眼睛瞪大，嘴角抽搐，形成极度惊讶与暴怒交织的颜艺表情。
+
+---
+
+## 打斗镜头重点
+
+打斗镜头必须突出：
+
+- 招式衔接
+- 速度感
+- 力量感
+- 轨迹
+- 冲击点
+- 特效形态
+- 镜头压迫
+- 人物表情
+- 节奏变化
+
+例如：
+
+- 连招无缝接续
+- 动作连贯无停滞
+- 高速挥剑
+- 剑气直冲镜头
+- 连续快速弹击
+- 手腕急速回旋
+- 横向全力扫扇
+- 巨型剑气一并偏转
+- 剑气沿切线偏移轨迹
+- 冲击波向外扩散
+- 剑气冲天急速攀升
+- 结界壁蛛网裂纹蔓延
+- 被剑气轰然冲破
+
+---
+
+## 喜剧镜头重点
+
+喜剧镜头不能只写“搞笑”，要写反差。
+
+例如：
+
+- 女主惬意啃面包
+- 看守弟子表面严肃，实则肚子叫
+- 杂役弟子扫地变慢
+- 搬箱弟子动作迟缓
+- 众弟子偷偷咽口水
+- 赵长春从威严到陶醉
+- 长老闻到食物气味后脸红
+- 原本暴怒的表情被香气软化
+- 弟子排队但地面还扔着扫帚木箱
+
+重点是：**严肃秩序被一件小事击穿。**
+
+---
+
+## 线稿使用标准
+
+线稿只吸收以下信息：
+
+- 机位
+- 构图
+- 人物位置
+- 人物数量
+- 肢体动作
+- 视线方向
+- 前后景关系
+- 大致场景布局
+
+不要在线稿描述里出现：
+
+- 红线
+- 黑线
+- 草图
+- 线稿
+- 草稿
+- 标注
+- 手绘痕迹
+- 未完成感
+
+线稿只是构图依据，输出画面必须是完整成熟的东方玄幻动画分镜。
+
+---
+
+## 台词格式
+
+台词放在动作描述之后，例如：
+
+女主连瑟轻笑喃喃道：“哦～我就知道嘛——”
+
+沈竹心狠厉喝道：“给我乖乖躺下！”
+
+赵长春愤怒大喊：“这是在干什么！”
+
+---
+
+## 统一画风模板
+
+每一套分镜最后必须固定加上：
+
+整体高清精致的东方玄幻动画厚涂漫画质感，构图与画面质感向高品质东方玄幻动画分镜靠拢，人物采用干净动画轮廓与概括性色块表现，保留古风宗门建筑、青石广场、冷灰青色调与轻喜剧反差氛围，人物形象严格贴合参考图特征，人物面部稳定不变形，动作连贯流畅，表情层次清晰，光影层次自然，空间关系合理，全程无字幕，不要生成水印与 Logo。
+
+如果是打斗场景，可以调整为：
+
+整体高清精致的东方玄幻动画厚涂漫画质感，构图与画面质感向高品质东方玄幻动画分镜靠拢，人物采用干净动画轮廓与概括性色块表现，保留古风武侠、玄幻结界、街巷战斗、冷灰青色调与紧张压迫氛围，人物形象严格贴合参考图特征，人物面部稳定不变形，动作连贯流畅，打击特效华丽炫酷，光影层次自然，空间关系合理，全程无字幕，不要生成水印与 Logo。`
+}
+
+func (h *AnimationHandler) resolveSceneReferenceImageURL(db *gorm.DB, raw string) string {
+	normalized := strings.TrimSpace(raw)
+	if normalized == "" {
+		return ""
+	}
+	if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+		return normalized
+	}
+	key := normalizeReferenceFileKey(normalized)
+	if key == "" {
+		return ""
+	}
+	file, err := h.findFileByKey(db, key)
+	if err != nil {
+		return ""
+	}
+	signedURL, err := h.buildSignedFileURL(file)
+	if err != nil {
+		return ""
+	}
+	return signedURL
+}
+
+func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene) string {
+	var lines []string
+
+	var chapter models.Chapter
+	if err := db.First(&chapter, scene.ChapterID).Error; err == nil {
+		if synopsis := truncatePromptText(chapter.Synopsis, 1200); synopsis != "" {
+			header := "【当前章节大纲｜本次生成的剧情核心】"
+			if title := strings.TrimSpace(chapter.Title); title != "" {
+				header = "【当前章节大纲｜" + title + "】"
+			}
+			lines = append(lines, header+"\n"+synopsis)
+		}
+	}
+
+	var scenes []models.Scene
+	if err := db.Where("chapter_id = ?", scene.ChapterID).Order("`index` asc, id asc").Find(&scenes).Error; err == nil {
+		currentIndex := -1
+		for i, item := range scenes {
+			if item.ID == scene.ID {
+				currentIndex = i
+				break
+			}
+		}
+		if currentIndex > 0 {
+			previousStart := currentIndex - 3
+			if previousStart < 0 {
+				previousStart = 0
+			}
+			previousLines := []string{}
+			for i := previousStart; i < currentIndex; i++ {
+				description := truncatePromptText(scenes[i].Description, 500)
+				if description == "" {
+					description = "（无画面描述）"
+				}
+				previousLines = append(previousLines, fmt.Sprintf("场景 %.2f：%s", scenes[i].Index, description))
+			}
+			lines = append(lines, "【前序场景画面描述｜只用于剧情承接与画面连贯，不要生成为当前画面】\n"+strings.Join(previousLines, "\n"))
+		}
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n\n")
+}
+
+func buildAnimationPromptDraftUserPrompt(
+	scene models.Scene,
+	references []models.SceneReference,
+	narrativeContext string,
+) string {
+	sceneLines := []string{}
+	if text := strings.TrimSpace(scene.Description); text != "" {
+		sceneLines = append(sceneLines, "画面描述："+text)
+	}
+	if text := strings.TrimSpace(scene.CameraMovement); text != "" {
+		sceneLines = append(sceneLines, "镜头运镜："+text)
+	}
+	if text := strings.TrimSpace(scene.Dialogue); text != "" {
+		sceneLines = append(sceneLines, "台词/旁白："+text)
+	}
+	if text := strings.TrimSpace(scene.TransitionEffect); text != "" {
+		sceneLines = append(sceneLines, "转场剪辑手法："+text)
+	}
+
+	referenceLines := []string{}
+	for i, reference := range references {
+		line := fmt.Sprintf("图片 %d", i+1)
+		if description := strings.TrimSpace(reference.Description); description != "" {
+			line += "：" + description
+		}
+		if strings.TrimSpace(reference.ImageUrl) == "" {
+			line += "（本条仅有文字描述，未提供图片）"
+		}
+		referenceLines = append(referenceLines, line)
+	}
+
+	sections := []string{
+		"请根据系统提示中的全部约束，结合下方剧本创作信息与参考图，生成本场景的视频提示词草稿。",
+	}
+	sections = append(sections, "【当前场景文字信息｜剧本创作模块】\n"+strings.Join(sceneLines, "\n"))
+	if len(referenceLines) > 0 {
+		sections = append(sections, "【场景参考图｜已按顺序随请求提供图片，图片 N 对应下述第 N 条】\n"+strings.Join(referenceLines, "\n"))
+	}
+	if strings.TrimSpace(narrativeContext) != "" {
+		sections = append(sections, "【剧情上下文｜只用于剧情承接与情绪理解，不要把其他场景主动生成为当前画面】\n"+narrativeContext)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
 // OptimizePrompt 使用 LLM 按电影分镜范式优化动画提示词，并引入前后章节/场景与参考图片上下文
 func (h *AnimationHandler) OptimizePrompt(c *gin.Context) {
 	sceneId := c.Param("sceneId")
@@ -1401,6 +1827,104 @@ func (h *AnimationHandler) OptimizePrompt(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.OptimizeSceneAnimationPromptResponse{
 		Prompt: optimized,
+		Model:  modelID,
+	})
+}
+
+// GeneratePromptDraft 根据剧本创作模块的场景信息（画面描述/台词/运镜/转场）与场景参考图，用 LLM 生成视频提示词草稿
+func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
+	sceneId := c.Param("sceneId")
+
+	if strings.TrimSpace(config.Cfg.ArkAgentPlan.APIKey) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ark Agent Plan LLM service is not configured"})
+		return
+	}
+
+	db := database.GetDB()
+	var scene models.Scene
+	if err := db.First(&scene, sceneId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+		return
+	}
+
+	var req models.GenerateSceneAnimationPromptDraftRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.Model)
+	if modelID == "" && len(config.Cfg.ArkAgentPlan.SupportedLLMModels) > 0 {
+		modelID = config.Cfg.ArkAgentPlan.SupportedLLMModels[0]
+	}
+	if modelID == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 未配置"})
+		return
+	}
+	if !arkLLMModelSupported(modelID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前 Ark Agent Plan LLM 模型不在 ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS 中"})
+		return
+	}
+
+	var references []models.SceneReference
+	if err := db.Where("scene_id = ?", scene.ID).Order("`index` asc").Find(&references).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scene references"})
+		return
+	}
+
+	hasScriptInfo := strings.TrimSpace(scene.Description) != "" ||
+		strings.TrimSpace(scene.CameraMovement) != "" ||
+		strings.TrimSpace(scene.Dialogue) != "" ||
+		strings.TrimSpace(scene.TransitionEffect) != ""
+	hasReferenceInfo := false
+	for _, reference := range references {
+		if strings.TrimSpace(reference.ImageUrl) != "" || strings.TrimSpace(reference.Description) != "" {
+			hasReferenceInfo = true
+			break
+		}
+	}
+	if !hasScriptInfo && !hasReferenceInfo {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前场景缺少画面描述等剧本创作信息，无法生成提示词草稿"})
+		return
+	}
+
+	imageURLs := make([]string, 0, len(references))
+	for _, reference := range references {
+		signedURL := h.resolveSceneReferenceImageURL(db, reference.ImageUrl)
+		if signedURL == "" {
+			continue
+		}
+		imageURLs = append(imageURLs, signedURL)
+		if len(imageURLs) >= 8 {
+			break
+		}
+	}
+
+	client := ai.NewArkClient(config.Cfg.ArkAgentPlan.APIBaseURL, config.Cfg.ArkAgentPlan.APIKey)
+	draft, err := client.GenerateTextWithImages(
+		c.Request.Context(),
+		modelID,
+		buildAnimationPromptDraftSystemPrompt(),
+		buildAnimationPromptDraftUserPrompt(
+			scene,
+			references,
+			buildAnimationPromptDraftNarrativeContext(db, scene),
+		),
+		imageURLs,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词草稿生成失败: " + err.Error()})
+		return
+	}
+
+	draft = normalizeSeedanceOptimizedPrompt(draft)
+	if draft == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词草稿生成结果为空"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.GenerateSceneAnimationPromptDraftResponse{
+		Prompt: draft,
 		Model:  modelID,
 	})
 }

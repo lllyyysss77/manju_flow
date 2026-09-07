@@ -130,6 +130,7 @@ func Setup(r *gin.Engine) {
 			// 动画路由（支持多套动画）
 			animationHandler := handlers.NewAnimationHandler()
 			authorized.POST("/scenes/:sceneId/animation-prompt/optimize", animationHandler.OptimizePrompt) // 一键优化动画提示词
+			authorized.POST("/scenes/:sceneId/animation-prompt/draft", animationHandler.GeneratePromptDraft) // 一键生成动画提示词草稿
 			animations := authorized.Group("/scenes/:sceneId/animations")
 			{
 				animations.GET("", animationHandler.List)                                                           // 获取动画列表

@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Download,
   Sparkles,
+  PenLine,
   UploadCloud,
   Loader2,
   Music
@@ -326,6 +327,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [optimizingPrompt, setOptimizingPrompt] = useState(false);
+  const [generatingPromptDraft, setGeneratingPromptDraft] = useState(false);
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
@@ -1029,6 +1031,29 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const getReferenceKeys = (type: ReferenceMediaType) =>
     Array.from(new Set(referenceMedia[type].map(item => item.key).filter(Boolean)));
+
+  const handleGeneratePromptDraft = async () => {
+    if (!activeScene?.id) return;
+    setGeneratingPromptDraft(true);
+    setAnimationError(null);
+    try {
+      const res = await animationApi.generatePromptDraft(activeScene.id, {});
+      const draft = (res.prompt || '').trim();
+      if (!draft) {
+        throw new Error('草稿生成结果为空');
+      }
+      setGenerationPrompt(draft);
+      setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
+      showToast('已根据剧本创作信息生成提示词草稿', 'success');
+    } catch (err) {
+      console.error('Generate animation prompt draft failed', err);
+      const message = err instanceof Error ? err.message : '提示词草稿生成失败，请重试';
+      setAnimationError(message);
+      showToast(message, 'error');
+    } finally {
+      setGeneratingPromptDraft(false);
+    }
+  };
 
   const handleOptimizePrompt = async () => {
     if (!activeScene?.id) return;
@@ -2539,6 +2564,16 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
                           <div className="flex flex-wrap items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={handleGeneratePromptDraft}
+                              disabled={generatingPromptDraft}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-blue-300/20 bg-blue-400/10 px-2.5 py-1 text-[11px] font-semibold text-blue-100/90 transition-colors hover:border-blue-200/40 hover:bg-blue-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                              title="根据剧本创作的画面描述、台词、运镜、转场与场景参考图生成提示词草稿"
+                            >
+                              {generatingPromptDraft ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />}
+                              {generatingPromptDraft ? '生成中...' : '一键生成提示词草稿'}
+                            </button>
                             <button
                               type="button"
                               onClick={handleOptimizePrompt}

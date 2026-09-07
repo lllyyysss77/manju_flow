@@ -167,3 +167,14 @@ type OptimizeSceneAnimationPromptResponse struct {
 	Prompt string `json:"prompt"`
 	Model  string `json:"model"`
 }
+
+// GenerateSceneAnimationPromptDraftRequest 生成视频提示词草稿请求
+type GenerateSceneAnimationPromptDraftRequest struct {
+	Model string `json:"model"`
+}
+
+// GenerateSceneAnimationPromptDraftResponse 生成视频提示词草稿响应
+type GenerateSceneAnimationPromptDraftResponse struct {
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
+}
