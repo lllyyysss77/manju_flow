@@ -488,7 +488,7 @@ func (h *AnimationHandler) createWanGenerationTask(
 			URL:  item.SignedURL,
 		})
 	}
-	requestBody.Parameters.Resolution = "1080P"
+	requestBody.Parameters.Resolution = "720P"
 	requestBody.Parameters.Ratio = task.Ratio
 	requestBody.Parameters.Duration = task.Duration
 	requestBody.Parameters.Audio = true
