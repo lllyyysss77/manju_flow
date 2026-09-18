@@ -53,6 +53,10 @@ docker-compose up -d
 | TTS_AUDIO_FORMAT | 生成音频格式（wav/mp3/pcm/ogg_opus） | mp3 |
 | ARK_API_BASE_URL | 火山引擎 Ark 服务地址 | https://ark.cn-beijing.volces.com |
 | ARK_API_KEY | 火山引擎 Ark API Key | - |
+| WAN_API_BASE_URL | 阿里云百炼万相服务地址；留空时由 Workspace ID 和地域自动拼接 | - |
+| WAN_API_KEY | 阿里云百炼万相 API Key | - |
+| WAN_WORKSPACE_ID | 阿里云百炼业务空间 ID | - |
+| WAN_REGION | 万相服务地域 | cn-beijing |
 | ARK_AGENT_PLAN_API_BASE_URL | 火山引擎 Ark Agent Plan 服务地址，用于 LLM / 图片理解 | https://ark.cn-beijing.volces.com/api/plan |
 | ARK_AGENT_PLAN_API_KEY | 火山引擎 Ark Agent Plan API Key | - |
 | ARK_AGENT_PLAN_SUPPORTED_LLM_MODELS | Ark Agent Plan 支持的 LLM 模型 ID 列表，逗号分隔或 JSON 数组；第一个为默认模型 | doubao-seed-2-1-pro-260628 |

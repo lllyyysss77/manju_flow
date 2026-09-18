@@ -78,6 +78,10 @@ Vercel (前端) ←────────────── API ────�
    OSS_ACCESS_KEY_SECRET=<AccessKeySecret>
    OSS_BUCKET_NAME=<Bucket名称>
    CORS_ORIGINS=https://your-app.vercel.app
+   # 可选：Wan 3.0 视频生成
+   WAN_API_KEY=<阿里云百炼APIKey>
+   WAN_WORKSPACE_ID=<百炼业务空间ID>
+   WAN_REGION=cn-beijing
    ```
 
    **CORS_ORIGINS 说明**：

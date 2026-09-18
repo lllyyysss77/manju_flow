@@ -16,6 +16,7 @@ type Config struct {
 	OSS          OSSConfig
 	TTS          TTSConfig
 	Ark          ArkConfig
+	Wan          WanConfig
 	ArkAgentPlan ArkAgentPlanConfig
 	App          AppConfig
 	CORS         CORSConfig
@@ -58,6 +59,14 @@ type TTSConfig struct {
 type ArkConfig struct {
 	APIBaseURL string
 	APIKey     string
+}
+
+// WanConfig 阿里云百炼万相视频生成配置
+type WanConfig struct {
+	APIBaseURL  string
+	APIKey      string
+	WorkspaceID string
+	Region      string
 }
 
 // ArkAgentPlanConfig 火山引擎 Agent Plan 配置（LLM / 图片理解）
@@ -119,6 +128,12 @@ func Load() *Config {
 		Ark: ArkConfig{
 			APIBaseURL: utils.GetEnv("ARK_API_BASE_URL", "https://ark.cn-beijing.volces.com/api"),
 			APIKey:     utils.GetEnv("ARK_API_KEY", ""),
+		},
+		Wan: WanConfig{
+			APIBaseURL:  utils.GetEnv("WAN_API_BASE_URL", ""),
+			APIKey:      utils.GetEnv("WAN_API_KEY", ""),
+			WorkspaceID: utils.GetEnv("WAN_WORKSPACE_ID", ""),
+			Region:      utils.GetEnv("WAN_REGION", "cn-beijing"),
 		},
 		ArkAgentPlan: ArkAgentPlanConfig{
 			APIBaseURL:         utils.GetEnv("ARK_AGENT_PLAN_API_BASE_URL", "https://ark.cn-beijing.volces.com/api/plan"),

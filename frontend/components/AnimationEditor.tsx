@@ -54,8 +54,8 @@ interface ResolvedSceneFrameSet extends SceneFrameSet {
 }
 
 type ReferenceMediaType = 'image' | 'audio' | 'video';
-type SeedanceModel = 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128';
-type SeedanceRatio = '16:9' | '9:16';
+type VideoGenerationModel = 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128' | 'wan3.0-video' | 'wan3.0-video-prime';
+type VideoGenerationRatio = '16:9' | '9:16';
 
 interface UploadedReferenceMedia {
   id: string;
@@ -117,8 +117,8 @@ const PROMPT_ASSET_CATEGORY_LABELS: Record<MentionCategory, string> = {
 const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const DEFAULT_VIDEO_MODEL: SeedanceModel = 'doubao-seedance-2-0-fast-260128';
-const DEFAULT_VIDEO_RATIO: SeedanceRatio = '16:9';
+const DEFAULT_VIDEO_MODEL: VideoGenerationModel = 'doubao-seedance-2-0-fast-260128';
+const DEFAULT_VIDEO_RATIO: VideoGenerationRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
 
 const buildDefaultVideoPrompt = (scene?: Scene) =>
@@ -322,12 +322,22 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generationPrompt, setGenerationPrompt] = useState('');
   const [promptMentions, setPromptMentions] = useState<Record<string, PromptAssetMention>>({});
   const [promptPicker, setPromptPicker] = useState<PromptAssetPickerState>({ open: false, x: 16, y: 44, activeIndex: 0 });
-  const [generationRatio, setGenerationRatio] = useState<SeedanceRatio>(DEFAULT_VIDEO_RATIO);
+  const [generationRatio, setGenerationRatio] = useState<VideoGenerationRatio>(DEFAULT_VIDEO_RATIO);
   const [generationDuration, setGenerationDuration] = useState(DEFAULT_VIDEO_DURATION);
-  const [generationModel, setGenerationModel] = useState<SeedanceModel>(DEFAULT_VIDEO_MODEL);
+  const [generationModel, setGenerationModel] = useState<VideoGenerationModel>(DEFAULT_VIDEO_MODEL);
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [optimizingPrompt, setOptimizingPrompt] = useState(false);
   const [generatingPromptDraft, setGeneratingPromptDraft] = useState(false);
+
+  const isWanVideoModel = generationModel.startsWith('wan3.0-video');
+
+  useEffect(() => {
+    setGenerationDuration(current => {
+      const min = isWanVideoModel ? 2 : 5;
+      const max = isWanVideoModel ? 30 : 15;
+      return Math.min(Math.max(current, min), max);
+    });
+  }, [isWanVideoModel]);
   const [generationTaskMap, setGenerationTaskMap] = useState<Record<number, SceneAnimationGenerationTask[]>>({});
   const [pollingTaskId, setPollingTaskId] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
@@ -1300,7 +1310,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       setGenerationPrompt(task.text || '');
       setGenerationRatio(task.ratio || DEFAULT_VIDEO_RATIO);
       setGenerationDuration(task.duration || DEFAULT_VIDEO_DURATION);
-      setGenerationModel(task.model || DEFAULT_VIDEO_MODEL);
+      setGenerationModel(task.model === 'wan3.0-video-prime' ? 'wan3.0-video' : task.model || DEFAULT_VIDEO_MODEL);
       setReferenceMedia({
         image: buildReferenceMediaFromKeys('image', task.referenceImageKeys, task.referenceImageAssets),
         audio: buildReferenceMediaFromKeys('audio', task.referenceAudioKeys, task.referenceAudioAssets),
@@ -2142,8 +2152,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                 : resolvingVersion
                   ? '正在解析历史版本...'
                   : generatingVideo
-                    ? '正在创建 Seedance 视频任务...'
-                    : 'Seedance 任务进行中，可稍后继续回来轮询状态...'}
+                    ? '正在创建视频生成任务...'
+                    : '视频任务进行中，可稍后继续回来轮询状态...'}
             </div>
           </div>
         )}
@@ -2266,7 +2276,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     </div>
                     <div>
                       <span className="text-sm font-bold text-white">视频制作工作台</span>
-                      <p className="text-[11px] text-white/40">使用 Seedance 2.0 生成视频，结果自动沉淀为版本历史</p>
+                      <p className="text-[11px] text-white/40">使用当前选择的视频模型生成视频，结果自动沉淀为版本历史</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 relative flex-wrap">
@@ -2484,7 +2494,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                                   handleReuseGenerationTaskParams(currentVersionData.generationTaskId!);
                                 }}
                                 className="px-3 py-1.5 rounded-lg bg-black/70 text-white/90 border border-white/10 shadow hover:bg-black/80 text-[11px]"
-                                title="复用本版本的 Seedance 创作参数"
+                                title="复用本版本的视频创作参数"
                               >
                                 复用创作参数
                               </button>
@@ -2550,7 +2560,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             <Film size={18} />
                           </div>
                           <div>
-                            <h3 className="text-sm font-semibold text-white">Seedance 视频制作 Block</h3>
+                            <h3 className="text-sm font-semibold text-white">AI 视频制作 Block</h3>
                             <p className="text-[11px] text-white/45">支持图片 / 音频 / 视频参考，`generate_audio` 固定开启，`watermark` 固定关闭。</p>
                           </div>
                         </div>
@@ -2665,8 +2675,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                               <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频模型</div>
                               <div className="grid gap-2 sm:grid-cols-2">
                                 {[
-                                  { value: 'doubao-seedance-2-0-260128' as SeedanceModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
-                                  { value: 'doubao-seedance-2-0-fast-260128' as SeedanceModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
+                                  { value: 'doubao-seedance-2-0-260128' as VideoGenerationModel, label: 'Seedance 2.0', desc: '标准质量，适合主版本制作' },
+                                  { value: 'doubao-seedance-2-0-fast-260128' as VideoGenerationModel, label: 'Seedance 2.0 Fast', desc: '更快出结果，适合快速试稿' },
+                                  { value: 'wan3.0-video' as VideoGenerationModel, label: '万相 3.0', desc: '标准版全能参考视频生成' },
                                 ].map(option => {
                                   const active = generationModel === option.value;
                                   return (
@@ -2691,7 +2702,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             <div className="space-y-3 border-t border-white/8 pt-3">
                               <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">画面比例</div>
                               <div className="grid grid-cols-2 gap-2">
-                                {(['16:9', '9:16'] as SeedanceRatio[]).map(ratio => {
+                                {(['16:9', '9:16'] as VideoGenerationRatio[]).map(ratio => {
                                   const active = generationRatio === ratio;
                                   return (
                                     <button
@@ -2718,16 +2729,16 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                               </div>
                               <input
                                 type="range"
-                                min={5}
-                                max={15}
+                                min={isWanVideoModel ? 2 : 5}
+                                max={isWanVideoModel ? 30 : 15}
                                 step={1}
                                 value={generationDuration}
                                 onChange={e => setGenerationDuration(Number(e.target.value))}
                                 className="w-full accent-blue-500"
                               />
                               <div className="flex items-center justify-between text-[11px] text-white/30">
-                                <span>5s</span>
-                                <span>15s</span>
+                                <span>{isWanVideoModel ? '2s' : '5s'}</span>
+                                <span>{isWanVideoModel ? '30s' : '15s'}</span>
                               </div>
                             </div>
                           </div>
@@ -2816,7 +2827,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                     </div>
                     <div className="space-y-1">
                       <p className="text-white font-semibold text-sm">当前场景还没有动画片段</p>
-                      <p className="text-white/50 text-[12px]">先创建片段，再配置 Seedance 参考媒体和提示词</p>
+                      <p className="text-white/50 text-[12px]">先创建片段，再配置参考媒体和提示词</p>
                     </div>
                     <button
                       onClick={() => {
@@ -2837,7 +2848,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
             {animations.length === 0 ? (
               <div className="flex items-center gap-2 text-white/40">
                 <Info size={14} className="text-amber-300" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景还没有动画片段 · 先创建片段再生成 Seedance 视频</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">当前场景还没有动画片段 · 先创建片段再生成视频</span>
               </div>
             ) : activeGenerationTask && (activeGenerationTask.status === 'PENDING' || activeGenerationTask.status === 'PROCESSING') ? (
               <div className="flex items-center gap-2 text-white/40">
