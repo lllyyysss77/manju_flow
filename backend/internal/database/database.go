@@ -46,13 +46,16 @@ func Init(cfg *config.DatabaseConfig) error {
 		return err
 	}
 
-	// Scene 与 SceneAsset 的表结构变更大，必须通过 make migrate 在维护窗口显式执行。
+	// 启动即迁移：scene_assets 新表 + scenes 绑定列；MySQL 8 加列基本 instant，
+	// 避免再漏跑显式迁移。显式 make migrate 保留作手动兜底。
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Book{},
 		&models.BookFavorite{},
 		&models.Chapter{},
 		&models.ChapterImportTask{},
+		&models.Scene{},
+		&models.SceneAsset{},
 		&models.SceneReference{},
 		&models.File{},
 		&models.SceneFrameSet{},
