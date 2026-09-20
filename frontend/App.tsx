@@ -201,6 +201,7 @@ const App: React.FC = () => {
             dialogue: s.dialogue || '',
             transitionEffect: s.transitionEffect || '',
             status: s.status as Episode['status'],
+            sceneAssetId: s.sceneAssetId ?? null,
             comments: [],
             references: s.references,
             thumbnailUrl: s.thumbnailUrl,

@@ -2205,13 +2205,24 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景绑定 (Scene Asset)</label>
                     <select
-                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
+                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all ${isReadOnly ? 'cursor-not-allowed opacity-80' : 'focus:border-blue-500/50'}`}
                       value={activeScene.sceneAssetId ?? ''}
+                      aria-disabled={isReadOnly}
+                      onMouseDown={(event) => {
+                        if (!isReadOnly) return;
+                        event.preventDefault();
+                        setToast({ message: '当前是只读模式，不允许修改', tone: 'info' });
+                      }}
+                      onKeyDown={(event) => {
+                        if (!isReadOnly) return;
+                        if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) return;
+                        event.preventDefault();
+                        setToast({ message: '当前是只读模式，不允许修改', tone: 'info' });
+                      }}
                       onChange={(e) => updateActiveScene(scene => ({
                         ...scene,
                         sceneAssetId: e.target.value ? Number(e.target.value) : 0,
                       }))}
-                      disabled={isReadOnly}
                     >
                       <option value="">未绑定场景</option>
                       {sceneAssets.map(sceneAsset => (
