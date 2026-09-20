@@ -2206,7 +2206,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景绑定 (Scene Asset)</label>
                     <select
                       className={`w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all ${isReadOnly ? 'cursor-not-allowed opacity-80' : 'focus:border-blue-500/50'}`}
-                      value={activeScene.sceneAssetId ?? ''}
+                      value={activeScene.sceneAssetCode ?? ''}
                       aria-disabled={isReadOnly}
                       onMouseDown={(event) => {
                         if (!isReadOnly) return;
@@ -2221,12 +2221,12 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       }}
                       onChange={(e) => updateActiveScene(scene => ({
                         ...scene,
-                        sceneAssetId: e.target.value ? Number(e.target.value) : 0,
+                        sceneAssetCode: e.target.value,
                       }))}
                     >
                       <option value="">未绑定场景</option>
                       {sceneAssets.map(sceneAsset => (
-                        <option key={sceneAsset.id} value={sceneAsset.id}>
+                        <option key={sceneAsset.id} value={sceneAsset.code}>
                           {sceneAsset.code} {sceneAsset.name}
                         </option>
                       ))}

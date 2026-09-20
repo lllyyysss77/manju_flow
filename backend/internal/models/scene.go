@@ -19,7 +19,9 @@ const (
 type Scene struct {
 	ID               uint        `gorm:"primaryKey" json:"id"`
 	ChapterID        uint        `gorm:"not null;index" json:"chapterId"`
-	SceneAssetID     *uint       `gorm:"index" json:"sceneAssetId"`
+	BookID           uint        `gorm:"not null;index" json:"bookId"`
+	SceneAssetBookID *uint       `gorm:"index:idx_scenes_scene_asset_binding,priority:1" json:"-"`
+	SceneAssetCode   *string     `gorm:"size:20;index:idx_scenes_scene_asset_binding,priority:2" json:"sceneAssetCode"`
 	Index            float64     `gorm:"not null" json:"index"` // 使用浮点数便于中间插入
 	Status           SceneStatus `gorm:"size:20;not null;default:'DRAFT'" json:"status"`
 	Description      string      `gorm:"type:text" json:"description"`      // 场景描述
@@ -53,7 +55,7 @@ type SceneListResponse struct {
 // CreateSceneRequest 创建场景请求
 type CreateSceneRequest struct {
 	Index            *float64    `json:"index" binding:"required"` // 使用指针类型允许传递 0 值
-	SceneAssetID     *uint       `json:"sceneAssetId"`
+	SceneAssetCode   *string     `json:"sceneAssetCode"`
 	Status           SceneStatus `json:"status"`
 	Description      string      `json:"description"`
 	CameraMovement   string      `json:"cameraMovement"`
@@ -65,7 +67,7 @@ type CreateSceneRequest struct {
 // UpdateSceneRequest 更新场景请求
 type UpdateSceneRequest struct {
 	Index            *float64     `json:"index"`
-	SceneAssetID     *uint        `json:"sceneAssetId"`
+	SceneAssetCode   *string      `json:"sceneAssetCode"`
 	Status           *SceneStatus `json:"status"`
 	Description      *string      `json:"description"`
 	CameraMovement   *string      `json:"cameraMovement"`

@@ -754,7 +754,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 5),
     [activeSceneIndex, sortedScenes]
   );
-  const activeSceneAsset = sceneAssets.find(sceneAsset => sceneAsset.id === activeScene?.sceneAssetId) || null;
+  const activeSceneAsset = sceneAssets.find(sceneAsset => sceneAsset.code === activeScene?.sceneAssetCode) || null;
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   const canGenerateVideo =
     Boolean(selectedAnimationId) &&

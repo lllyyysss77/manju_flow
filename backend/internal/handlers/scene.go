@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,7 @@ import (
 	"manju-flow/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // SceneHandler 场景处理器
@@ -106,18 +108,6 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		status = models.SceneStatusDraft
 	}
 
-	var sceneAssetID *uint
-	if req.SceneAssetID != nil && *req.SceneAssetID != 0 {
-		var sceneAsset models.SceneAsset
-		if err := db.Where("book_id = ?", chapter.BookID).First(&sceneAsset, *req.SceneAssetID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Scene asset not found in this book",
-			})
-			return
-		}
-		sceneAssetID = req.SceneAssetID
-	}
-
 	// 检查 index 是否与同章节已有场景冲突，若冲突则微调
 	requestedIndex := *req.Index
 	var conflictCount int64
@@ -133,19 +123,50 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		}
 	}
 
-	scene := models.Scene{
-		ChapterID:        uint(chapterIdUint),
-		SceneAssetID:     sceneAssetID,
-		Index:            requestedIndex,
-		Status:           status,
-		Description:      req.Description,
-		CameraMovement:   req.CameraMovement,
-		Dialogue:         req.Dialogue,
-		TransitionEffect: req.TransitionEffect,
-		ThumbnailUrl:     req.ThumbnailUrl,
-	}
-
-	if err := db.Create(&scene).Error; err != nil {
+	var sceneAssetCode *string
+	var sceneAssetBookID *uint
+	var scene models.Scene
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if req.SceneAssetCode != nil {
+			code := normalizeSceneAssetCode(*req.SceneAssetCode)
+			if code == "" {
+				sceneAssetCode = nil
+				sceneAssetBookID = nil
+			} else {
+				if !validSceneAssetCode(code) {
+					return errInvalidSceneAssetCode
+				}
+				var sceneAsset models.SceneAsset
+				if err := tx.Where("book_id = ? AND code = ?", chapter.BookID, code).First(&sceneAsset).Error; err != nil {
+					return errSceneAssetNotFound
+				}
+				sceneAssetCode = &code
+				sceneAssetBookID = &chapter.BookID
+			}
+		}
+		scene = models.Scene{
+			ChapterID:        uint(chapterIdUint),
+			BookID:           chapter.BookID,
+			SceneAssetBookID: sceneAssetBookID,
+			SceneAssetCode:   sceneAssetCode,
+			Index:            requestedIndex,
+			Status:           status,
+			Description:      req.Description,
+			CameraMovement:   req.CameraMovement,
+			Dialogue:         req.Dialogue,
+			TransitionEffect: req.TransitionEffect,
+			ThumbnailUrl:     req.ThumbnailUrl,
+		}
+		return tx.Create(&scene).Error
+	}); err != nil {
+		if errors.Is(err, errInvalidSceneAssetCode) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "场景编号必须为 S1、S2 等格式"})
+			return
+		}
+		if errors.Is(err, errSceneAssetNotFound) || isSceneAssetBindingError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Scene asset not found in this book"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to create scene",
 		})
@@ -240,44 +261,68 @@ func (h *SceneHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// 部分更新
-	if req.Index != nil {
-		scene.Index = *req.Index
-	}
-	if req.SceneAssetID != nil {
-		if *req.SceneAssetID == 0 {
-			scene.SceneAssetID = nil
-		} else {
-			var sceneAsset models.SceneAsset
-			if err := db.Where("book_id = ?", chapter.BookID).First(&sceneAsset, *req.SceneAssetID).Error; err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "Scene asset not found in this book",
-				})
-				return
-			}
-			scene.SceneAssetID = req.SceneAssetID
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("chapter_id = ?", chapterId).First(&scene, id).Error; err != nil {
+			return err
 		}
-	}
-	if req.Status != nil {
-		scene.Status = *req.Status
-	}
-	if req.Description != nil {
-		scene.Description = *req.Description
-	}
-	if req.CameraMovement != nil {
-		scene.CameraMovement = *req.CameraMovement
-	}
-	if req.Dialogue != nil {
-		scene.Dialogue = *req.Dialogue
-	}
-	if req.TransitionEffect != nil {
-		scene.TransitionEffect = *req.TransitionEffect
-	}
-	if req.ThumbnailUrl != nil {
-		scene.ThumbnailUrl = *req.ThumbnailUrl
-	}
 
-	if err := db.Save(&scene).Error; err != nil {
+		if scene.BookID == 0 {
+			scene.BookID = chapter.BookID
+		}
+
+		if req.Index != nil {
+			scene.Index = *req.Index
+		}
+		if req.SceneAssetCode != nil {
+			code := normalizeSceneAssetCode(*req.SceneAssetCode)
+			if code == "" {
+				scene.SceneAssetCode = nil
+				scene.SceneAssetBookID = nil
+			} else {
+				if !validSceneAssetCode(code) {
+					return errInvalidSceneAssetCode
+				}
+				var sceneAsset models.SceneAsset
+				if err := tx.Where("book_id = ? AND code = ?", chapter.BookID, code).First(&sceneAsset).Error; err != nil {
+					return errSceneAssetNotFound
+				}
+				scene.SceneAssetCode = &code
+				scene.SceneAssetBookID = &chapter.BookID
+			}
+		}
+		if req.Status != nil {
+			scene.Status = *req.Status
+		}
+		if req.Description != nil {
+			scene.Description = *req.Description
+		}
+		if req.CameraMovement != nil {
+			scene.CameraMovement = *req.CameraMovement
+		}
+		if req.Dialogue != nil {
+			scene.Dialogue = *req.Dialogue
+		}
+		if req.TransitionEffect != nil {
+			scene.TransitionEffect = *req.TransitionEffect
+		}
+		if req.ThumbnailUrl != nil {
+			scene.ThumbnailUrl = *req.ThumbnailUrl
+		}
+
+		return tx.Save(&scene).Error
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scene not found"})
+			return
+		}
+		if errors.Is(err, errInvalidSceneAssetCode) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "场景编号必须为 S1、S2 等格式"})
+			return
+		}
+		if errors.Is(err, errSceneAssetNotFound) || isSceneAssetBindingError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Scene asset not found in this book"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update scene",
 		})

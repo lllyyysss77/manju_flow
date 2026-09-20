@@ -14,12 +14,10 @@ import (
 
 var DB *gorm.DB
 
-// Init 初始化数据库连接
-func Init(cfg *config.DatabaseConfig) error {
-	var dialector gorm.Dialector
-
+// Connect 建立数据库连接，不执行任何表结构变更。
+func Connect(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 	if cfg.Driver != "mysql" {
-		return fmt.Errorf("unsupported database driver: %s (only mysql is supported)", cfg.Driver)
+		return nil, fmt.Errorf("unsupported database driver: %s (only mysql is supported)", cfg.Driver)
 	}
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
@@ -29,39 +27,46 @@ func Init(cfg *config.DatabaseConfig) error {
 		cfg.Port,
 		cfg.DBName,
 	)
-	dialector = mysql.Open(dsn)
 
-	db, err := gorm.Open(dialector, &gorm.Config{
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger:                                   logger.Default.LogMode(logger.Info),
-		DisableForeignKeyConstraintWhenMigrating: true, // 禁用外键约束，通过业务逻辑保证数据完整性
+		TranslateError:                           true,
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	return db, nil
+}
+
+// Init 初始化数据库连接并执行常规启动迁移。
+func Init(cfg *config.DatabaseConfig) error {
+	db, err := Connect(cfg)
+	if err != nil {
+		return err
 	}
 
-	// 自动迁移表结构
+	// Scene 与 SceneAsset 的表结构变更大，必须通过 make migrate 在维护窗口显式执行。
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Book{},
 		&models.BookFavorite{},
 		&models.Chapter{},
-		&models.Scene{},
-		&models.ChapterImportTask{}, // AI 章节导入任务
-		&models.SceneReference{},    // 场景参考资料（一对多）
+		&models.ChapterImportTask{},
+		&models.SceneReference{},
 		&models.File{},
-		&models.SceneFrameSet{},                // 场景帧集（支持多套首尾帧）
-		&models.SceneFrameSetVersion{},         // 帧集版本历史
-		&models.SceneAnimation{},               // 场景动画（支持多套动画）
-		&models.SceneAnimationVersion{},        // 动画版本历史
-		&models.SceneAnimationGenerationTask{}, // 动画生成任务
-		&models.SceneAudio{},                   // 场景音频轨道（支持多音频）
-		&models.SceneAudioVersion{},            // 音频版本历史
-		&models.ChapterVideo{},                 // 章节交付视频
-		&models.ChapterVideoVersion{},          // 视频版本历史
-		&models.Comment{},                      // 评论
-		&models.Character{},                    // 角色人设
-		&models.SceneAsset{},                   // 场景资产
-		&models.Lora{},                         // LoRA 库
+		&models.SceneFrameSet{},
+		&models.SceneFrameSetVersion{},
+		&models.SceneAnimation{},
+		&models.SceneAnimationVersion{},
+		&models.SceneAnimationGenerationTask{},
+		&models.SceneAudio{},
+		&models.SceneAudioVersion{},
+		&models.ChapterVideo{},
+		&models.ChapterVideoVersion{},
+		&models.Comment{},
+		&models.Character{},
+		&models.Lora{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

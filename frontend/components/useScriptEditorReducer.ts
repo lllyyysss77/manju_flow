@@ -325,7 +325,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
       transitionEffect: scene.transitionEffect,
       status: scene.status,
       index: scene.index,
-      sceneAssetId: scene.sceneAssetId ?? null,
+      sceneAssetCode: scene.sceneAssetCode ?? null,
       referenceImageUrl: scene.referenceImageUrl,
       referenceImageDescription: scene.referenceImageDescription,
     }), []);
@@ -429,7 +429,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
             dialogue: s.dialogue || '',
             transitionEffect: s.transitionEffect || '',
             status: s.status as Status,
-            sceneAssetId: s.sceneAssetId ?? null,
+            sceneAssetCode: s.sceneAssetCode ?? null,
             comments: [],
             referenceImageUrl: s.referenceImageUrl,
             referenceImageDescription: s.referenceImageDescription || '',
@@ -526,7 +526,7 @@ export function useScriptEditorReducer(options: UseScriptEditorReducerOptions) {
         cameraMovement: scene.cameraMovement,
         dialogue: scene.dialogue,
         transitionEffect: scene.transitionEffect,
-        sceneAssetId: scene.sceneAssetId ?? 0,
+        sceneAssetCode: scene.sceneAssetCode ?? '',
         referenceImageUrl: scene.referenceImageUrl,
         referenceImageDescription: scene.referenceImageDescription,
       });

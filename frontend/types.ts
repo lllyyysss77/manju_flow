@@ -71,7 +71,7 @@ export interface SceneReference {
 export interface Scene {
   id: number;
   chapterId?: number;
-  sceneAssetId?: number | null;
+  sceneAssetCode?: string | null;
   index: number;
   description: string;
   cameraMovement: string;

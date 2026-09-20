@@ -2,22 +2,19 @@ package models
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // SceneAsset 场景资产模型
 type SceneAsset struct {
-	ID                 uint           `gorm:"primaryKey" json:"id"`
-	BookID             uint           `gorm:"not null;index" json:"bookId"`
-	Name               string         `gorm:"size:100;not null" json:"name"`
-	Code               string         `gorm:"size:20;not null" json:"code"`
-	Description        string         `gorm:"type:text" json:"description"`
-	ReferenceImageUrls []string       `gorm:"serializer:json;type:text" json:"referenceImageUrls"`
-	Index              float64        `gorm:"not null;default:0" json:"index"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
-	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                 uint      `gorm:"primaryKey" json:"id"`
+	BookID             uint      `gorm:"not null;uniqueIndex:uq_scene_assets_book_code,priority:1" json:"bookId"`
+	Name               string    `gorm:"size:100;not null" json:"name"`
+	Code               string    `gorm:"size:20;not null;uniqueIndex:uq_scene_assets_book_code,priority:2" json:"code"`
+	Description        string    `gorm:"type:text" json:"description"`
+	ReferenceImageUrls []string  `gorm:"serializer:json;type:text" json:"referenceImageUrls"`
+	Index              float64   `gorm:"not null;default:0" json:"index"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 // TableName 指定表名
