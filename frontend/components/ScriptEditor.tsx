@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Episode, Scene, SceneReference } from '../types';
+import { Episode, Scene, SceneAsset, SceneReference } from '../types';
 import {
   Plus,
   MessageSquare,
@@ -23,7 +23,7 @@ import {
   Unlock,
   Loader2
 } from 'lucide-react';
-import { Chapter, ChapterImportTask, ChapterImportTaskStatus, chapterApi, sceneApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
+import { Chapter, ChapterImportTask, ChapterImportTaskStatus, chapterApi, sceneApi, sceneAssetApi, fileApi, commentApi, sceneReferenceApi, getFileUrl, downloadFile } from '../api';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
 import { CommentInput } from './CommentInput';
@@ -1188,6 +1188,7 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   // 场景参考资料
   const [sceneReferences, setSceneReferences] = useState<SceneReference[]>([]);
   const [loadingReferences, setLoadingReferences] = useState(false);
+  const [sceneAssets, setSceneAssets] = useState<SceneAsset[]>([]);
   // 本地备份恢复提示
   const [localBackup, setLocalBackup] = useState<{ sceneId: number; data: any } | null>(null);
   const isReadOnly = !isEditMode;
@@ -1195,6 +1196,21 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
   useEffect(() => {
     chaptersRef.current = chapters;
   }, [chapters]);
+
+  useEffect(() => {
+    let cancelled = false;
+    sceneAssetApi.list(bookId)
+      .then(res => {
+        if (!cancelled) setSceneAssets(res.data || []);
+      })
+      .catch(err => {
+        console.error('Failed to load scene assets', err);
+        if (!cancelled) setSceneAssets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
 
   // ============ Hooks ============
   const {
@@ -2186,6 +2202,26 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
             <>
               <div className="flex-1 overflow-y-auto p-12">
                 <div className="max-w-4xl mx-auto space-y-12">
+                  <div className="space-y-4">
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景绑定 (Scene Asset)</label>
+                    <select
+                      className={`w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all ${isReadOnly ? 'cursor-default opacity-80' : 'focus:border-blue-500/50'}`}
+                      value={activeScene.sceneAssetId ?? ''}
+                      onChange={(e) => updateActiveScene(scene => ({
+                        ...scene,
+                        sceneAssetId: e.target.value ? Number(e.target.value) : 0,
+                      }))}
+                      disabled={isReadOnly}
+                    >
+                      <option value="">未绑定场景</option>
+                      {sceneAssets.map(sceneAsset => (
+                        <option key={sceneAsset.id} value={sceneAsset.id}>
+                          {sceneAsset.code} {sceneAsset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="space-y-4">
                     <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">画面描述 (Action & Visuals)</label>
                     <textarea

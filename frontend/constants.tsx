@@ -11,7 +11,7 @@ import {
 import { ProductionStage, Status, LoraModelType } from './types';
 
 export const STAGE_CONFIG = [
-  { stage: ProductionStage.OUTLINE, label: '大纲人设', icon: <BookOpen size={20} /> },
+  { stage: ProductionStage.OUTLINE, label: '大纲人设场景', icon: <BookOpen size={20} /> },
   { stage: ProductionStage.SCRIPT, label: '剧本创作', icon: <FileText size={20} /> },
   { stage: ProductionStage.ART, label: '分镜绘制', icon: <Palette size={20} /> },
   { stage: ProductionStage.ANIMATE, label: '动画制作', icon: <Film size={20} /> },

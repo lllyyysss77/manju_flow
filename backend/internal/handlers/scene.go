@@ -106,6 +106,18 @@ func (h *SceneHandler) Create(c *gin.Context) {
 		status = models.SceneStatusDraft
 	}
 
+	var sceneAssetID *uint
+	if req.SceneAssetID != nil && *req.SceneAssetID != 0 {
+		var sceneAsset models.SceneAsset
+		if err := db.Where("book_id = ?", chapter.BookID).First(&sceneAsset, *req.SceneAssetID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Scene asset not found in this book",
+			})
+			return
+		}
+		sceneAssetID = req.SceneAssetID
+	}
+
 	// 检查 index 是否与同章节已有场景冲突，若冲突则微调
 	requestedIndex := *req.Index
 	var conflictCount int64
@@ -123,6 +135,7 @@ func (h *SceneHandler) Create(c *gin.Context) {
 
 	scene := models.Scene{
 		ChapterID:        uint(chapterIdUint),
+		SceneAssetID:     sceneAssetID,
 		Index:            requestedIndex,
 		Status:           status,
 		Description:      req.Description,
@@ -230,6 +243,20 @@ func (h *SceneHandler) Update(c *gin.Context) {
 	// 部分更新
 	if req.Index != nil {
 		scene.Index = *req.Index
+	}
+	if req.SceneAssetID != nil {
+		if *req.SceneAssetID == 0 {
+			scene.SceneAssetID = nil
+		} else {
+			var sceneAsset models.SceneAsset
+			if err := db.Where("book_id = ?", chapter.BookID).First(&sceneAsset, *req.SceneAssetID).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Scene asset not found in this book",
+				})
+				return
+			}
+			scene.SceneAssetID = req.SceneAssetID
+		}
 	}
 	if req.Status != nil {
 		scene.Status = *req.Status

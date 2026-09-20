@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Character } from '../types';
+import { Character, SceneAsset } from '../types';
 import {
   Plus,
   Save,
@@ -10,6 +10,7 @@ import {
   BookOpen,
   Image as ImageIcon,
   GripVertical,
+  MapPin,
   Download,
   Mic,
   Play,
@@ -21,7 +22,7 @@ import {
   Loader2,
   Sparkles
 } from 'lucide-react';
-import { bookApi, characterApi, fileApi, getFileUrl, downloadFile, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
+import { bookApi, characterApi, sceneAssetApi, fileApi, getFileUrl, downloadFile, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
 import { useAudioTrimmer } from './AudioTrimmerModal';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
@@ -643,12 +644,15 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   onOutlineChange,
   onCharactersChange,
 }) => {
+  const [activeAssetCategory, setActiveAssetCategory] = useState<'characters' | 'scenes'>('characters');
   const [outline, setOutline] = useState(initialOutline);
   const [originalTextPreview, setOriginalTextPreview] = useState('');
   const [originalTextKey, setOriginalTextKey] = useState('');
   const [isOriginalPreviewOpen, setIsOriginalPreviewOpen] = useState(false);
   const [characters, setCharacters] = useState<Character[]>(initialCharacters);
   const [activeCharacterId, setActiveCharacterId] = useState<number | null>(null);
+  const [sceneAssets, setSceneAssets] = useState<SceneAsset[]>([]);
+  const [activeSceneAssetId, setActiveSceneAssetId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -657,13 +661,21 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [isOutlineDirty, setIsOutlineDirty] = useState(false);
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [isCharacterDirty, setIsCharacterDirty] = useState(false);
+  const [isSavingSceneAsset, setIsSavingSceneAsset] = useState(false);
+  const [isSceneAssetDirty, setIsSceneAssetDirty] = useState(false);
   const [isUploadingReference, setIsUploadingReference] = useState(false);
+  const [isUploadingSceneReference, setIsUploadingSceneReference] = useState(false);
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
   const [isGeneratingCoreFeatures, setIsGeneratingCoreFeatures] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ characterId: number; name: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: 'character' | 'sceneAsset';
+    id: number;
+    name: string;
+  } | null>(null);
   const [referenceRemoveTarget, setReferenceRemoveTarget] = useState<CharacterImageSlot | null>(null);
+  const [sceneReferenceRemoveTarget, setSceneReferenceRemoveTarget] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // 面板宽度
@@ -675,8 +687,10 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const savedOutlineRef = useRef(initialOutline);
   const savedCharactersRef = useRef<Record<number, string>>({});
+  const savedSceneAssetsRef = useRef<Record<number, string>>({});
 
   const activeCharacter = characters.find(c => c.id === activeCharacterId) || null;
+  const activeSceneAsset = sceneAssets.find(sceneAsset => sceneAsset.id === activeSceneAssetId) || null;
 
   const getCharacterImageValue = (char: Character, field: CharacterImageField) => char[field];
 
@@ -697,14 +711,24 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       index: char.index,
     });
 
+  const getSceneAssetSignature = (sceneAsset: SceneAsset) =>
+    JSON.stringify({
+      name: sceneAsset.name,
+      code: sceneAsset.code,
+      description: sceneAsset.description,
+      referenceImageUrls: sceneAsset.referenceImageUrls || [],
+      index: sceneAsset.index,
+    });
+
   // 加载数据
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [bookRes, charRes] = await Promise.all([
+      const [bookRes, charRes, sceneAssetRes] = await Promise.all([
         bookApi.getById(bookId),
         characterApi.list(bookId),
+        sceneAssetApi.list(bookId),
       ]);
 
       setOutline(bookRes.outline || '');
@@ -713,9 +737,14 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       setOriginalTextKey(bookRes.originalTextKey || '');
 
       const sortedChars = (charRes.data || []).sort((a, b) => a.index - b.index);
+      const sortedSceneAssets = (sceneAssetRes.data || []).sort((a, b) => a.index - b.index);
       setCharacters(sortedChars);
+      setSceneAssets(sortedSceneAssets);
       sortedChars.forEach(c => {
         savedCharactersRef.current[c.id] = getCharacterSignature(c);
+      });
+      sortedSceneAssets.forEach(sceneAsset => {
+        savedSceneAssetsRef.current[sceneAsset.id] = getSceneAssetSignature(sceneAsset);
       });
 
       // 默认选中第一个角色
@@ -725,6 +754,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
       setIsOutlineDirty(false);
       setIsCharacterDirty(false);
+      setIsSceneAssetDirty(false);
       onOutlineChange?.(bookRes.outline || '');
       onCharactersChange?.(sortedChars);
     } catch (err) {
@@ -811,6 +841,43 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     return () => clearTimeout(timer);
   }, [isCharacterDirty, activeCharacter]);
 
+  // 保存场景
+  const saveSceneAsset = async (sceneAsset: SceneAsset) => {
+    const currentSig = getSceneAssetSignature(sceneAsset);
+    if (savedSceneAssetsRef.current[sceneAsset.id] === currentSig) {
+      setIsSceneAssetDirty(false);
+      return;
+    }
+    setIsSavingSceneAsset(true);
+    try {
+      const updated = await sceneAssetApi.update(bookId, sceneAsset.id, {
+        name: sceneAsset.name,
+        code: sceneAsset.code,
+        description: sceneAsset.description,
+        referenceImageUrls: sceneAsset.referenceImageUrls || [],
+        index: sceneAsset.index,
+      });
+      setSceneAssets(prev => prev.map(item => (item.id === updated.id ? updated : item)));
+      savedSceneAssetsRef.current[updated.id] = getSceneAssetSignature(updated);
+      setIsSceneAssetDirty(false);
+      setToast({ message: '场景已保存', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to save scene asset', err);
+      setToast({ message: '保存场景失败', tone: 'error' });
+    } finally {
+      setIsSavingSceneAsset(false);
+    }
+  };
+
+  // 自动保存场景
+  useEffect(() => {
+    if (!isSceneAssetDirty || !activeSceneAsset) return;
+    const timer = setTimeout(() => {
+      saveSceneAsset(activeSceneAsset);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [isSceneAssetDirty, activeSceneAsset]);
+
   // 添加角色
   const handleAddCharacter = async () => {
     const maxIndex = characters.length > 0 ? Math.max(...characters.map(c => c.index)) : 0;
@@ -832,23 +899,62 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     }
   };
 
+  // 添加场景
+  const handleAddSceneAsset = async () => {
+    if (activeSceneAsset && isSceneAssetDirty) {
+      await saveSceneAsset(activeSceneAsset);
+    }
+    const maxIndex = sceneAssets.length > 0 ? Math.max(...sceneAssets.map(sceneAsset => sceneAsset.index)) : 0;
+    const maxCode = sceneAssets.reduce((max, sceneAsset) => {
+      const codeNumber = /^S(\d+)$/.exec(sceneAsset.code)?.[1];
+      return codeNumber ? Math.max(max, Number(codeNumber)) : max;
+    }, 0);
+    try {
+      const newSceneAsset = await sceneAssetApi.create(bookId, {
+        name: '新场景',
+        code: `S${Math.max(maxIndex + 1, maxCode + 1)}`,
+        description: '',
+        referenceImageUrls: [],
+        index: maxIndex + 1,
+      });
+      const updated = [...sceneAssets, newSceneAsset].sort((a, b) => a.index - b.index);
+      setSceneAssets(updated);
+      savedSceneAssetsRef.current[newSceneAsset.id] = getSceneAssetSignature(newSceneAsset);
+      setActiveSceneAssetId(newSceneAsset.id);
+    } catch (err) {
+      console.error('Failed to create scene asset', err);
+      setToast({ message: '创建场景失败', tone: 'error' });
+    }
+  };
+
   // 删除角色
   const executeDelete = async () => {
     if (!confirmDelete) return;
     setIsDeleting(true);
     try {
-      await characterApi.delete(bookId, confirmDelete.characterId);
-      const updated = characters.filter(c => c.id !== confirmDelete.characterId);
-      delete savedCharactersRef.current[confirmDelete.characterId];
-      setCharacters(updated);
-      if (activeCharacterId === confirmDelete.characterId) {
-        setActiveCharacterId(null);
+      if (confirmDelete.type === 'character') {
+        await characterApi.delete(bookId, confirmDelete.id);
+        const updated = characters.filter(character => character.id !== confirmDelete.id);
+        delete savedCharactersRef.current[confirmDelete.id];
+        setCharacters(updated);
+        if (activeCharacterId === confirmDelete.id) {
+          setActiveCharacterId(null);
+        }
+        onCharactersChange?.(updated);
+        setToast({ message: '角色已删除', tone: 'success' });
+      } else {
+        await sceneAssetApi.delete(bookId, confirmDelete.id);
+        const updated = sceneAssets.filter(sceneAsset => sceneAsset.id !== confirmDelete.id);
+        delete savedSceneAssetsRef.current[confirmDelete.id];
+        setSceneAssets(updated);
+        if (activeSceneAssetId === confirmDelete.id) {
+          setActiveSceneAssetId(null);
+        }
+        setToast({ message: '场景已删除', tone: 'success' });
       }
-      onCharactersChange?.(updated);
-      setToast({ message: '角色已删除', tone: 'success' });
     } catch (err) {
-      console.error('Failed to delete character', err);
-      setToast({ message: '删除角色失败', tone: 'error' });
+      console.error('Failed to delete asset', err);
+      setToast({ message: confirmDelete.type === 'character' ? '删除角色失败' : '删除场景失败', tone: 'error' });
     } finally {
       setIsDeleting(false);
       setConfirmDelete(null);
@@ -879,6 +985,42 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       onCharactersChange?.(newList);
       return newList;
     });
+  };
+
+  // 更新场景
+  const updateActiveSceneAsset = (updater: (sceneAsset: SceneAsset) => SceneAsset) => {
+    if (!activeSceneAsset) return;
+    const updated = updater(activeSceneAsset);
+    const newList = sceneAssets.map(sceneAsset => (sceneAsset.id === updated.id ? updated : sceneAsset));
+    setSceneAssets(newList);
+    const sig = getSceneAssetSignature(updated);
+    setIsSceneAssetDirty(savedSceneAssetsRef.current[updated.id] !== sig);
+  };
+
+  const handleUploadSceneReference = async (index: number, file: File) => {
+    if (!activeSceneAsset) return;
+    setIsUploadingSceneReference(true);
+    try {
+      const res = await fileApi.upload(file, 'private');
+      updateActiveSceneAsset(sceneAsset => {
+        const referenceImageUrls = [...(sceneAsset.referenceImageUrls || [])];
+        referenceImageUrls[index] = res.key;
+        return { ...sceneAsset, referenceImageUrls };
+      });
+      setToast({ message: '场景参考图已上传', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to upload scene reference', err);
+      throw err;
+    } finally {
+      setIsUploadingSceneReference(false);
+    }
+  };
+
+  const handleRemoveSceneReference = (index: number) => {
+    updateActiveSceneAsset(sceneAsset => ({
+      ...sceneAsset,
+      referenceImageUrls: (sceneAsset.referenceImageUrls || []).filter((_, itemIndex) => itemIndex !== index),
+    }));
   };
 
   // 上传参考图
@@ -959,6 +1101,16 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     setIsCharacterDirty(savedCharactersRef.current[char.id] !== sig);
   };
 
+  // 选择场景
+  const handleSelectSceneAsset = async (sceneAsset: SceneAsset) => {
+    if (activeSceneAsset && isSceneAssetDirty) {
+      await saveSceneAsset(activeSceneAsset);
+    }
+    setActiveSceneAssetId(sceneAsset.id);
+    const sig = getSceneAssetSignature(sceneAsset);
+    setIsSceneAssetDirty(savedSceneAssetsRef.current[sceneAsset.id] !== sig);
+  };
+
   // 拖拽面板
   useEffect(() => {
     if (!isResizingLeft) return;
@@ -993,7 +1145,9 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 <Trash2 size={16} />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-bold">删除角色</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-bold">
+                  {confirmDelete.type === 'character' ? '删除角色' : '删除场景'}
+                </p>
                 <h3 className="text-lg font-bold text-white mt-0.5">{confirmDelete.name}</h3>
               </div>
             </div>
@@ -1031,6 +1185,20 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         onCancel={() => setReferenceRemoveTarget(null)}
       />
 
+      <DeleteConfirmDialog
+        isOpen={sceneReferenceRemoveTarget !== null}
+        title="移除场景参考图"
+        message="确认移除「{name}」吗？"
+        itemName={sceneReferenceRemoveTarget !== null ? `场景参考图 ${sceneReferenceRemoveTarget + 1}` : undefined}
+        onConfirm={() => {
+          if (sceneReferenceRemoveTarget !== null) {
+            handleRemoveSceneReference(sceneReferenceRemoveTarget);
+            setSceneReferenceRemoveTarget(null);
+          }
+        }}
+        onCancel={() => setSceneReferenceRemoveTarget(null)}
+      />
+
       {/* Toast */}
       {toast && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
@@ -1064,15 +1232,55 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         </div>
       )}
 
-      {/* 左侧：角色列表 */}
+      {/* 左侧：角色与场景列表 */}
       <div style={{ width: leftPanelWidth }} className="border-r border-white/5 flex flex-col bg-[#161616]">
+        <div className="grid grid-cols-2 gap-2 p-3 border-b border-white/5">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveAssetCategory('characters');
+              if (!activeCharacterId && characters.length > 0) {
+                setActiveCharacterId(characters[0].id);
+              }
+            }}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold transition-colors ${
+              activeAssetCategory === 'characters'
+                ? 'bg-blue-600 text-white'
+                : 'bg-black/30 text-white/50 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <Users size={13} /> 角色人设
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveAssetCategory('scenes');
+              if (!activeSceneAssetId && sceneAssets.length > 0) {
+                setActiveSceneAssetId(sceneAssets[0].id);
+              }
+            }}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold transition-colors ${
+              activeAssetCategory === 'scenes'
+                ? 'bg-blue-600 text-white'
+                : 'bg-black/30 text-white/50 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <MapPin size={13} /> 场景
+          </button>
+        </div>
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Users size={14} className="text-white/40" />
-            <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">角色人设</span>
+            {activeAssetCategory === 'characters' ? (
+              <Users size={14} className="text-white/40" />
+            ) : (
+              <MapPin size={14} className="text-white/40" />
+            )}
+            <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">
+              {activeAssetCategory === 'characters' ? '角色人设' : '场景'}
+            </span>
           </div>
           <button
-            onClick={handleAddCharacter}
+            onClick={activeAssetCategory === 'characters' ? handleAddCharacter : handleAddSceneAsset}
             className="p-1.5 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors"
             title="添加角色"
           >
@@ -1081,7 +1289,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 py-4">
-          {characters.length === 0 && !isLoading && (
+          {activeAssetCategory === 'characters' && characters.length === 0 && !isLoading && (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-white/30">
               <Users size={32} />
               <p className="text-xs font-semibold">暂无角色</p>
@@ -1094,7 +1302,20 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             </div>
           )}
 
-          {characters.map((char, idx) => (
+          {activeAssetCategory === 'scenes' && sceneAssets.length === 0 && !isLoading && (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-white/30">
+              <MapPin size={32} />
+              <p className="text-xs font-semibold">暂无场景</p>
+              <button
+                onClick={handleAddSceneAsset}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+              >
+                <Plus size={14} /> 添加场景
+              </button>
+            </div>
+          )}
+
+          {activeAssetCategory === 'characters' && characters.map((char, idx) => (
             <div
               key={char.id}
               role="button"
@@ -1122,7 +1343,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConfirmDelete({ characterId: char.id, name: char.name });
+                    setConfirmDelete({ type: 'character', id: char.id, name: char.name });
                   }}
                   className="p-1 rounded-md text-red-300 hover:text-red-100 hover:bg-red-500/20 transition-colors"
                   title="删除角色"
@@ -1132,6 +1353,48 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
               </div>
               <p className={`text-sm font-semibold truncate ${activeCharacterId === char.id ? 'text-white' : 'text-white/60'}`}>
                 {char.name || '未命名角色'}
+              </p>
+            </div>
+          ))}
+
+          {activeAssetCategory === 'scenes' && sceneAssets.map((sceneAsset, idx) => (
+            <div
+              key={sceneAsset.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleSelectSceneAsset(sceneAsset)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleSelectSceneAsset(sceneAsset);
+                }
+              }}
+              className={`mb-2 p-3 rounded-xl transition-all cursor-pointer ${
+                activeSceneAssetId === sceneAsset.id
+                  ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/20'
+                  : 'bg-black/30 border border-white/5 hover:bg-white/5'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <GripVertical size={12} className={activeSceneAssetId === sceneAsset.id ? 'text-white/60' : 'text-white/20'} />
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${activeSceneAssetId === sceneAsset.id ? 'text-white' : 'text-white/20'}`}>
+                    {sceneAsset.code || `S${idx + 1}`}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete({ type: 'sceneAsset', id: sceneAsset.id, name: `${sceneAsset.code} ${sceneAsset.name}`.trim() });
+                  }}
+                  className="p-1 rounded-md text-red-300 hover:text-red-100 hover:bg-red-500/20 transition-colors"
+                  title="删除场景"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <p className={`text-sm font-semibold truncate ${activeSceneAssetId === sceneAsset.id ? 'text-white' : 'text-white/60'}`}>
+                {sceneAsset.name || '未命名场景'}
               </p>
             </div>
           ))}
@@ -1238,8 +1501,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
             {/* 分隔线 */}
             <div className="border-t border-white/5" />
 
-            {/* 角色编辑区 */}
-            {activeCharacter ? (
+            {/* 资产编辑区 */}
+            {activeAssetCategory === 'characters' && activeCharacter ? (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -1342,7 +1605,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   <p className="text-[10px] text-yellow-400/60">* 有未保存的更改（将在 3 秒后自动保存）</p>
                 )}
               </div>
-            ) : (
+            ) : activeAssetCategory === 'characters' ? (
               <div className="flex flex-col items-center justify-center py-16 text-white/30">
                 <Users size={48} className="mb-4" />
                 <p className="text-sm font-bold uppercase tracking-widest">请选择或创建一个角色</p>
@@ -1351,6 +1614,95 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
                 >
                   <Plus size={16} /> 添加角色
+                </button>
+              </div>
+            ) : activeSceneAsset ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <MapPin size={16} className="text-green-500" />
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">场景详情</label>
+                  </div>
+                  <button
+                    onClick={() => saveSceneAsset(activeSceneAsset)}
+                    disabled={isSavingSceneAsset || !isSceneAssetDirty}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-500 transition-all disabled:opacity-60"
+                  >
+                    <Save size={14} /> {isSavingSceneAsset ? '保存中...' : '保存场景'}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-[180px_1fr]">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景编号</label>
+                    <input
+                      type="text"
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white text-lg font-semibold focus:outline-none focus:border-blue-500/50 transition-all"
+                      value={activeSceneAsset.code}
+                      onChange={(e) => updateActiveSceneAsset(sceneAsset => ({ ...sceneAsset, code: e.target.value }))}
+                      placeholder="S1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景名字</label>
+                    <input
+                      type="text"
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white text-lg font-semibold focus:outline-none focus:border-blue-500/50 transition-all"
+                      value={activeSceneAsset.name}
+                      onChange={(e) => updateActiveSceneAsset(sceneAsset => ({ ...sceneAsset, name: e.target.value }))}
+                      placeholder="输入场景名字，如林欣然卧室..."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景描述</label>
+                  <textarea
+                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500/50 min-h-[150px] resize-none leading-relaxed transition-all"
+                    value={activeSceneAsset.description}
+                    onChange={(e) => updateActiveSceneAsset(sceneAsset => ({ ...sceneAsset, description: e.target.value }))}
+                    placeholder="描述场景的空间结构、时间氛围、光线、关键道具和视觉风格..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">场景参考图</label>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {(activeSceneAsset.referenceImageUrls || []).map((imageKey, index) => (
+                      <ReferenceImageSection
+                        key={`${imageKey}-${index}`}
+                        label={`场景参考图 ${index + 1}`}
+                        description="用于固定场景外观与视觉风格的参考图。"
+                        initialImage={getFileUrl(imageKey) || undefined}
+                        onUpload={(file) => handleUploadSceneReference(index, file)}
+                        onRemove={() => setSceneReferenceRemoveTarget(index)}
+                        isUploading={isUploadingSceneReference}
+                      />
+                    ))}
+                    <ReferenceImageSection
+                      key="new-scene-reference"
+                      label={`场景参考图 ${(activeSceneAsset.referenceImageUrls || []).length + 1}`}
+                      description="上传新的场景参考图，可添加多张。"
+                      onUpload={(file) => handleUploadSceneReference((activeSceneAsset.referenceImageUrls || []).length, file)}
+                      onRemove={() => setSceneReferenceRemoveTarget((activeSceneAsset.referenceImageUrls || []).length)}
+                      isUploading={isUploadingSceneReference}
+                    />
+                  </div>
+                </div>
+
+                {isSceneAssetDirty && (
+                  <p className="text-[10px] text-yellow-400/60">* 有未保存的更改（将在 3 秒后自动保存）</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-white/30">
+                <MapPin size={48} className="mb-4" />
+                <p className="text-sm font-bold uppercase tracking-widest">请选择或创建一个场景</p>
+                <button
+                  onClick={handleAddSceneAsset}
+                  className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-colors flex items-center gap-2"
+                >
+                  <Plus size={16} /> 添加场景
                 </button>
               </div>
             )}
