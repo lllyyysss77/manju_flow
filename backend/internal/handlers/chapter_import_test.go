@@ -80,3 +80,55 @@ func TestChapterImportTaskJSONHidesPersistedPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestImportChapterTaskDataSetsSceneBookID(t *testing.T) {
+	db := setupSceneAssetTestDB(t)
+	if err := db.AutoMigrate(&models.ChapterImportTask{}); err != nil {
+		t.Fatalf("migrate chapter import task schema: %v", err)
+	}
+	bookID, _ := createTestBookAndChapter(t, db, "Import Book")
+	task := models.ChapterImportTask{
+		BookID:           bookID,
+		Status:           models.ChapterImportTaskStatusImporting,
+		OriginalFilename: "chapter.txt",
+		ScriptContent:    "script",
+		Model:            "test-model",
+		ProcessingToken:  "processing-token",
+		CreatedBy:        1,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create import task: %v", err)
+	}
+
+	err := importChapterTaskData(db, &task, importedChapterDraft{
+		Title:    "Imported Chapter",
+		Synopsis: "Imported synopsis",
+		Scenes: []importedSceneDraft{
+			{Description: "First scene"},
+			{Description: "Second scene"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("importChapterTaskData() error = %v", err)
+	}
+
+	var scenes []models.Scene
+	var updatedTask models.ChapterImportTask
+	if err := db.First(&updatedTask, task.ID).Error; err != nil {
+		t.Fatalf("load updated import task: %v", err)
+	}
+	if updatedTask.OutputChapterID == nil {
+		t.Fatal("import task output chapter ID is nil")
+	}
+	if err := db.Where("chapter_id = ?", *updatedTask.OutputChapterID).Order("`index` ASC").Find(&scenes).Error; err != nil {
+		t.Fatalf("load imported scenes: %v", err)
+	}
+	if len(scenes) != 2 {
+		t.Fatalf("imported scene count = %d, want 2", len(scenes))
+	}
+	for _, scene := range scenes {
+		if scene.BookID != bookID {
+			t.Fatalf("imported scene %d book ID = %d, want %d", scene.ID, scene.BookID, bookID)
+		}
+	}
+}

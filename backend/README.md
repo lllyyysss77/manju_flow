@@ -30,6 +30,24 @@ make run
 docker-compose up -d
 ```
 
+### 场景资产显式迁移
+
+场景资产绑定会修改生产环境中的大型 `scenes` 表（新增列、索引和复合外键）。不要依赖服务启动时的 `AutoMigrate` 完成该变更。
+
+部署包含本功能的版本前：
+
+1. 备份生产数据库。
+2. 在维护窗口内进入 `backend/` 执行 `make migrate`。
+3. 确认迁移成功后再发布后端服务。
+
+迁移会：
+
+- 为 `scene_assets` 创建 `(book_id, code)` 唯一索引。
+- 将场景资产改为硬删除。
+- 为 `scenes` 回填 `book_id`，新增 `scene_asset_code` 和内部列 `scene_asset_book_id`。
+- 将旧的 `scene_asset_id` 绑定转换为 `scene_asset_code`。
+- 创建 `(scene_asset_book_id, scene_asset_code)` 复合外键；资产删除时自动清空绑定，编号更新时自动级联。`scene_asset_book_id` 仅用于外键，不会出现在 API 中，避免删除资产时影响 `scenes.book_id`。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |

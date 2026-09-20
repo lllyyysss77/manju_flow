@@ -302,6 +302,7 @@ import {
   SceneAnimationGenerationTask,
   SceneAnimationVersion,
   Character,
+  SceneAsset,
   Lora,
   LoraListResponse,
   LoraListParams,
@@ -370,6 +371,7 @@ export interface ScenePayload {
   description: string;
   cameraMovement: string;
   dialogue: string;
+  sceneAssetCode?: string | null;
   transitionEffect?: string; // 转场或剪辑手法
   referenceImageUrl?: string;
   referenceImageDescription?: string; // 参考图说明
@@ -1113,6 +1115,47 @@ export const characterApi = {
     }),
   delete: (bookId: number, characterId: number) =>
     request(`/api/books/${bookId}/characters/${characterId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// 场景资产 API
+export interface SceneAssetListResponse {
+  total: number;
+  data: SceneAsset[];
+}
+
+export interface CreateSceneAssetPayload {
+  name: string;
+  code: string;
+  description?: string;
+  referenceImageUrls?: string[];
+  index?: number;
+}
+
+export interface UpdateSceneAssetPayload {
+  name?: string;
+  code?: string;
+  description?: string;
+  referenceImageUrls?: string[];
+  index?: number;
+}
+
+export const sceneAssetApi = {
+  list: (bookId: number) =>
+    request<SceneAssetListResponse>(`/api/books/${bookId}/scene-assets`),
+  create: (bookId: number, payload: CreateSceneAssetPayload) =>
+    request<SceneAsset>(`/api/books/${bookId}/scene-assets`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  update: (bookId: number, sceneAssetId: number, payload: UpdateSceneAssetPayload) =>
+    request<SceneAsset>(`/api/books/${bookId}/scene-assets/${sceneAssetId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  delete: (bookId: number, sceneAssetId: number) =>
+    request(`/api/books/${bookId}/scene-assets/${sceneAssetId}`, {
       method: 'DELETE',
     }),
 };

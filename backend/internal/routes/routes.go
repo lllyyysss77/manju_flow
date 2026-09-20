@@ -85,6 +85,17 @@ func Setup(r *gin.Engine) {
 				characters.DELETE("/:characterId", characterHandler.Delete)                                    // 删除角色
 			}
 
+			// 场景资产路由
+			sceneAssetHandler := handlers.NewSceneAssetHandler()
+			sceneAssets := authorized.Group("/books/:bookId/scene-assets")
+			{
+				sceneAssets.GET("", sceneAssetHandler.List)                    // 获取场景资产列表
+				sceneAssets.POST("", sceneAssetHandler.Create)                 // 创建场景资产
+				sceneAssets.GET("/:sceneAssetId", sceneAssetHandler.GetByID)   // 获取场景资产详情
+				sceneAssets.PUT("/:sceneAssetId", sceneAssetHandler.Update)    // 更新场景资产
+				sceneAssets.DELETE("/:sceneAssetId", sceneAssetHandler.Delete) // 删除场景资产
+			}
+
 			// 章节路由
 			chapterHandler := handlers.NewChapterHandler()
 			chapters := authorized.Group("/books/:bookId/chapters")
@@ -129,7 +140,7 @@ func Setup(r *gin.Engine) {
 
 			// 动画路由（支持多套动画）
 			animationHandler := handlers.NewAnimationHandler()
-			authorized.POST("/scenes/:sceneId/animation-prompt/optimize", animationHandler.OptimizePrompt) // 一键优化动画提示词
+			authorized.POST("/scenes/:sceneId/animation-prompt/optimize", animationHandler.OptimizePrompt)   // 一键优化动画提示词
 			authorized.POST("/scenes/:sceneId/animation-prompt/draft", animationHandler.GeneratePromptDraft) // 一键生成动画提示词草稿
 			animations := authorized.Group("/scenes/:sceneId/animations")
 			{

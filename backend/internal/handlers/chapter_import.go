@@ -396,7 +396,7 @@ func importChapterTaskData(db *gorm.DB, task *models.ChapterImportTask, draft im
 	scenes := make([]models.Scene, 0, len(draft.Scenes))
 	for i, sceneDraft := range draft.Scenes {
 		scenes = append(scenes, models.Scene{
-			ChapterID: chapter.ID, Index: float64(i + 1), Status: models.SceneStatusDraft,
+			ChapterID: chapter.ID, BookID: book.ID, Index: float64(i + 1), Status: models.SceneStatusDraft,
 			Description: sceneDraft.Description, CameraMovement: sceneDraft.CameraMovement,
 			Dialogue: sceneDraft.Dialogue, TransitionEffect: sceneDraft.TransitionEffect,
 		})

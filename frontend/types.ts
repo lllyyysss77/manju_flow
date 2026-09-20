@@ -71,6 +71,7 @@ export interface SceneReference {
 export interface Scene {
   id: number;
   chapterId?: number;
+  sceneAssetCode?: string | null;
   index: number;
   description: string;
   cameraMovement: string;
@@ -258,6 +259,18 @@ export interface Character {
   fullBodySideImageUrl?: string;
   fullBodyBackImageUrl?: string;
   voiceAudioUrl?: string;
+  index: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SceneAsset {
+  id: number;
+  bookId: number;
+  name: string;
+  code: string;
+  description: string;
+  referenceImageUrls: string[];
   index: number;
   createdAt?: string;
   updatedAt?: string;

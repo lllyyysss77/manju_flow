@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Character, Episode, Scene, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
-import { fileApi, animationApi, storyboardApi, commentApi, characterApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
+import { Character, Episode, Scene, SceneAsset, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
+import { fileApi, animationApi, storyboardApi, commentApi, characterApi, sceneAssetApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
 import { useAudioTrimmer } from './AudioTrimmerModal';
 import {
   MessageSquare,
@@ -66,8 +66,8 @@ interface UploadedReferenceMedia {
   type: ReferenceMediaType;
 }
 
-type MentionAssetKind = 'character-image' | 'character-audio' | 'storyboard-image';
-type MentionCategory = 'character-image' | 'character-audio' | 'storyboard-image';
+type MentionAssetKind = 'character-image' | 'character-audio' | 'storyboard-image' | 'scene-image';
+type MentionCategory = 'character-image' | 'character-audio' | 'storyboard-image' | 'scene-image';
 
 interface PromptAssetMention {
   id: string;
@@ -112,6 +112,7 @@ const PROMPT_ASSET_CATEGORY_LABELS: Record<MentionCategory, string> = {
   'character-image': '人物图片',
   'character-audio': '人物音频',
   'storyboard-image': '分镜图',
+  'scene-image': '场景资产图',
 };
 
 const escapeHtml = (value: string) =>
@@ -344,6 +345,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const { trimIfNeeded, modal: audioTrimmerModal } = useAudioTrimmer(MAX_UPLOAD_AUDIO_DURATION, MIN_UPLOAD_AUDIO_DURATION);
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [sceneAssets, setSceneAssets] = useState<SceneAsset[]>([]);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -518,6 +520,28 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       }
     };
     loadCharacters();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!bookId) {
+      setSceneAssets([]);
+      return;
+    }
+    let cancelled = false;
+    sceneAssetApi.list(bookId)
+      .then(res => {
+        if (!cancelled) setSceneAssets(res.data || []);
+      })
+      .catch(err => {
+        if (!cancelled) {
+          console.error('Failed to load scene assets', err);
+          setSceneAssets([]);
+          showToast('场景资产加载失败', 'error');
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -722,7 +746,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     const order: Record<string, string> = {};
     promptMentionList.forEach(mention => {
       const refIndex = referenceMedia[mention.mediaType].findIndex(item => item.key === mention.key);
-      order[mention.id] = `${mention.mediaType === 'image' ? '图片' : '音频'} ${refIndex >= 0 ? refIndex + 1 : 1}`;
+      order[mention.id] = `${mention.mediaType === 'image' ? '图片' : '音频'}${refIndex >= 0 ? refIndex + 1 : 1}`;
     });
     return order;
   }, [promptMentionList, referenceMedia]);
@@ -730,6 +754,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 5),
     [activeSceneIndex, sortedScenes]
   );
+  const activeSceneAsset = sceneAssets.find(sceneAsset => sceneAsset.code === activeScene?.sceneAssetCode) || null;
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   const canGenerateVideo =
     Boolean(selectedAnimationId) &&
@@ -835,6 +860,18 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       coreFeatures,
       characterName,
     };
+  };
+
+  const buildSceneAssetMention = (sceneAsset: SceneAsset, imageIndex: number) => {
+    const key = sceneAsset.referenceImageUrls?.[imageIndex];
+    return key ? buildMentionMedia(
+      'image',
+      `scene-asset-${sceneAsset.id}-${imageIndex}`,
+      key,
+      `${sceneAsset.code} ${sceneAsset.name} · 参考图 ${imageIndex + 1}`,
+      `@场景资产/${sceneAsset.code}/${sceneAsset.name}/参考图${imageIndex + 1}`,
+      'scene-image'
+    ) : null;
   };
 
   const addPromptMention = (mention: PromptAssetMention) => {
@@ -1011,7 +1048,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     chip.className = 'inline-flex items-center rounded-full border border-blue-400/30 bg-blue-500/15 px-2 py-0.5 text-[12px] font-semibold text-blue-100 align-baseline';
     const existingIndex = referenceMedia[mention.mediaType].findIndex(item => item.key === mention.key);
     const displayIndex = existingIndex >= 0 ? existingIndex + 1 : referenceMedia[mention.mediaType].length + 1;
-    chip.textContent = `${mention.mediaType === 'image' ? '图片' : '音频'} ${displayIndex}`;
+    chip.textContent = `${mention.mediaType === 'image' ? '图片' : '音频'}${displayIndex}`;
     const characterName = mention.characterName?.trim();
     const coreFeatures = mention.coreFeatures?.trim();
     const shouldCompleteCharacterDefinition = mention.kind === 'character-image' && Boolean(characterName && coreFeatures);
@@ -1019,6 +1056,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       activeRange.insertNode(document.createTextNode(` 中${coreFeatures}定义为${characterName} `));
       activeRange.insertNode(chip);
       activeRange.insertNode(document.createTextNode('将 '));
+    } else if (mention.kind === 'scene-image') {
+      activeRange.insertNode(document.createTextNode('为场景发生地点。'));
+      activeRange.insertNode(chip);
     } else {
       activeRange.insertNode(document.createTextNode(' '));
       activeRange.insertNode(chip);
@@ -1114,6 +1154,18 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         disabled: false,
         select: () => setPromptPicker(prev => ({ ...prev, category, parentId: undefined, childId: undefined, activeIndex: 0 })),
       }));
+    }
+
+    if (promptPicker.category === 'scene-image') {
+      const referenceImageUrls = activeSceneAsset?.referenceImageUrls || [];
+      return referenceImageUrls.map((_key, imageIndex) => {
+        const mention = activeSceneAsset ? buildSceneAssetMention(activeSceneAsset, imageIndex) : null;
+        return {
+          key: String(imageIndex),
+          disabled: !mention,
+          select: () => mention && addPromptMention(mention),
+        };
+      });
     }
 
     if (promptPicker.category === 'character-audio') {
@@ -1677,7 +1729,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           ))}
         </div>
 
-        {promptPicker.category && (
+        {promptPicker.category && promptPicker.category !== 'scene-image' && (
           <div className="w-52 shrink-0 max-h-[360px] overflow-y-auto border-r border-white/10 p-2">
             <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
               {promptPicker.category === 'storyboard-image' ? '选择分镜' : '选择人物'}
@@ -1740,6 +1792,50 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
               }) : (
                 <div className="px-3 py-6 text-center text-xs text-white/30">大纲人设里还没有角色资产</div>
               )
+            )}
+          </div>
+        )}
+
+        {promptPicker.category === 'scene-image' && (
+          <div className="w-72 max-h-[360px] overflow-y-auto p-2">
+            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择场景资产图</div>
+            {activeSceneAsset ? (
+              (activeSceneAsset.referenceImageUrls || []).length > 0 ? (activeSceneAsset.referenceImageUrls || []).map((_key, imageIndex) => {
+                const mention = buildSceneAssetMention(activeSceneAsset, imageIndex);
+                return (
+                  <button
+                    key={imageIndex}
+                    type="button"
+                    disabled={!mention}
+                    onMouseEnter={() => {
+                      const idx = activeOptions.findIndex(option => option.key === String(imageIndex));
+                      setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                    }}
+                    onClick={() => mention && addPromptMention(mention)}
+                    className={`mb-2 flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
+                      isActive(String(imageIndex))
+                        ? 'border-blue-400/50 bg-blue-500/10'
+                        : 'border-white/10 bg-white/[0.03] hover:bg-white/5'
+                    } disabled:opacity-30`}
+                  >
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black">
+                      {mention?.url ? <img src={mention.url} className="h-full w-full object-cover" /> : null}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-white">
+                        {activeSceneAsset.code} {activeSceneAsset.name}
+                      </div>
+                      <div className="text-[10px] text-white/35">
+                        {mention ? `参考图 ${imageIndex + 1} · 添加到图片参考` : '未上传'}
+                      </div>
+                    </div>
+                  </button>
+                );
+              }) : (
+                <div className="px-3 py-6 text-center text-xs text-white/30">绑定的场景资产暂无参考图</div>
+              )
+            ) : (
+              <div className="px-3 py-6 text-center text-xs text-white/30">当前分镜未绑定场景资产</div>
             )}
           </div>
         )}
@@ -2598,7 +2694,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         <div className="relative">
                           {!generationPrompt.trim() && (
                             <div className="pointer-events-none absolute left-4 top-4 z-[1] text-sm leading-relaxed text-white/20">
-                              描述镜头构图、时序动作、氛围、运镜方式；输入 @ 快捷添加人设图、音色或分镜首尾帧...
+                              描述镜头构图、时序动作、氛围、运镜方式；输入 @ 快捷添加场景资产图、人设图、音色或分镜首尾帧...
                             </div>
                           )}
                           <div
@@ -2635,7 +2731,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           {renderPromptAssetPicker()}
                         </div>
                         <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
-                          <span>输入 @ 可从人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片 1 / 音频 1”。</span>
+                          <span>输入 @ 可从当前分镜绑定的场景资产图、人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片1 / 音频1”。</span>
                           <span>{generationPrompt.trim().length} chars</span>
                         </div>
                       </div>

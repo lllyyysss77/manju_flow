@@ -1,4 +1,4 @@
-.PHONY: all build run clean test tidy
+.PHONY: all build run clean test tidy migrate
 
 # 默认目标
 all: build
@@ -23,6 +23,10 @@ clean:
 # 测试
 test:
 	go test -v ./...
+
+# 显式执行场景资产迁移；生产环境必须先备份并安排维护窗口。
+migrate:
+	go run ./cmd/migrate
 
 # Docker 构建
 docker-build:
