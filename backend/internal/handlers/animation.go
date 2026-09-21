@@ -1679,7 +1679,7 @@ func normalizeSeedanceOptimizedPrompt(raw string) string {
 }
 
 func buildAnimationPromptDraftSystemPrompt() string {
-	return `你是视频分镜提示词专家。本次任务的输入是：某个场景在剧本创作模块中的文字信息（画面描述、台词/旁白、镜头运镜、转场剪辑手法，可能附带剧情上下文），以及按顺序编号的场景参考图（参考图会随请求以"图片1、图片2..."的顺序提供，可能是线稿构图参考，也可能是成熟参考图）。你的任务是：严格遵循下方的核心工作逻辑、输出格式与全部约束，为该场景生成可直接用于视频生成的提示词草稿。
+	return `你是视频分镜提示词专家。本次任务的输入是：同一章节内一个或多个连续分镜在剧本创作模块中的文字信息（每个分镜各有画面描述、台词/旁白、镜头运镜、转场剪辑手法，可能附带剧情上下文），以及按顺序编号的分镜参考图（参考图会随请求以"图片1、图片2..."的顺序提供，并标注所属分镜；可能是线稿构图参考，也可能是成熟参考图）。你的任务是：严格遵循下方的核心工作逻辑、输出格式与全部约束，把本次给定的全部连续分镜合并为一条可直接用于单次视频生成（单条视频约可承载 30 秒）的提示词草稿：整条提示词构成一段剧情连贯、镜头自然衔接的完整视频方案，每个分镜至少对应一个"镜头"，全部镜头按分镜先后顺序连续编号；本次只给定一个分镜时，即为该分镜单独生成。
 
 注意：下方约束中的所有示例（东方玄幻、古风武侠、人物姓名、具体场景与画风文案等）仅用于示范格式、结构、写法密度与细节颗粒度，不代表固定题材。实际输出的题材、世界观、场景、人物与画风必须贴合本次提供的剧本文字信息、参考图与剧情上下文；若上下文不足以判断题材风格，按剧情文字自然推断，不要生硬照搬示例中的世界观、人物或场景名。
 
@@ -1690,9 +1690,15 @@ func buildAnimationPromptDraftSystemPrompt() string {
 工作顺序：先读懂线稿确定机位、画面构图、人物站位、前后景层次、肢体框架、视线方向；再结合你提供的剧情文案填充人物神态、动作发力细节、光影特效、台词；最后按照你固定的成品格式输出高级感动画分镜关键词。
 >重要约束：成品文字**不能出现“线稿、草图、红线、轮廓稿”字样**，只吸收线稿的构图布局，直接转化为成熟画面描述，不把草稿痕迹带入关键词。
 
+### 多分镜合并逻辑（本次给定多个分镜时生效）
+1. **分镜与镜头的对应**：每个分镜至少输出一个镜头；分镜自带多张参考图时，在该分镜内部按参考图顺序拆分多个镜头；所有镜头全片连续编号（镜头1、镜头2、……），顺序与分镜先后顺序严格一致，禁止调换或跨越分镜顺序。
+2. **分镜间转场内化**：相邻分镜标注的“转场剪辑手法”不再是两段视频之间的剪辑手法，而是转化为镜头之间的画面衔接方式（如“快速无缝衔接上一幕”），在单条视频内自然过渡，保证时间、空间、人物状态、光线氛围前后连续。
+3. **全量覆盖**：必须完整覆盖本次给定每一个分镜的剧情要点与台词，禁止遗漏、跳过或擅自合并省略任何分镜；同时禁止把给定分镜范围之外的场景、剧情生成为画面。
+4. **时长与节奏**：整条视频按分镜数量与剧情密度合理分配节奏，信息密度高、打斗或情绪爆发强的分镜可以给更多镜头与细节，过渡性分镜适当精简，但每个分镜的时长份额要与其剧情重要性匹配，不要头重脚轻。
+
 ### 完整输出格式
 镜头 X：【机位+构图（取自线稿）+场景环境+人物站位（严格匹配线稿布局）+肢体姿态（遵循线稿人体框架，增加发力/微表情细节）+道具、灵气光影特效+台词/内心OS】，关键词：【高密度镜头、人物姿态、特效、氛围类名词短语，顿号隔开】，音效：【精准匹配画面节奏的音效，台词放置在此处】。
-镜头 X：……
+镜头 X：……（多分镜合并时，每个分镜至少一个镜头，全部镜头按分镜顺序连续编号）
 整体高清精致的东方玄幻动画厚涂漫画质感，构图与画面质感向高品质东方玄幻动画分镜靠拢，人物采用干净动画轮廓与概括性色块表现，保留古风武侠、写意山水、冷灰青色调，人物形象严格贴合参考图特征，人物面部稳定不变形，动作连贯自然，打击特效华丽炫酷，光影层次自然，空间关系合理，全程无字幕，不要生成水印与 Logo。
 
 ### 📌线稿吸收细则
@@ -1701,7 +1707,7 @@ func buildAnimationPromptDraftSystemPrompt() string {
 2. **人物框架以线稿为基准，做升级美化**
 保留线稿给出的身体朝向、手部位置、头脸角度，在此基础上追加肌肉发力感、面部微表情、眼神变化、肢体动态残影、灵气粒子等爆点细节；**不彻底推翻线稿动作重画一套全新姿势**。
 3. **多线稿连续镜头处理**
-多张线稿依次对应镜头1、镜头2、镜头3，每个镜头严格绑定对应一张线稿的空间布局，保证镜头切换逻辑和线稿顺序统一；若你要求追加额外镜头，新增镜头风格、场景、人物和前后线稿画面保持连贯。
+多张线稿依次提供，每张线稿严格绑定其所属分镜与镜头（如分镜 1 的线稿对应镜头1、镜头2，分镜 2 的线稿从镜头3接着连续编号），每个镜头严格绑定对应一张线稿的空间布局，保证镜头切换逻辑和分镜、线稿顺序统一；若你要求追加额外镜头，新增镜头风格、场景、人物和前后线稿画面保持连贯。
 4. **剧情与线稿融合原则**
 线稿是画面骨架，你的文字剧情是情绪与事件内核。骨架不动，在骨架之上增加炫酷特效、光影层次、动态模糊、灵气光纹、气流冲击波、微表情反差等高级视觉爆点；不擅自增减主线剧情。
 
@@ -1710,14 +1716,16 @@ func buildAnimationPromptDraftSystemPrompt() string {
 2. 禁止脱离线稿构图，随意更改人物站位、镜头角度；
 3. 禁止短句碎片化罗列关键词，必须沿用你给的长段镜头描述+独立关键词区块的结构；
 4. 禁止空洞笼统描述（“人物很紧张，特效很好看”），所有氛围落实到具体光影、粒子、肢体细节；
-5. 禁止额外增加分析、解释、修改说明，只输出最终成品分镜。
+5. 禁止额外增加分析、解释、修改说明，只输出最终成品分镜；
+6. 禁止遗漏、跳过或调换本次给定的任何分镜（多分镜合并时必须逐个覆盖、保持先后顺序）。
 
 ### 📝工作执行步骤（收到你的需求后执行）
-1. 解析每一张线稿：锁定机位、构图、人物位置、肢体轮廓、前后景物体
-2. 通读你的文字剧情，确定人物情绪、台词、法术特效、事件走向
-3. 将剧情元素嵌入线稿固定画面布局中，丰富动态、光影、灵气、微表情细节，强化高级感与视觉爆点
-4. 严格套用你的标准模板分段输出镜头
-5. 末尾附上固定统一画风文案
+1. 按顺序通读本次给定的全部分镜文字信息，串联完整剧情走向与情绪曲线
+2. 解析每一张线稿：锁定机位、构图、人物位置、肢体轮廓、前后景物体，并对应到所属分镜
+3. 通读你的文字剧情，确定人物情绪、台词、法术特效、事件走向
+4. 将剧情元素嵌入线稿固定画面布局中，丰富动态、光影、灵气、微表情细节，强化高级感与视觉爆点
+5. 严格套用你的标准模板分段输出镜头，镜头全片连续编号，分镜之间以内化的衔接方式自然过渡
+6. 末尾附上固定统一画风文案
 
 ### 🧪实操示例
 >线稿信息：镜头1近景侧斜，女主啃面包，看守弟子手扶肚子；镜头2高空俯视，女主位于人群中心；镜头3面部大特写，女主会心浅笑
@@ -2014,7 +2022,7 @@ func (h *AnimationHandler) resolveSceneReferenceImageURL(db *gorm.DB, raw string
 	return signedURL
 }
 
-func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene) string {
+func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene, chapterScenes []models.Scene, currentIndex int) string {
 	var lines []string
 
 	var chapter models.Chapter
@@ -2028,30 +2036,20 @@ func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene) 
 		}
 	}
 
-	var scenes []models.Scene
-	if err := db.Where("chapter_id = ?", scene.ChapterID).Order("`index` asc, id asc").Find(&scenes).Error; err == nil {
-		currentIndex := -1
-		for i, item := range scenes {
-			if item.ID == scene.ID {
-				currentIndex = i
-				break
-			}
+	if currentIndex > 0 {
+		previousStart := currentIndex - 3
+		if previousStart < 0 {
+			previousStart = 0
 		}
-		if currentIndex > 0 {
-			previousStart := currentIndex - 3
-			if previousStart < 0 {
-				previousStart = 0
+		previousLines := []string{}
+		for i := previousStart; i < currentIndex; i++ {
+			description := truncatePromptText(chapterScenes[i].Description, 500)
+			if description == "" {
+				description = "（无画面描述）"
 			}
-			previousLines := []string{}
-			for i := previousStart; i < currentIndex; i++ {
-				description := truncatePromptText(scenes[i].Description, 500)
-				if description == "" {
-					description = "（无画面描述）"
-				}
-				previousLines = append(previousLines, fmt.Sprintf("场景 %.2f：%s", scenes[i].Index, description))
-			}
-			lines = append(lines, "【前序场景画面描述｜只用于剧情承接与画面连贯，不要生成为当前画面】\n"+strings.Join(previousLines, "\n"))
+			previousLines = append(previousLines, fmt.Sprintf("场景 %.2f：%s", chapterScenes[i].Index, description))
 		}
+		lines = append(lines, "【前序场景画面描述｜只用于剧情承接与画面连贯，不要生成为当前画面】\n"+strings.Join(previousLines, "\n"))
 	}
 
 	if len(lines) == 0 {
@@ -2060,46 +2058,84 @@ func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene) 
 	return strings.Join(lines, "\n\n")
 }
 
+// animationPromptDraftReference 分镜参考图视图（HasImage 表示该条参考图已随请求提供图片）
+type animationPromptDraftReference struct {
+	Description string
+	HasImage    bool
+}
+
+// animationPromptDraftScene 参与本次提示词草稿合并的分镜视图
+type animationPromptDraftScene struct {
+	Position   int // 在本次合并范围内的序号，从 1 开始（1 = 当前分镜）
+	Scene      models.Scene
+	References []animationPromptDraftReference
+}
+
 func buildAnimationPromptDraftUserPrompt(
-	scene models.Scene,
-	references []models.SceneReference,
+	draftScenes []animationPromptDraftScene,
 	narrativeContext string,
 ) string {
-	sceneLines := []string{}
-	if text := strings.TrimSpace(scene.Description); text != "" {
-		sceneLines = append(sceneLines, "画面描述："+text)
+	instruction := "请根据系统提示中的全部约束，结合下方剧本创作信息与参考图，生成本场景的视频提示词草稿。"
+	if len(draftScenes) > 1 {
+		instruction = fmt.Sprintf(
+			"请根据系统提示中的全部约束，结合下方剧本创作信息与参考图，把以下 %d 个连续分镜合并为一条视频提示词草稿：每个分镜至少对应一个镜头，全部镜头按分镜顺序连续编号，禁止遗漏任何分镜。",
+			len(draftScenes),
+		)
 	}
-	if text := strings.TrimSpace(scene.CameraMovement); text != "" {
-		sceneLines = append(sceneLines, "镜头运镜："+text)
+	sections := []string{instruction}
+
+	sceneBlocks := make([]string, 0, len(draftScenes))
+	for _, draftScene := range draftScenes {
+		scene := draftScene.Scene
+		sceneLines := []string{}
+		if text := strings.TrimSpace(scene.Description); text != "" {
+			sceneLines = append(sceneLines, "画面描述："+text)
+		}
+		if text := strings.TrimSpace(scene.CameraMovement); text != "" {
+			sceneLines = append(sceneLines, "镜头运镜："+text)
+		}
+		if text := strings.TrimSpace(scene.Dialogue); text != "" {
+			sceneLines = append(sceneLines, "台词/旁白："+text)
+		}
+		if text := strings.TrimSpace(scene.TransitionEffect); text != "" {
+			sceneLines = append(sceneLines, "转场剪辑手法："+text)
+		}
+		if len(sceneLines) == 0 {
+			sceneLines = append(sceneLines, "（本分镜暂无画面描述等文字信息，请结合其参考图与前后分镜剧情自然推断）")
+		}
+		header := fmt.Sprintf("—— 分镜 %d", draftScene.Position)
+		if draftScene.Position == 1 {
+			header += "（当前分镜，起始）"
+		}
+		sceneBlocks = append(sceneBlocks, header+" ——\n"+strings.Join(sceneLines, "\n"))
 	}
-	if text := strings.TrimSpace(scene.Dialogue); text != "" {
-		sceneLines = append(sceneLines, "台词/旁白："+text)
-	}
-	if text := strings.TrimSpace(scene.TransitionEffect); text != "" {
-		sceneLines = append(sceneLines, "转场剪辑手法："+text)
-	}
+	sections = append(sections, "【分镜文字信息｜剧本创作模块，按剧情先后顺序排列】\n"+strings.Join(sceneBlocks, "\n\n"))
 
 	referenceLines := []string{}
-	for i, reference := range references {
-		line := fmt.Sprintf("图片 %d", i+1)
-		if description := strings.TrimSpace(reference.Description); description != "" {
-			line += "：" + description
+	imageIndex := 0
+	for _, draftScene := range draftScenes {
+		for _, reference := range draftScene.References {
+			var line string
+			if reference.HasImage {
+				imageIndex++
+				line = fmt.Sprintf("图片 %d（分镜 %d）", imageIndex, draftScene.Position)
+				if reference.Description != "" {
+					line += "：" + reference.Description
+				}
+			} else {
+				line = fmt.Sprintf("分镜 %d 补充参考（未随请求提供图片）", draftScene.Position)
+				if reference.Description != "" {
+					line += "：" + reference.Description
+				}
+			}
+			referenceLines = append(referenceLines, line)
 		}
-		if strings.TrimSpace(reference.ImageUrl) == "" {
-			line += "（本条仅有文字描述，未提供图片）"
-		}
-		referenceLines = append(referenceLines, line)
 	}
-
-	sections := []string{
-		"请根据系统提示中的全部约束，结合下方剧本创作信息与参考图，生成本场景的视频提示词草稿。",
-	}
-	sections = append(sections, "【当前场景文字信息｜剧本创作模块】\n"+strings.Join(sceneLines, "\n"))
 	if len(referenceLines) > 0 {
-		sections = append(sections, "【场景参考图｜已按顺序随请求提供图片，图片 N 对应下述第 N 条】\n"+strings.Join(referenceLines, "\n"))
+		sections = append(sections, "【分镜参考图｜已按顺序随请求提供图片，图片 N 对应下述第 N 个图片条目，并标注所属分镜】\n"+strings.Join(referenceLines, "\n"))
 	}
 	if strings.TrimSpace(narrativeContext) != "" {
-		sections = append(sections, "【剧情上下文｜只用于剧情承接与情绪理解，不要把其他场景主动生成为当前画面】\n"+narrativeContext)
+		sections = append(sections, "【剧情上下文｜只用于剧情承接与情绪理解，不要把合并范围之外的场景主动生成为当前画面】\n"+narrativeContext)
 	}
 	return strings.Join(sections, "\n\n")
 }
@@ -2203,7 +2239,8 @@ func (h *AnimationHandler) OptimizePrompt(c *gin.Context) {
 	})
 }
 
-// GeneratePromptDraft 根据剧本创作模块的场景信息（画面描述/台词/运镜/转场）与场景参考图，用 LLM 生成视频提示词草稿
+// GeneratePromptDraft 根据剧本创作模块的分镜信息（画面描述/台词/运镜/转场）与场景参考图，用 LLM 生成视频提示词草稿；
+// count > 1 时从当前分镜起合并后续连续分镜为一条提示词，用于单次视频生成覆盖多段分镜
 func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 	sceneId := c.Param("sceneId")
 
@@ -2238,38 +2275,106 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		return
 	}
 
-	var references []models.SceneReference
-	if err := db.Where("scene_id = ?", scene.ID).Order("`index` asc").Find(&references).Error; err != nil {
+	// 合并分镜数量（含当前分镜），取值 1-10
+	mergeCount := req.Count
+	if mergeCount < 1 {
+		mergeCount = 1
+	}
+	if mergeCount > 10 {
+		mergeCount = 10
+	}
+
+	// 加载当前章节全部分镜，取当前分镜起的连续 mergeCount 段（章节剩余不足时按实际数量合并）
+	var chapterScenes []models.Scene
+	if err := db.Where("chapter_id = ?", scene.ChapterID).Order("`index` asc, id asc").Find(&chapterScenes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch chapter scenes"})
+		return
+	}
+	currentIndex := -1
+	for i := range chapterScenes {
+		if chapterScenes[i].ID == scene.ID {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex < 0 {
+		chapterScenes = []models.Scene{scene}
+		currentIndex = 0
+	}
+	mergeEnd := currentIndex + mergeCount
+	if mergeEnd > len(chapterScenes) {
+		mergeEnd = len(chapterScenes)
+	}
+	mergedScenes := chapterScenes[currentIndex:mergeEnd]
+
+	// 汇总各分镜参考图，保持分镜内 index 顺序
+	mergedSceneIDs := make([]uint, 0, len(mergedScenes))
+	for _, item := range mergedScenes {
+		mergedSceneIDs = append(mergedSceneIDs, item.ID)
+	}
+	var allReferences []models.SceneReference
+	if err := db.Where("scene_id IN ?", mergedSceneIDs).Order("scene_id asc, `index` asc").Find(&allReferences).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scene references"})
 		return
 	}
+	referencesByScene := make(map[uint][]models.SceneReference, len(mergedScenes))
+	for _, reference := range allReferences {
+		referencesByScene[reference.SceneID] = append(referencesByScene[reference.SceneID], reference)
+	}
 
-	hasScriptInfo := strings.TrimSpace(scene.Description) != "" ||
-		strings.TrimSpace(scene.CameraMovement) != "" ||
-		strings.TrimSpace(scene.Dialogue) != "" ||
-		strings.TrimSpace(scene.TransitionEffect) != ""
+	hasScriptInfo := false
+	for _, item := range mergedScenes {
+		if strings.TrimSpace(item.Description) != "" ||
+			strings.TrimSpace(item.CameraMovement) != "" ||
+			strings.TrimSpace(item.Dialogue) != "" ||
+			strings.TrimSpace(item.TransitionEffect) != "" {
+			hasScriptInfo = true
+			break
+		}
+	}
 	hasReferenceInfo := false
-	for _, reference := range references {
-		if strings.TrimSpace(reference.ImageUrl) != "" || strings.TrimSpace(reference.Description) != "" {
-			hasReferenceInfo = true
+	for _, references := range referencesByScene {
+		for _, reference := range references {
+			if strings.TrimSpace(reference.ImageUrl) != "" || strings.TrimSpace(reference.Description) != "" {
+				hasReferenceInfo = true
+				break
+			}
+		}
+		if hasReferenceInfo {
 			break
 		}
 	}
 	if !hasScriptInfo && !hasReferenceInfo {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "当前场景缺少画面描述等剧本创作信息，无法生成提示词草稿"})
+		if len(mergedScenes) > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("当前分镜及其后续共 %d 段分镜均缺少画面描述等剧本创作信息，无法生成提示词草稿", len(mergedScenes))})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前场景缺少画面描述等剧本创作信息，无法生成提示词草稿"})
+		}
 		return
 	}
 
-	imageURLs := make([]string, 0, len(references))
-	for _, reference := range references {
-		signedURL := h.resolveSceneReferenceImageURL(db, reference.ImageUrl)
-		if signedURL == "" {
-			continue
+	// 组装随请求提供的参考图：按分镜顺序、每分镜内参考图顺序，最多 8 张
+	imageURLs := make([]string, 0, len(allReferences))
+	draftScenes := make([]animationPromptDraftScene, 0, len(mergedScenes))
+	for position, item := range mergedScenes {
+		draftScene := animationPromptDraftScene{Position: position + 1, Scene: item}
+		for _, reference := range referencesByScene[item.ID] {
+			hasImage := false
+			if strings.TrimSpace(reference.ImageUrl) != "" && len(imageURLs) < 8 {
+				if signedURL := h.resolveSceneReferenceImageURL(db, reference.ImageUrl); signedURL != "" {
+					imageURLs = append(imageURLs, signedURL)
+					hasImage = true
+				}
+			}
+			// 未随请求提供图片的参考：仅有文字描述时仍作为构图上下文提供
+			if hasImage || strings.TrimSpace(reference.Description) != "" {
+				draftScene.References = append(draftScene.References, animationPromptDraftReference{
+					Description: strings.TrimSpace(reference.Description),
+					HasImage:    hasImage,
+				})
+			}
 		}
-		imageURLs = append(imageURLs, signedURL)
-		if len(imageURLs) >= 8 {
-			break
-		}
+		draftScenes = append(draftScenes, draftScene)
 	}
 
 	client := ai.NewArkClient(config.Cfg.ArkAgentPlan.APIBaseURL, config.Cfg.ArkAgentPlan.APIKey)
@@ -2278,9 +2383,8 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		modelID,
 		buildAnimationPromptDraftSystemPrompt(),
 		buildAnimationPromptDraftUserPrompt(
-			scene,
-			references,
-			buildAnimationPromptDraftNarrativeContext(db, scene),
+			draftScenes,
+			buildAnimationPromptDraftNarrativeContext(db, scene, chapterScenes, currentIndex),
 		),
 		imageURLs,
 	)
@@ -2296,8 +2400,9 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.GenerateSceneAnimationPromptDraftResponse{
-		Prompt: draft,
-		Model:  modelID,
+		Prompt:     draft,
+		Model:      modelID,
+		SceneCount: len(mergedScenes),
 	})
 }
 

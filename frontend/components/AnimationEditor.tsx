@@ -28,7 +28,8 @@ import {
   UploadCloud,
   Loader2,
   Music,
-  Palette
+  Palette,
+  HelpCircle
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -123,6 +124,20 @@ const escapeHtml = (value: string) =>
 const DEFAULT_VIDEO_MODEL: VideoGenerationModel = 'doubao-seedance-2-0-fast-260128';
 const DEFAULT_VIDEO_RATIO: VideoGenerationRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
+
+// 提示词草稿合并分镜数（含当前分镜）：视频模型单次可生成约 30s，可将多段分镜合并为一条提示词
+const PROMPT_DRAFT_SCENE_COUNT_MIN = 1;
+const PROMPT_DRAFT_SCENE_COUNT_MAX = 10;
+const PROMPT_DRAFT_SCENE_COUNT_DEFAULT = 3;
+
+const clampPromptDraftSceneCount = (value: number) =>
+  Math.min(
+    PROMPT_DRAFT_SCENE_COUNT_MAX,
+    Math.max(PROMPT_DRAFT_SCENE_COUNT_MIN, Number.isNaN(value) ? PROMPT_DRAFT_SCENE_COUNT_DEFAULT : Math.round(value))
+  );
+
+const promptDraftSceneCountPercent = (value: number) =>
+  ((clampPromptDraftSceneCount(value) - PROMPT_DRAFT_SCENE_COUNT_MIN) / (PROMPT_DRAFT_SCENE_COUNT_MAX - PROMPT_DRAFT_SCENE_COUNT_MIN)) * 100;
 
 const buildDefaultVideoPrompt = (scene?: Scene) =>
   [scene?.description, scene?.cameraMovement ? `镜头运动：${scene.cameraMovement}` : '', scene?.dialogue ? `对白/旁白：${scene.dialogue}` : '']
@@ -331,6 +346,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [optimizingPrompt, setOptimizingPrompt] = useState(false);
   const [generatingPromptDraft, setGeneratingPromptDraft] = useState(false);
+  // 提示词草稿合并分镜数（含当前分镜），1-10，默认 3
+  const [promptDraftSceneCount, setPromptDraftSceneCount] = useState(PROMPT_DRAFT_SCENE_COUNT_DEFAULT);
 
   const isWanVideoModel = generationModel.startsWith('wan3.0-video');
 
@@ -1114,14 +1131,24 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setGeneratingPromptDraft(true);
     setAnimationError(null);
     try {
-      const res = await animationApi.generatePromptDraft(activeScene.id, {});
+      const res = await animationApi.generatePromptDraft(activeScene.id, { count: promptDraftSceneCount });
       const draft = (res.prompt || '').trim();
       if (!draft) {
         throw new Error('草稿生成结果为空');
       }
       setGenerationPrompt(draft);
       setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
-      showToast('已根据剧本创作信息生成提示词草稿', 'success');
+      const mergedCount = res.sceneCount || promptDraftSceneCount;
+      if (mergedCount > 1) {
+        showToast(
+          mergedCount < promptDraftSceneCount
+            ? `本章剩余分镜不足，已为 ${mergedCount} 段分镜生成合并提示词草稿`
+            : `已为 ${mergedCount} 段分镜生成合并提示词草稿`,
+          'success'
+        );
+      } else {
+        showToast('已根据剧本创作信息生成提示词草稿', 'success');
+      }
     } catch (err) {
       console.error('Generate animation prompt draft failed', err);
       const message = err instanceof Error ? err.message : '提示词草稿生成失败，请重试';
@@ -2698,16 +2725,63 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
                           <div className="flex flex-wrap items-center justify-end gap-3">
-                            <button
-                              type="button"
-                              onClick={handleGeneratePromptDraft}
-                              disabled={generatingPromptDraft}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-blue-300/20 bg-blue-400/10 px-2.5 py-1 text-[11px] font-semibold text-blue-100/90 transition-colors hover:border-blue-200/40 hover:bg-blue-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
-                              title="根据剧本创作的画面描述、台词、运镜、转场与场景参考图生成提示词草稿"
-                            >
-                              {generatingPromptDraft ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />}
-                              {generatingPromptDraft ? '生成中...' : '一键生成提示词草稿'}
-                            </button>
+                            <div className="relative group/prompt-count">
+                              {/* 展开面板（hover 显示）：合并分镜数滑块 */}
+                              <div className="absolute bottom-full right-0 mb-2 w-72 rounded-2xl border border-white/10 bg-[#161616] p-4 shadow-2xl opacity-0 translate-y-1 pointer-events-none transition-all duration-200 group-hover/prompt-count:opacity-100 group-hover/prompt-count:translate-y-0 group-hover/prompt-count:pointer-events-auto z-40">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-1 w-20 shrink-0">
+                                    <span className="text-[12px] text-white/70">合并分镜数</span>
+                                    <span className="relative group/tip">
+                                      <HelpCircle size={12} className="text-white/30 hover:text-white/60 transition-colors cursor-help" />
+                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 rounded-lg border border-white/10 bg-[#1e1e1e] px-2.5 py-2 text-[10px] leading-relaxed text-white/70 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50">
+                                        视频模型单次生成约可承载 30 秒，可将当前分镜与后续分镜合并为一条提示词、一次生成。取值 1-10，1 表示仅当前分镜。
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <div className="relative flex-1 h-4 flex items-center">
+                                    <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                                      <div className="h-full rounded-full bg-blue-400" style={{ width: `${promptDraftSceneCountPercent(promptDraftSceneCount)}%` }} />
+                                    </div>
+                                    <div
+                                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow border border-black/30 pointer-events-none"
+                                      style={{ left: `calc(${promptDraftSceneCountPercent(promptDraftSceneCount)}% - 6px)` }}
+                                    />
+                                    <input
+                                      type="range"
+                                      min={PROMPT_DRAFT_SCENE_COUNT_MIN}
+                                      max={PROMPT_DRAFT_SCENE_COUNT_MAX}
+                                      step={1}
+                                      value={promptDraftSceneCount}
+                                      disabled={generatingPromptDraft}
+                                      onChange={e => setPromptDraftSceneCount(clampPromptDraftSceneCount(Number(e.target.value)))}
+                                      className="absolute inset-0 w-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                    />
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={PROMPT_DRAFT_SCENE_COUNT_MIN}
+                                    max={PROMPT_DRAFT_SCENE_COUNT_MAX}
+                                    value={promptDraftSceneCount}
+                                    disabled={generatingPromptDraft}
+                                    onChange={e => setPromptDraftSceneCount(clampPromptDraftSceneCount(Number(e.target.value)))}
+                                    className="w-14 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-center text-[12px] text-white/80 tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                                <div className="mt-2 text-[10px] leading-relaxed text-white/35">
+                                  从当前分镜起共 {promptDraftSceneCount} 段合并为一条提示词，本章当前分镜之后还有 {Math.max(0, sortedScenes.length - activeSceneIndex - 1)} 段，不足时按实际数量生成。
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleGeneratePromptDraft}
+                                disabled={generatingPromptDraft}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-blue-300/20 bg-blue-400/10 px-2.5 py-1 text-[11px] font-semibold text-blue-100/90 transition-colors hover:border-blue-200/40 hover:bg-blue-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                                title="根据剧本创作的画面描述、台词、运镜、转场与场景参考图，为当前分镜及后续分镜生成一条合并提示词（悬停可调整合并分镜数）"
+                              >
+                                {generatingPromptDraft ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />}
+                                {generatingPromptDraft ? '生成中...' : `生成后续${promptDraftSceneCount}段分镜提示词`}
+                              </button>
+                            </div>
                             <button
                               type="button"
                               onClick={handleOptimizePrompt}
