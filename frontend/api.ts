@@ -96,6 +96,7 @@ export interface Book {
   cover: string;
   description: string;
   outline: string;
+  artStyle: string;
   originalTextKey?: string;
   originalTextPreview?: string;
   adaptationStatus: AdaptationStatus;
@@ -119,6 +120,7 @@ export interface CreateBookRequest {
   cover?: string;
   description?: string;
   outline?: string;
+  artStyle?: string;
   originalTextKey?: string;
   originalTextPreview?: string;
 }
@@ -278,6 +280,14 @@ export const bookApi = {
     return request<Book>(`/api/books/${id}/outline`, {
       method: 'PUT',
       body: JSON.stringify({ outline }),
+    });
+  },
+
+  // 更新画风提示词
+  updateArtStyle: async (id: number, artStyle: string): Promise<Book> => {
+    return request<Book>(`/api/books/${id}/art-style`, {
+      method: 'PUT',
+      body: JSON.stringify({ artStyle }),
     });
   },
 };
@@ -725,6 +735,7 @@ export interface GenerateAnimationPayload {
   referenceImageKeys?: string[];
   referenceAudioKeys?: string[];
   referenceVideoKeys?: string[];
+  appendArtStyle?: boolean;
 }
 
 export interface OptimizeAnimationPromptPayload {

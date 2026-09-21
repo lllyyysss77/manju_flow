@@ -136,6 +136,7 @@ func (h *BookHandler) Create(c *gin.Context) {
 		Cover:               req.Cover,
 		Description:         req.Description,
 		Outline:             req.Outline,
+		ArtStyle:            req.ArtStyle,
 		OriginalTextKey:     req.OriginalTextKey,
 		OriginalTextPreview: req.OriginalTextPreview,
 		AdaptationStatus:    models.AdaptationStatusInProgress,
@@ -302,6 +303,50 @@ func (h *BookHandler) UpdateOutline(c *gin.Context) {
 	if err := db.Save(&book).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update outline",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, book)
+}
+
+// UpdateArtStyle 更新书籍画风提示词
+// @Summary 更新书籍画风提示词
+// @Description 单独更新书籍的画风提示词，供动画制作模块生成视频时追加到提示词末尾
+// @Tags books
+// @Accept json
+// @Produce json
+// @Param id path int true "书籍ID"
+// @Param artStyle body models.UpdateArtStyleRequest true "画风提示词内容"
+// @Success 200 {object} models.Book
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/books/{id}/art-style [put]
+func (h *BookHandler) UpdateArtStyle(c *gin.Context) {
+	id := c.Param("bookId")
+
+	var book models.Book
+	db := database.GetDB()
+	if err := db.First(&book, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Book not found",
+		})
+		return
+	}
+
+	var req models.UpdateArtStyleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	book.ArtStyle = req.ArtStyle
+
+	if err := db.Save(&book).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update art style",
 		})
 		return
 	}

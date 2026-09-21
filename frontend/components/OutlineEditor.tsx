@@ -20,6 +20,7 @@ import {
   FileText,
   Info,
   Loader2,
+  Palette,
   Sparkles
 } from 'lucide-react';
 import { bookApi, characterApi, sceneAssetApi, fileApi, getFileUrl, downloadFile, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
@@ -646,6 +647,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 }) => {
   const [activeAssetCategory, setActiveAssetCategory] = useState<'characters' | 'scenes'>('characters');
   const [outline, setOutline] = useState(initialOutline);
+  const [artStyle, setArtStyle] = useState('');
   const [originalTextPreview, setOriginalTextPreview] = useState('');
   const [originalTextKey, setOriginalTextKey] = useState('');
   const [isOriginalPreviewOpen, setIsOriginalPreviewOpen] = useState(false);
@@ -659,6 +661,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   // 保存状态
   const [isSavingOutline, setIsSavingOutline] = useState(false);
   const [isOutlineDirty, setIsOutlineDirty] = useState(false);
+  const [isSavingArtStyle, setIsSavingArtStyle] = useState(false);
+  const [isArtStyleDirty, setIsArtStyleDirty] = useState(false);
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [isCharacterDirty, setIsCharacterDirty] = useState(false);
   const [isSavingSceneAsset, setIsSavingSceneAsset] = useState(false);
@@ -686,6 +690,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const MAX_LEFT = 400;
 
   const savedOutlineRef = useRef(initialOutline);
+  const savedArtStyleRef = useRef('');
   const savedCharactersRef = useRef<Record<number, string>>({});
   const savedSceneAssetsRef = useRef<Record<number, string>>({});
 
@@ -733,6 +738,8 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
       setOutline(bookRes.outline || '');
       savedOutlineRef.current = bookRes.outline || '';
+      setArtStyle(bookRes.artStyle || '');
+      savedArtStyleRef.current = bookRes.artStyle || '';
       setOriginalTextPreview(bookRes.originalTextPreview || '');
       setOriginalTextKey(bookRes.originalTextKey || '');
 
@@ -753,6 +760,7 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
       }
 
       setIsOutlineDirty(false);
+      setIsArtStyleDirty(false);
       setIsCharacterDirty(false);
       setIsSceneAssetDirty(false);
       onOutlineChange?.(bookRes.outline || '');
@@ -799,6 +807,35 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
     }, 3000);
     return () => clearTimeout(timer);
   }, [isOutlineDirty, outline]);
+
+  // 保存画风提示词
+  const saveArtStyle = async () => {
+    if (artStyle === savedArtStyleRef.current) {
+      setIsArtStyleDirty(false);
+      return;
+    }
+    setIsSavingArtStyle(true);
+    try {
+      await bookApi.updateArtStyle(bookId, artStyle);
+      savedArtStyleRef.current = artStyle;
+      setIsArtStyleDirty(false);
+      setToast({ message: '画风已保存', tone: 'success' });
+    } catch (err) {
+      console.error('Failed to save art style', err);
+      setToast({ message: '保存画风失败', tone: 'error' });
+    } finally {
+      setIsSavingArtStyle(false);
+    }
+  };
+
+  // 自动保存画风提示词
+  useEffect(() => {
+    if (!isArtStyleDirty) return;
+    const timer = setTimeout(() => {
+      saveArtStyle();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [isArtStyleDirty, artStyle]);
 
   // 保存角色
   const saveCharacter = async (char: Character) => {
@@ -1494,6 +1531,38 @@ export const OutlineEditor: React.FC<OutlineEditorProps> = ({
                 placeholder="在这里撰写故事大纲，包括主要情节、世界观设定、故事背景等..."
               />
               {isOutlineDirty && (
+                <p className="text-[10px] text-yellow-400/60">* 有未保存的更改（将在 3 秒后自动保存）</p>
+              )}
+            </div>
+
+            {/* 画风编辑区 */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Palette size={16} className="text-purple-400" />
+                  <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">画风</label>
+                </div>
+                <button
+                  onClick={saveArtStyle}
+                  disabled={isSavingArtStyle || !isArtStyleDirty}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg hover:bg-purple-500 transition-all disabled:opacity-60"
+                >
+                  <Save size={14} /> {isSavingArtStyle ? '保存中...' : '保存画风'}
+                </button>
+              </div>
+              <textarea
+                className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 text-white text-base focus:outline-none focus:ring-2 focus:ring-purple-500/30 min-h-[120px] resize-none leading-relaxed transition-all placeholder:text-white/20 shadow-inner"
+                value={artStyle}
+                onChange={(e) => {
+                  setArtStyle(e.target.value);
+                  setIsArtStyleDirty(e.target.value !== savedArtStyleRef.current);
+                }}
+                placeholder="在这里撰写该剧的画风提示词，如：日系赛璐璐动画风格，高饱和色彩，柔和光影，干净线条..."
+              />
+              <p className="text-[11px] leading-relaxed text-white/35">
+                该剧的画风提示词（可选）。动画制作模块生成视频时，可自动将其添加到用户提示词末尾。
+              </p>
+              {isArtStyleDirty && (
                 <p className="text-[10px] text-yellow-400/60">* 有未保存的更改（将在 3 秒后自动保存）</p>
               )}
             </div>

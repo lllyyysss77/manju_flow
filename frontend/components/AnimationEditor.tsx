@@ -1,13 +1,14 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Character, Episode, Scene, SceneAsset, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
-import { fileApi, animationApi, storyboardApi, commentApi, characterApi, sceneAssetApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
+import { fileApi, animationApi, storyboardApi, commentApi, characterApi, sceneAssetApi, bookApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
 import { useAudioTrimmer } from './AudioTrimmerModal';
 import {
   MessageSquare,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Image as ImageIcon,
   Info,
   Play,
@@ -26,7 +27,8 @@ import {
   PenLine,
   UploadCloud,
   Loader2,
-  Music
+  Music,
+  Palette
 } from 'lucide-react';
 import { useSceneComments } from './useSceneComments';
 import { CommentItem } from './CommentItem';
@@ -346,6 +348,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [framePreviewCache, setFramePreviewCache] = useState<Record<number, ResolvedSceneFrameSet[]>>({});
   const [characters, setCharacters] = useState<Character[]>([]);
   const [sceneAssets, setSceneAssets] = useState<SceneAsset[]>([]);
+  // 画风提示词（来自大纲人设模块，与作品一对一）
+  const [bookArtStyle, setBookArtStyle] = useState('');
+  const [isArtStyleOpen, setIsArtStyleOpen] = useState(false);
+  const [appendArtStyle, setAppendArtStyle] = useState(true);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [resolvingVersion, setResolvingVersion] = useState(false);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -540,6 +546,27 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
           console.error('Failed to load scene assets', err);
           setSceneAssets([]);
           showToast('场景资产加载失败', 'error');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!bookId) {
+      setBookArtStyle('');
+      return;
+    }
+    let cancelled = false;
+    bookApi.getById(bookId)
+      .then(book => {
+        if (!cancelled) setBookArtStyle(book.artStyle || '');
+      })
+      .catch(err => {
+        if (!cancelled) {
+          console.error('Failed to load book art style', err);
+          setBookArtStyle('');
         }
       });
     return () => {
@@ -1393,6 +1420,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
         referenceImageKeys: referenceMedia.image.map(item => item.key).filter(Boolean),
         referenceAudioKeys: referenceMedia.audio.map(item => item.key).filter(Boolean),
         referenceVideoKeys: referenceMedia.video.map(item => item.key).filter(Boolean),
+        appendArtStyle,
       });
       setGenerationTaskMap(prev => {
         const existing = prev[selectedAnimationId] || [];
@@ -2733,6 +2761,50 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
                           <span>输入 @ 可从当前分镜绑定的场景资产图、人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片1 / 音频1”。</span>
                           <span>{generationPrompt.trim().length} chars</span>
+                        </div>
+
+                        {/* 画风提示词（来自大纲人设模块，默认折叠） */}
+                        <div className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setIsArtStyleOpen(prev => !prev)}
+                            className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors select-none"
+                          >
+                            <span className="flex items-center gap-2 text-[11px] font-semibold text-white/45">
+                              <Palette size={12} className="text-purple-300" />
+                              画风提示词
+                            </span>
+                            <span className="flex items-center gap-1 text-[11px] text-white/35">
+                              {isArtStyleOpen ? '收起' : '展开'}
+                              {isArtStyleOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </span>
+                          </button>
+                          {isArtStyleOpen && (
+                            <div className="px-3 pb-3">
+                              <textarea
+                                readOnly
+                                value={bookArtStyle}
+                                placeholder="暂无画风提示词，可在大纲人设模块的「画风」中填写"
+                                className="w-full min-h-[80px] resize-none rounded-lg border border-white/10 bg-[#111111] px-3 py-2.5 text-[12px] leading-relaxed text-white/70 focus:outline-none placeholder:text-white/20"
+                              />
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-3 border-t border-white/5 px-3 py-2">
+                            <span className="text-[11px] text-white/35">画风提示词默认自动添加到用户提示词末尾</span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={appendArtStyle}
+                              onClick={() => setAppendArtStyle(prev => !prev)}
+                              className="flex items-center gap-2"
+                              title="开启后，生成视频时会自动把画风提示词添加到用户提示词末尾（需先在大纲人设模块设置画风）"
+                            >
+                              <span className="text-[11px] font-semibold text-white/50">添加到提示词末尾</span>
+                              <span className={`relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition-colors ${appendArtStyle ? 'bg-blue-500' : 'bg-white/15'}`}>
+                                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${appendArtStyle ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                              </span>
+                            </button>
+                          </div>
                         </div>
                       </div>
 

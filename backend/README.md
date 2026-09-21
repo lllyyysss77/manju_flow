@@ -151,6 +151,19 @@ Content-Type: application/json
 }
 ```
 
+#### 更新画风提示词
+
+```
+PUT /api/books/:id/art-style
+Content-Type: application/json
+
+{
+  "artStyle": "日系赛璐璐动画风格，高饱和色彩，柔和光影..."
+}
+```
+
+说明：画风提示词与作品一对一、可选。动画制作模块创建生成任务时若开启 `appendArtStyle` 且画风提示词非空，会自动将其追加到提交给视频模型的提示词末尾；`appendArtStyle` 缺省时默认开启。
+
 #### 删除作品
 
 ```

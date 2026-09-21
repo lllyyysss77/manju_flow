@@ -74,6 +74,8 @@ type SceneAnimationGenerationTask struct {
 	ArkTaskID                string              `gorm:"size:100;index" json:"arkTaskId"`
 	Status                   AnimationTaskStatus `gorm:"size:20;not null;default:'PENDING';index" json:"status"`
 	Text                     string              `gorm:"type:text;not null" json:"text"`
+	// AppendArtStyle 记录创建任务时是否开启“自动追加画风提示词到提示词末尾”
+	AppendArtStyle           bool                `gorm:"default:false" json:"appendArtStyle"`
 	Ratio                    string              `gorm:"size:20;not null" json:"ratio"`
 	Duration                 int                 `gorm:"not null" json:"duration"`
 	Model                    string              `gorm:"size:100;not null" json:"model"`
@@ -151,6 +153,9 @@ type GenerateSceneAnimationRequest struct {
 	ReferenceImageKeys []string `json:"referenceImageKeys"`
 	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
 	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
+	// AppendArtStyle 开启时，若作品已配置画风提示词，则自动追加到提示词末尾后提交给视频模型。
+	// 省略该字段时默认开启，与前端开关默认状态保持一致。
+	AppendArtStyle *bool `json:"appendArtStyle"`
 }
 
 // OptimizeSceneAnimationPromptRequest 优化视频提示词请求

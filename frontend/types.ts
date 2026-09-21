@@ -160,6 +160,7 @@ export interface SceneAnimationGenerationTask {
   arkTaskId?: string;
   status: AnimationTaskStatus;
   text: string;
+  appendArtStyle?: boolean;
   ratio: '16:9' | '9:16';
   duration: number;
   model: 'doubao-seedance-2-0-260128' | 'doubao-seedance-2-0-fast-260128' | 'wan3.0-video' | 'wan3.0-video-prime';

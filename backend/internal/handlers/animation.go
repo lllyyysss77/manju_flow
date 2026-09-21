@@ -460,6 +460,7 @@ func (h *AnimationHandler) createWanGenerationTask(
 	ctx context.Context,
 	client *http.Client,
 	task *models.SceneAnimationGenerationTask,
+	prompt string,
 	referenceImageAssets []resolvedAnimationReferenceAsset,
 	referenceVideoAssets []resolvedAnimationReferenceAsset,
 	referenceAudioAssets []resolvedAnimationReferenceAsset,
@@ -467,7 +468,7 @@ func (h *AnimationHandler) createWanGenerationTask(
 	requestBody := wanGenerationRequest{
 		Model: task.Model,
 	}
-	requestBody.Input.Prompt = task.Text
+	requestBody.Input.Prompt = prompt
 	requestBody.Input.Media = make([]wanMediaItem, 0,
 		len(referenceImageAssets)+len(referenceVideoAssets)+len(referenceAudioAssets))
 	for _, item := range referenceImageAssets {
@@ -536,13 +537,14 @@ func (h *AnimationHandler) createArkGenerationTask(
 	ctx context.Context,
 	client *http.Client,
 	task *models.SceneAnimationGenerationTask,
+	prompt string,
 	referenceImageAssets []resolvedAnimationReferenceAsset,
 	referenceVideoAssets []resolvedAnimationReferenceAsset,
 	referenceAudioAssets []resolvedAnimationReferenceAsset,
 ) (string, error) {
 	content := []arkGenerationContentItem{{
 		Type: "text",
-		Text: task.Text,
+		Text: prompt,
 	}}
 	for _, item := range referenceImageAssets {
 		content = append(content, arkGenerationContentItem{
@@ -609,15 +611,16 @@ func (h *AnimationHandler) createArkGenerationTask(
 func (h *AnimationHandler) createRemoteGenerationTask(
 	ctx context.Context,
 	task *models.SceneAnimationGenerationTask,
+	prompt string,
 	referenceImageAssets []resolvedAnimationReferenceAsset,
 	referenceVideoAssets []resolvedAnimationReferenceAsset,
 	referenceAudioAssets []resolvedAnimationReferenceAsset,
 ) (string, error) {
 	httpClient := &http.Client{Timeout: 2 * time.Minute}
 	if isWanAnimationModel(task.Model) {
-		return h.createWanGenerationTask(ctx, httpClient, task, referenceImageAssets, referenceVideoAssets, referenceAudioAssets)
+		return h.createWanGenerationTask(ctx, httpClient, task, prompt, referenceImageAssets, referenceVideoAssets, referenceAudioAssets)
 	}
-	return h.createArkGenerationTask(ctx, httpClient, task, referenceImageAssets, referenceVideoAssets, referenceAudioAssets)
+	return h.createArkGenerationTask(ctx, httpClient, task, prompt, referenceImageAssets, referenceVideoAssets, referenceAudioAssets)
 }
 
 func stringifyAny(value any) string {
@@ -819,6 +822,36 @@ func (h *AnimationHandler) getSceneAndAnimation(db *gorm.DB, sceneID string, ani
 	}
 
 	return &scene, &animation, nil
+}
+
+// resolveBookArtStyle 读取场景所属作品的画风提示词（可选字段，读取失败时静默返回空）
+func (h *AnimationHandler) resolveBookArtStyle(db *gorm.DB, scene *models.Scene) string {
+	if scene == nil {
+		return ""
+	}
+	var chapter models.Chapter
+	if err := db.Select("book_id").First(&chapter, scene.ChapterID).Error; err != nil {
+		return ""
+	}
+	var book models.Book
+	if err := db.Select("art_style").First(&book, chapter.BookID).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(book.ArtStyle)
+}
+
+// buildFinalGenerationPrompt 组装最终提交给视频模型的提示词：开启追加且画风提示词非空时自动附加到用户提示词末尾
+func buildFinalGenerationPrompt(text string, artStyle string, appendArtStyle bool) string {
+	style := strings.TrimSpace(artStyle)
+	if !appendArtStyle || style == "" {
+		return text
+	}
+	return strings.TrimRight(text, "\n") + "\n" + style
+}
+
+// resolveAppendArtStyle 解析请求中的“添加到提示词末尾”开关：省略字段时默认开启
+func resolveAppendArtStyle(flag *bool) bool {
+	return flag == nil || *flag
 }
 
 func (h *AnimationHandler) saveAnimationVersion(
@@ -2811,11 +2844,15 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		})
 	}
 
+	// “添加到提示词末尾”开关默认打开：请求省略 appendArtStyle 字段时同样按开启处理
+	appendArtStyle := resolveAppendArtStyle(req.AppendArtStyle)
+
 	task := models.SceneAnimationGenerationTask{
 		SceneID:                  scene.ID,
 		SceneAnimationID:         animation.ID,
 		Status:                   models.AnimationTaskStatusPending,
 		Text:                     text,
+		AppendArtStyle:           appendArtStyle,
 		Ratio:                    req.Ratio,
 		Duration:                 req.Duration,
 		Model:                    req.Model,
@@ -2832,9 +2869,13 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		return
 	}
 
+	// 开启“添加到提示词末尾”且作品已配置画风提示词时，自动把画风提示词追加到提交给视频模型的提示词末尾
+	finalPrompt := buildFinalGenerationPrompt(text, h.resolveBookArtStyle(db, scene), appendArtStyle)
+
 	remoteTaskID, err := h.createRemoteGenerationTask(
 		c.Request.Context(),
 		&task,
+		finalPrompt,
 		referenceImageAssets,
 		referenceVideoAssets,
 		referenceAudioAssets,

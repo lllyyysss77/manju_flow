@@ -29,6 +29,7 @@ type Book struct {
 	AdaptedBy           string           `gorm:"size:100" json:"adaptedBy"` // 正在改编此作品的编剧
 	ChapterCount        int              `gorm:"default:0" json:"chapterCount"`
 	Outline             string           `gorm:"type:text" json:"outline"` // 大纲（纯文本）
+	ArtStyle            string           `gorm:"type:text" json:"artStyle"` // 画风提示词（与作品一对一，可选）
 	OriginalTextKey     string           `gorm:"size:500" json:"originalTextKey"`
 	OriginalTextPreview string           `gorm:"type:text" json:"originalTextPreview"`
 	CreatedAt           time.Time        `json:"createdAt"`
@@ -57,6 +58,7 @@ type CreateBookRequest struct {
 	Cover               string `json:"cover"`
 	Description         string `json:"description"`
 	Outline             string `json:"outline"`
+	ArtStyle            string `json:"artStyle"`
 	OriginalTextKey     string `json:"originalTextKey"`
 	OriginalTextPreview string `json:"originalTextPreview"`
 }
@@ -64,4 +66,9 @@ type CreateBookRequest struct {
 // UpdateOutlineRequest 更新大纲请求
 type UpdateOutlineRequest struct {
 	Outline string `json:"outline"`
+}
+
+// UpdateArtStyleRequest 更新画风提示词请求
+type UpdateArtStyleRequest struct {
+	ArtStyle string `json:"artStyle"`
 }

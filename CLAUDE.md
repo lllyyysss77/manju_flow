@@ -134,6 +134,8 @@ manju_flow/
 | Description | string | 描述 |
 | AdaptationStatus | AdaptationStatus | NONE / IN_PROGRESS / COMPLETED |
 | ChapterCount | int | 章节数 |
+| Outline | string | 大纲（纯文本） |
+| ArtStyle | string | 画风提示词（与作品一对一，可选；动画生成时可追加到提示词末尾） |
 
 ### Chapter (章节)
 | 字段 | 类型 | 说明 |
@@ -240,6 +242,8 @@ GET    /api/books                                 # 列表 (?page, ?size, ?type,
 POST   /api/books                                 # 创建
 GET    /api/books/:id                             # 详情
 PUT    /api/books/:id                             # 更新
+PUT    /api/books/:id/outline                     # 更新大纲
+PUT    /api/books/:id/art-style                   # 更新画风提示词
 DELETE /api/books/:id                             # 删除
 
 # 章节
