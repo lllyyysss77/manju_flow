@@ -757,11 +757,26 @@ export interface GenerateAnimationPromptDraftPayload {
   count?: number;
 }
 
+export interface AnimationPromptDraftCharacterReference {
+  characterId: number;
+  name: string;
+  coreFeatures?: string;
+  /** 默认槽位人物参考图（后端按 三视图→半身正面→全身正面→侧视→后视 顺序取第一张已配置的） */
+  imageKey?: string;
+  /** 对应前端 Character 图像字段名（referenceImageUrl 等） */
+  imageSlot?: string;
+  imageSlotLabel?: string;
+  /** 人物音色音频 */
+  voiceAudioKey?: string;
+}
+
 export interface GenerateAnimationPromptDraftResponse {
   prompt: string;
   model: string;
-  /** 实际合并的分镜数量（章节剩余不足时小于请求值） */
+  /** 实际合并的分镜数量（章节剩余分镜不足时小于请求值） */
   sceneCount: number;
+  /** 本场出场人物参考（来自大纲人设），前端据此自动附加 @人物 提及 */
+  characterReferences?: AnimationPromptDraftCharacterReference[];
 }
 
 export const animationApi = {

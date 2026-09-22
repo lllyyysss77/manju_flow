@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Character, Episode, Scene, SceneAsset, SceneAnimation, SceneAnimationGenerationTask, SceneAnimationVersion, SceneFrameSet } from '../types';
-import { fileApi, animationApi, storyboardApi, commentApi, characterApi, sceneAssetApi, bookApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION } from '../api';
+import { fileApi, animationApi, storyboardApi, commentApi, characterApi, sceneAssetApi, bookApi, getFileUrl, downloadFile, normalizeFileKey, MIN_UPLOAD_AUDIO_DURATION, MAX_UPLOAD_AUDIO_DURATION, AnimationPromptDraftCharacterReference } from '../api';
 import { useAudioTrimmer } from './AudioTrimmerModal';
 import {
   MessageSquare,
@@ -160,6 +160,41 @@ const buildReferenceMediaName = (raw: string, fallback: string) => {
     return segments[segments.length - 1] || fallback;
   }
 };
+
+// 草稿重新生成后同步人物参考引用：清掉已不在提示词文本里的 mention 型参考，再按 key 去重补充新参考
+const mergeDraftCharacterReferenceMedia = (
+  prev: Record<ReferenceMediaType, UploadedReferenceMedia[]>,
+  mentions: PromptAssetMention[],
+  nextPrompt: string
+): Record<ReferenceMediaType, UploadedReferenceMedia[]> => {
+  const keepAlive = (item: UploadedReferenceMedia) =>
+    !item.id.startsWith('mention-') || nextPrompt.includes(`{{asset:${item.id.slice('mention-'.length)}}}`);
+  const merged: Record<ReferenceMediaType, UploadedReferenceMedia[]> = {
+    image: prev.image.filter(keepAlive),
+    audio: prev.audio.filter(keepAlive),
+    video: prev.video,
+  };
+  mentions.forEach(mention => {
+    if (merged[mention.mediaType].some(item => item.key === mention.key)) return;
+    merged[mention.mediaType] = [...merged[mention.mediaType], {
+      id: `mention-${mention.id}`,
+      key: mention.key,
+      name: mention.name,
+      url: mention.url,
+      mimeType: mention.mimeType,
+      type: mention.mediaType,
+    }];
+  });
+  return merged;
+};
+
+// 统计本次草稿实际附加了参考（图片或音色）的出场人物数
+const countAttachedDraftCharacters = (references: AnimationPromptDraftCharacterReference[]) =>
+  new Set(
+    references
+      .filter(reference => reference.imageKey || reference.voiceAudioKey)
+      .map(reference => reference.characterId)
+  ).size;
 
 const StoryboardReferenceCard: React.FC<{
   frameSet: ResolvedSceneFrameSet;
@@ -924,6 +959,40 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     ) : null;
   };
 
+  // 草稿自动附加出场人物参考：产出与手动 @人物 选择器完全同构的 mention（id/label 一致，便于去重与悬停预览）
+  const buildDraftCharacterMentions = (references: AnimationPromptDraftCharacterReference[]): PromptAssetMention[] => {
+    const mentions: PromptAssetMention[] = [];
+    references.forEach(reference => {
+      const name = (reference.name || '').trim();
+      if (!name) return;
+      if (reference.imageKey && reference.imageSlot && reference.imageSlotLabel) {
+        const mention = buildMentionMedia(
+          'image',
+          `char-img-${reference.characterId}-${reference.imageSlot}`,
+          reference.imageKey,
+          `${name} · ${reference.imageSlotLabel}`,
+          `@人物图片/${name}/${reference.imageSlotLabel}`,
+          'character-image',
+          reference.coreFeatures,
+          name
+        );
+        if (mention) mentions.push(mention);
+      }
+      if (reference.voiceAudioKey) {
+        const mention = buildMentionMedia(
+          'audio',
+          `char-audio-${reference.characterId}`,
+          reference.voiceAudioKey,
+          `${name} · 音色`,
+          `@人物音频/${name}`,
+          'character-audio'
+        );
+        if (mention) mentions.push(mention);
+      }
+    });
+    return mentions;
+  };
+
   const addPromptMention = (mention: PromptAssetMention) => {
     setPromptMentions(prev => ({ ...prev, [mention.id]: mention }));
     setReferenceMedia(prev => {
@@ -1163,18 +1232,39 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       if (!draft) {
         throw new Error('草稿生成结果为空');
       }
-      setGenerationPrompt(draft);
+      // 自动附加出场人物的参考图/音色：等效于用户手动 @人物图片 / @人物音频 的操作
+      const characterMentions = buildDraftCharacterMentions(res.characterReferences || []);
+      const definitionSegments = characterMentions.map(mention => {
+        const characterName = mention.characterName?.trim();
+        const coreFeatures = mention.coreFeatures?.trim();
+        if (mention.kind === 'character-image' && characterName && coreFeatures) {
+          return `将 {{asset:${mention.id}}} 中${coreFeatures}定义为${characterName} `;
+        }
+        return ` {{asset:${mention.id}}} `;
+      });
+      const nextPrompt = definitionSegments.length ? `${draft}\n${definitionSegments.join('')}` : draft;
+      setPromptMentions(prev => {
+        const next = { ...prev };
+        characterMentions.forEach(mention => { next[mention.id] = mention; });
+        return next;
+      });
+      setReferenceMedia(prev => mergeDraftCharacterReferenceMedia(prev, characterMentions, nextPrompt));
+      setGenerationPrompt(nextPrompt);
       setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
       const mergedCount = res.sceneCount || promptDraftSceneCount;
+      const attachedCharacterCount = countAttachedDraftCharacters(res.characterReferences || []);
+      const attachSuffix = attachedCharacterCount > 0
+        ? `，并自动附加 ${attachedCharacterCount} 位出场人物的参考图/音频`
+        : '';
       if (mergedCount > 1) {
         showToast(
           mergedCount < promptDraftSceneCount
-            ? `本章剩余分镜不足，已为 ${mergedCount} 段分镜生成合并提示词草稿`
-            : `已为 ${mergedCount} 段分镜生成合并提示词草稿`,
+            ? `本章剩余分镜不足，已为 ${mergedCount} 段分镜生成合并提示词草稿${attachSuffix}`
+            : `已为 ${mergedCount} 段分镜生成合并提示词草稿${attachSuffix}`,
           'success'
         );
       } else {
-        showToast('已根据剧本创作信息生成提示词草稿', 'success');
+        showToast(`已根据剧本创作信息生成提示词草稿${attachSuffix}`, 'success');
       }
     } catch (err) {
       console.error('Generate animation prompt draft failed', err);

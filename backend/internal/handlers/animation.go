@@ -2058,6 +2058,125 @@ func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene, 
 	return strings.Join(lines, "\n\n")
 }
 
+// animationCharacterImageSlot 人物参考图槽位：自动附加时按顺序取第一张已配置的图
+type animationCharacterImageSlot struct {
+	Field string                              // 与前端 Character 图像字段名一致（JSON 字段）
+	Label string                              // 槽位中文名
+	Value func(character models.Character) string
+}
+
+// animationCharacterImageSlots 人物参考图槽位优先级：三视图 → 半身正面 → 全身正面 → 全身侧视图 → 全身后视图
+var animationCharacterImageSlots = []animationCharacterImageSlot{
+	{Field: "referenceImageUrl", Label: "三视图", Value: func(character models.Character) string { return strings.TrimSpace(character.ReferenceImageUrl) }},
+	{Field: "halfBodyFrontImageUrl", Label: "半身正面", Value: func(character models.Character) string { return strings.TrimSpace(character.HalfBodyFrontImageUrl) }},
+	{Field: "fullBodyFrontImageUrl", Label: "全身正面", Value: func(character models.Character) string { return strings.TrimSpace(character.FullBodyFrontImageUrl) }},
+	{Field: "fullBodySideImageUrl", Label: "全身侧视图", Value: func(character models.Character) string { return strings.TrimSpace(character.FullBodySideImageUrl) }},
+	{Field: "fullBodyBackImageUrl", Label: "全身后视图", Value: func(character models.Character) string { return strings.TrimSpace(character.FullBodyBackImageUrl) }},
+}
+
+// maxAnimationDraftCharacterReferences 单次草稿自动附加的人物参考上限，避免出场人物过多时挤占视频生成参考位
+const maxAnimationDraftCharacterReferences = 4
+
+// detectAnimationPromptDraftCharacters 在大纲人设中找出本次合并分镜的出场人物：
+// 角色名出现在任一合并分镜的画面描述或台词文字中，或与分镜音频轨道的角色名一致，均视为出场
+func detectAnimationPromptDraftCharacters(db *gorm.DB, scene models.Scene, mergedSceneIDs []uint, mergedScenes []models.Scene) []models.Character {
+	var characters []models.Character
+	if err := db.Where("book_id = ?", scene.BookID).Order("`index` asc, id asc").Find(&characters).Error; err != nil {
+		return nil
+	}
+	if len(characters) == 0 {
+		return nil
+	}
+
+	roles := map[string]bool{}
+	if len(mergedSceneIDs) > 0 {
+		var audioTracks []models.SceneAudio
+		if err := db.Where("scene_id IN ?", mergedSceneIDs).Find(&audioTracks).Error; err == nil {
+			for _, track := range audioTracks {
+				if role := strings.TrimSpace(track.Role); role != "" {
+					roles[role] = true
+				}
+			}
+		}
+	}
+
+	matched := make([]models.Character, 0, len(characters))
+	seen := map[string]bool{}
+	for _, character := range characters {
+		name := strings.TrimSpace(character.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		if roles[name] {
+			seen[name] = true
+			matched = append(matched, character)
+			continue
+		}
+		for _, item := range mergedScenes {
+			if strings.Contains(item.Description, name) || strings.Contains(item.Dialogue, name) {
+				seen[name] = true
+				matched = append(matched, character)
+				break
+			}
+		}
+	}
+	return matched
+}
+
+// buildAnimationPromptDraftCharacterContext 组装出场人物人设上下文，让草稿对人物的描述与大纲人设一致
+func buildAnimationPromptDraftCharacterContext(characters []models.Character) string {
+	lines := make([]string, 0, len(characters))
+	for _, character := range characters {
+		name := strings.TrimSpace(character.Name)
+		if name == "" {
+			continue
+		}
+		features := strings.TrimSpace(character.CoreFeatures)
+		if features == "" {
+			features = truncatePromptText(character.Description, 500)
+		}
+		line := "- " + name
+		if features != "" {
+			line += "：" + features
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "【出场人物人设｜来自大纲人设模块；草稿中这些人物的外貌、发型、服装等核心特征必须与设定一致】\n" + strings.Join(lines, "\n")
+}
+
+// buildAnimationPromptDraftCharacterReferences 从出场人物中筛选已配置参考图或音色音频的人物，
+// 生成随草稿返回的人物参考列表（前端据此自动完成等效于手动 @人物 的提及）；图片按槽位优先级取默认一张
+func buildAnimationPromptDraftCharacterReferences(characters []models.Character) []models.AnimationPromptDraftCharacterReference {
+	references := make([]models.AnimationPromptDraftCharacterReference, 0, len(characters))
+	for _, character := range characters {
+		if len(references) >= maxAnimationDraftCharacterReferences {
+			break
+		}
+		reference := models.AnimationPromptDraftCharacterReference{
+			CharacterID:   character.ID,
+			Name:          strings.TrimSpace(character.Name),
+			CoreFeatures:  strings.TrimSpace(character.CoreFeatures),
+			VoiceAudioKey: strings.TrimSpace(character.VoiceAudioUrl),
+		}
+		for _, slot := range animationCharacterImageSlots {
+			if value := slot.Value(character); value != "" {
+				reference.ImageKey = value
+				reference.ImageSlot = slot.Field
+				reference.ImageSlotLabel = slot.Label
+				break
+			}
+		}
+		if reference.ImageKey == "" && reference.VoiceAudioKey == "" {
+			continue
+		}
+		references = append(references, reference)
+	}
+	return references
+}
+
 // animationPromptDraftReference 分镜参考图视图（HasImage 表示该条参考图已随请求提供图片）
 type animationPromptDraftReference struct {
 	Description string
@@ -2074,6 +2193,7 @@ type animationPromptDraftScene struct {
 func buildAnimationPromptDraftUserPrompt(
 	draftScenes []animationPromptDraftScene,
 	narrativeContext string,
+	characterContext string,
 ) string {
 	instruction := "请根据系统提示中的全部约束，结合下方剧本创作信息与参考图，生成本场景的视频提示词草稿。"
 	if len(draftScenes) > 1 {
@@ -2110,6 +2230,10 @@ func buildAnimationPromptDraftUserPrompt(
 		sceneBlocks = append(sceneBlocks, header+" ——\n"+strings.Join(sceneLines, "\n"))
 	}
 	sections = append(sections, "【分镜文字信息｜剧本创作模块，按剧情先后顺序排列】\n"+strings.Join(sceneBlocks, "\n\n"))
+
+	if strings.TrimSpace(characterContext) != "" {
+		sections = append(sections, characterContext)
+	}
 
 	referenceLines := []string{}
 	imageIndex := 0
@@ -2353,6 +2477,10 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		return
 	}
 
+	// 大纲人设中的出场人物：生成随草稿返回的人物参考（前端自动附加为 @人物 提及），并把人设文本作为 LLM 上下文
+	draftCharacters := detectAnimationPromptDraftCharacters(db, scene, mergedSceneIDs, mergedScenes)
+	characterReferences := buildAnimationPromptDraftCharacterReferences(draftCharacters)
+
 	// 组装随请求提供的参考图：按分镜顺序、每分镜内参考图顺序，最多 8 张
 	imageURLs := make([]string, 0, len(allReferences))
 	draftScenes := make([]animationPromptDraftScene, 0, len(mergedScenes))
@@ -2385,6 +2513,7 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		buildAnimationPromptDraftUserPrompt(
 			draftScenes,
 			buildAnimationPromptDraftNarrativeContext(db, scene, chapterScenes, currentIndex),
+			buildAnimationPromptDraftCharacterContext(draftCharacters),
 		),
 		imageURLs,
 	)
@@ -2400,9 +2529,10 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.GenerateSceneAnimationPromptDraftResponse{
-		Prompt:     draft,
-		Model:      modelID,
-		SceneCount: len(mergedScenes),
+		Prompt:              draft,
+		Model:               modelID,
+		SceneCount:          len(mergedScenes),
+		CharacterReferences: characterReferences,
 	})
 }
 

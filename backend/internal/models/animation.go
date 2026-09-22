@@ -181,7 +181,19 @@ type GenerateSceneAnimationPromptDraftRequest struct {
 
 // GenerateSceneAnimationPromptDraftResponse 生成视频提示词草稿响应
 type GenerateSceneAnimationPromptDraftResponse struct {
-	Prompt     string `json:"prompt"`
-	Model      string `json:"model"`
-	SceneCount int    `json:"sceneCount"` // 实际合并的分镜数量（章节剩余不足时小于请求值）
+	Prompt              string                                    `json:"prompt"`
+	Model               string                                    `json:"model"`
+	SceneCount          int                                       `json:"sceneCount"` // 实际合并的分镜数量（章节剩余不足时小于请求值）
+	CharacterReferences []AnimationPromptDraftCharacterReference `json:"characterReferences"` // 本场出场人物参考（来自大纲人设），前端据此自动附加 @人物 提及
+}
+
+// AnimationPromptDraftCharacterReference 提示词草稿自动附带的人物参考（仅本场出场人物）
+type AnimationPromptDraftCharacterReference struct {
+	CharacterID    uint   `json:"characterId"`
+	Name           string `json:"name"`
+	CoreFeatures   string `json:"coreFeatures"`
+	ImageKey       string `json:"imageKey"`       // 默认槽位参考图（按槽位优先级取第一张已配置的）
+	ImageSlot      string `json:"imageSlot"`      // 与前端 Character 图像字段名一致（referenceImageUrl 等）
+	ImageSlotLabel string `json:"imageSlotLabel"` // 槽位中文名（三视图/半身正面/...）
+	VoiceAudioKey  string `json:"voiceAudioKey"`  // 人物音色音频
 }
