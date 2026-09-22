@@ -1198,6 +1198,21 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     return text.trim();
   };
 
+  // 一键优化返回纯文本，图片N/音频N 引用会退化成普通文字；按优化前 chip 的编号把这些引用还原为 token，让 chip 保留下来
+  const restoreMentionTokensFromText = (text: string, sourcePrompt: string) => {
+    const labelToMention = new Map<string, PromptAssetMention>();
+    Object.values(promptMentions).forEach(mention => {
+      if (!sourcePrompt.includes(`{{asset:${mention.id}}}`) && !sourcePrompt.includes(mention.label)) return;
+      const label = promptMentionOrder[mention.id];
+      if (label) labelToMention.set(label, mention);
+    });
+    if (!labelToMention.size) return text;
+    return text.replace(/(图片|音频)\s*(\d+)/g, (raw: string, prefix: string, num: string) => {
+      const mention = labelToMention.get(`${prefix}${num}`);
+      return mention ? `{{asset:${mention.id}}}` : raw;
+    });
+  };
+
   const getReferenceKeys = (type: ReferenceMediaType) =>
     Array.from(new Set(referenceMedia[type].map(item => item.key).filter(Boolean)));
 
@@ -1299,7 +1314,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       if (!nextPrompt) {
         throw new Error('优化结果为空');
       }
-      setGenerationPrompt(nextPrompt);
+      // 优化结果中的 图片N/音频N 引用还原为 chip，保留可交互（悬停预览/删除）的人物与素材引用块
+      setGenerationPrompt(restoreMentionTokensFromText(nextPrompt, currentPrompt));
       setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
       showToast('提示词已按电影分镜范式优化', 'success');
     } catch (err) {
