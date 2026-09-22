@@ -176,10 +176,12 @@ type OptimizeSceneAnimationPromptResponse struct {
 // GenerateSceneAnimationPromptDraftRequest 生成视频提示词草稿请求
 type GenerateSceneAnimationPromptDraftRequest struct {
 	Model string `json:"model"`
+	Count int    `json:"count"` // 合并分镜数量（含当前分镜），取值 1-10，默认 1；超出章节剩余分镜数时按实际数量合并
 }
 
 // GenerateSceneAnimationPromptDraftResponse 生成视频提示词草稿响应
 type GenerateSceneAnimationPromptDraftResponse struct {
-	Prompt string `json:"prompt"`
-	Model  string `json:"model"`
+	Prompt     string `json:"prompt"`
+	Model      string `json:"model"`
+	SceneCount int    `json:"sceneCount"` // 实际合并的分镜数量（章节剩余不足时小于请求值）
 }

@@ -753,11 +753,15 @@ export interface OptimizeAnimationPromptResponse {
 
 export interface GenerateAnimationPromptDraftPayload {
   model?: string;
+  /** 合并分镜数量（含当前分镜），1-10；超出本章剩余分镜数时按实际数量合并 */
+  count?: number;
 }
 
 export interface GenerateAnimationPromptDraftResponse {
   prompt: string;
   model: string;
+  /** 实际合并的分镜数量（章节剩余不足时小于请求值） */
+  sceneCount: number;
 }
 
 export const animationApi = {
