@@ -348,6 +348,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
   const [generatingPromptDraft, setGeneratingPromptDraft] = useState(false);
   // 提示词草稿合并分镜数（含当前分镜），1-10，默认 3
   const [promptDraftSceneCount, setPromptDraftSceneCount] = useState(PROMPT_DRAFT_SCENE_COUNT_DEFAULT);
+  // 合并分镜数滑块面板：hover 展开，移出后延时收起，避免鼠标移向面板途中因按钮与面板之间的间隔而闪没
+  const [promptCountPanelOpen, setPromptCountPanelOpen] = useState(false);
+  const promptCountPanelHideTimerRef = useRef<number | null>(null);
 
   const isWanVideoModel = generationModel.startsWith('wan3.0-video');
 
@@ -752,6 +755,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       if (promptMentionPreviewTimerRef.current) {
         window.clearTimeout(promptMentionPreviewTimerRef.current);
       }
+      if (promptCountPanelHideTimerRef.current) {
+        window.clearTimeout(promptCountPanelHideTimerRef.current);
+      }
     };
   }, []);
 
@@ -1125,6 +1131,27 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   const getReferenceKeys = (type: ReferenceMediaType) =>
     Array.from(new Set(referenceMedia[type].map(item => item.key).filter(Boolean)));
+
+  const clearPromptCountPanelHideTimer = () => {
+    if (promptCountPanelHideTimerRef.current) {
+      window.clearTimeout(promptCountPanelHideTimerRef.current);
+      promptCountPanelHideTimerRef.current = null;
+    }
+  };
+
+  const openPromptCountPanel = () => {
+    clearPromptCountPanelHideTimer();
+    setPromptCountPanelOpen(true);
+  };
+
+  // 延时 300ms 收起：鼠标从按钮移到面板之间有 8px 间隔，立刻收起会导致面板中途消失
+  const schedulePromptCountPanelHide = () => {
+    clearPromptCountPanelHideTimer();
+    promptCountPanelHideTimerRef.current = window.setTimeout(() => {
+      promptCountPanelHideTimerRef.current = null;
+      setPromptCountPanelOpen(false);
+    }, 300);
+  };
 
   const handleGeneratePromptDraft = async () => {
     if (!activeScene?.id) return;
@@ -2725,9 +2752,15 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">提示词</label>
                           <div className="flex flex-wrap items-center justify-end gap-3">
-                            <div className="relative group/prompt-count">
-                              {/* 展开面板（hover 显示）：合并分镜数滑块 */}
-                              <div className="absolute bottom-full right-0 mb-2 w-72 rounded-2xl border border-white/10 bg-[#161616] p-4 shadow-2xl opacity-0 translate-y-1 pointer-events-none transition-all duration-200 group-hover/prompt-count:opacity-100 group-hover/prompt-count:translate-y-0 group-hover/prompt-count:pointer-events-auto z-40">
+                            <div
+                              className="relative"
+                              onMouseEnter={openPromptCountPanel}
+                              onMouseLeave={schedulePromptCountPanelHide}
+                            >
+                              {/* 展开面板（hover 显示，移出后延时 300ms 收起）：合并分镜数滑块 */}
+                              <div
+                                className={`absolute bottom-full right-0 mb-2 w-72 rounded-2xl border border-white/10 bg-[#161616] p-4 shadow-2xl transition-all duration-200 z-40 ${promptCountPanelOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-1 pointer-events-none'}`}
+                              >
                                 <div className="flex items-center gap-3">
                                   <div className="flex items-center gap-1 w-20 shrink-0">
                                     <span className="text-[12px] text-white/70">合并分镜数</span>
