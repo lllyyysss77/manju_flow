@@ -184,10 +184,10 @@ type GenerateSceneAnimationPromptDraftResponse struct {
 	Prompt              string                                    `json:"prompt"`
 	Model               string                                    `json:"model"`
 	SceneCount          int                                       `json:"sceneCount"` // 实际合并的分镜数量（章节剩余不足时小于请求值）
-	CharacterReferences []AnimationPromptDraftCharacterReference `json:"characterReferences"` // 本场出场人物参考（来自大纲人设），前端据此自动附加 @人物 提及
+	CharacterReferences []AnimationPromptDraftCharacterReference `json:"characterReferences"` // 本场出场人物参考（由 LLM 生成草稿时判定，来自大纲人设），前端据此自动附加 @人物 提及
 }
 
-// AnimationPromptDraftCharacterReference 提示词草稿自动附带的人物参考（仅本场出场人物）
+// AnimationPromptDraftCharacterReference 提示词草稿自动附带的人物参考（LLM 判定的本场出场人物）
 type AnimationPromptDraftCharacterReference struct {
 	CharacterID    uint   `json:"characterId"`
 	Name           string `json:"name"`

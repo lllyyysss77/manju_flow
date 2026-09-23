@@ -1693,9 +1693,17 @@ func buildAnimationPromptDraftSystemPrompt() string {
 3. **全量覆盖**：必须完整覆盖本次给定每一个分镜的剧情要点与台词，禁止遗漏、跳过或擅自合并省略任何分镜；同时禁止把给定分镜范围之外的场景、剧情生成为画面。
 4. **时长与节奏**：整条视频按分镜数量与剧情密度合理分配节奏，信息密度高、打斗或情绪爆发强的分镜可以给更多镜头与细节，过渡性分镜适当精简，但每个分镜的时长份额要与其剧情重要性匹配，不要头重脚轻。
 
+### 出场人物判断（决定草稿最后一行的【出场人物】名单）
+1. **出场标准**：人物真实出现在本次给定分镜的画面中（正脸、侧影、背影、局部身影均算出场）。
+2. **提及不算出场**：仅在画面描述、台词、旁白、对白或内心活动中被提及、但画面中未出现其身影的人物，不算出场。
+3. **只从人设名单挑选**：出场人物只能从【人物人设名单】中挑选；名单之外的群演、路人、模糊人群不要列入。
+4. **音频轨道仅作参考**：若提供了音频轨道角色，说明该角色在本次分镜配置了台词音频，可作为出场判断的参考，但仍以画面是否出现身影为准。
+5. **数量上限**：出场人物超过 4 位时，只按画面中的重要程度列出前 4 位。
+
 ### 完整输出格式
 镜头 X：【机位+构图（取自线稿）+场景环境+人物站位（严格匹配线稿布局）+肢体姿态（遵循线稿人体框架，增加发力/微表情细节）+道具、灵气光影特效+台词/内心OS】，关键词：【高密度镜头、人物姿态、特效、氛围类名词短语，顿号隔开】，音效：【精准匹配画面节奏的音效，台词放置在此处】。
 镜头 X：……（多分镜合并时，每个分镜至少一个镜头，全部镜头按分镜顺序连续编号）
+【出场人物】人物A、人物B（草稿最后一行固定输出出场人物名单：从【人物人设名单】中挑选真实出现在本次分镜画面中的人物，顿号分隔，最多 4 位；人设名单中无人出场或未提供人设名单时输出【出场人物】无）
 
 ### 📌线稿吸收细则
 1. **机位构图优先取自线稿**
@@ -1712,7 +1720,7 @@ func buildAnimationPromptDraftSystemPrompt() string {
 2. 禁止脱离线稿构图，随意更改人物站位、镜头角度；
 3. 禁止短句碎片化罗列关键词，必须沿用你给的长段镜头描述+独立关键词区块的结构；
 4. 禁止空洞笼统描述（“人物很紧张，特效很好看”），所有氛围落实到具体光影、粒子、肢体细节；
-5. 禁止额外增加分析、解释、修改说明，只输出最终成品分镜；
+5. 禁止额外增加分析、解释、修改说明，只输出最终成品分镜与最后一行【出场人物】名单；
 6. 禁止遗漏、跳过或调换本次给定的任何分镜（多分镜合并时必须逐个覆盖、保持先后顺序）。
 7. 禁止在草稿中输出任何整体画风、风格模板类总结文案（如以“整体…”开头的画风总结段）；画风提示词由系统在生成视频时自动追加到提示词末尾。
 
@@ -1722,7 +1730,8 @@ func buildAnimationPromptDraftSystemPrompt() string {
 3. 通读你的文字剧情，确定人物情绪、台词、法术特效、事件走向
 4. 将剧情元素嵌入线稿固定画面布局中，丰富动态、光影、灵气、微表情细节，强化高级感与视觉爆点
 5. 严格套用你的标准模板分段输出镜头，镜头全片连续编号，分镜之间以内化的衔接方式自然过渡
-6. 检查草稿中没有附带任何整体画风、风格模板类总结文案；画风提示词由系统在生成视频时自动追加到提示词末尾
+6. 判断本次分镜的真实出场人物（画面中出现身影才算出场，仅被台词/旁白提及不算），在草稿最后一行以【出场人物】…格式输出名单
+7. 检查草稿中没有附带任何整体画风、风格模板类总结文案；画风提示词由系统在生成视频时自动追加到提示词末尾
 
 ### 🧪实操示例
 >线稿信息：镜头1近景侧斜，女主啃面包，看守弟子手扶肚子；镜头2高空俯视，女主位于人群中心；镜头3面部大特写，女主会心浅笑
@@ -1730,6 +1739,7 @@ func buildAnimationPromptDraftSystemPrompt() string {
 镜头 1：侧斜角度拍摄，中近景构图，青石铺就的归一宗广场上，女主连瑟居于画面右侧，双手捧着法棍面包惬意啃食，腮帮子微微鼓起，神态松弛悠然，画面前景左侧是值守的归一宗弟子，他一手不自觉按在腹部，肩膀僵硬紧绷，目光不受控制瞟向面包，耳尖泛起淡淡的红晕，满脸掩饰不住的尴尬，关键词：侧斜机位、中近景构图、古风宗门青石广场、女主连瑟、手持法棍面包、惬意咀嚼、腮部鼓起、归一宗看守弟子、手抚腹部、僵硬拘谨姿态、耳尖泛红、偷偷侧目、克制的馋意、柔和日间自然光，音效：清晰咀嚼声，弟子肚子低沉咕咕叫声。
 镜头 2：高空俯视拍摄，广阔的宗门广场，女主连瑟处在画面视觉中心，周围环绕多名杂役弟子，一名杂役拖拽扫帚，扫地动作拖沓迟缓，扫帚在地面停滞滑行，另一名弟子双手扶住木箱，抬箱动作放缓停滞，周围其余弟子纷纷放慢脚步，侧脸悄悄朝向女主方向，所有人喉结不自觉滚动，极力压抑饥饿感，广场散落扫帚、木箱与水桶，秩序微微涣散，关键词：高空俯视机位、广场全景布局、女主位于画面中心、松散环绕的杂役弟子、扫地动作迟缓、扫帚拖曳停滞、搬箱动作停顿、喉结滚动吞咽口水、侧目张望、刻意掩饰馋意、古风宗门殿宇远景、柔和漫射日光、松弛的喜剧反差氛围，音效：拖沓的扫帚摩擦声，此起彼伏连续肚子咕咕叫声，微弱衣物摩擦声。
 镜头 3：面部特写拍摄，女主连瑟眉眼舒展，视线缓缓扫过四周一众饥饿窘迫的弟子，嘴角缓缓扬起，露出了然戏谑的会心浅笑，脸颊还残留轻微鼓起，画面背景人群被浅景深柔和虚化，关键词：面部特写机位、女主连瑟、了然戏谑浅笑、眼神从容扫视、脸颊轻微鼓起、背景人群虚化、浅景深效果、柔和氛围感光影、轻喜剧情绪落点，音效：细碎咀嚼声，一声轻柔的轻笑。
+【出场人物】连瑟、归一宗弟子
 
 ## 镜头描述标准
 
@@ -2064,57 +2074,137 @@ var animationCharacterImageSlots = []animationCharacterImageSlot{
 	{Field: "fullBodyBackImageUrl", Label: "全身后视图", Value: func(character models.Character) string { return strings.TrimSpace(character.FullBodyBackImageUrl) }},
 }
 
-// maxAnimationDraftCharacterReferences 单次草稿自动附加的人物参考上限，避免出场人物过多时挤占视频生成参考位
+// maxAnimationDraftCharacterReferences 单次草稿自动附加的人物参考上限，避免出场人物过多时挤占视频生成参考位；
+// 系统提示中"出场人物名单最多 4 位"的约束需与此保持一致
 const maxAnimationDraftCharacterReferences = 4
 
-// detectAnimationPromptDraftCharacters 在大纲人设中找出本次合并分镜的出场人物：
-// 角色名出现在任一合并分镜的画面描述或台词文字中，或与分镜音频轨道的角色名一致，均视为出场
-func detectAnimationPromptDraftCharacters(db *gorm.DB, scene models.Scene, mergedSceneIDs []uint, mergedScenes []models.Scene) []models.Character {
+// loadAnimationPromptDraftRosterCharacters 加载作品大纲人设的完整人物名单，作为 LLM 判断本场出场人物的候选
+func loadAnimationPromptDraftRosterCharacters(db *gorm.DB, scene models.Scene) []models.Character {
 	var characters []models.Character
 	if err := db.Where("book_id = ?", scene.BookID).Order("`index` asc, id asc").Find(&characters).Error; err != nil {
 		return nil
 	}
-	if len(characters) == 0 {
+	return characters
+}
+
+// listAnimationPromptDraftAudioRoles 汇总本次合并分镜音频轨道的角色名（去重、按轨道顺序），
+// 提供给 LLM 作为判断出场人物的参考信号（有台词不等于画面出场，最终由 LLM 判断）
+func listAnimationPromptDraftAudioRoles(db *gorm.DB, mergedSceneIDs []uint) []string {
+	if len(mergedSceneIDs) == 0 {
 		return nil
 	}
+	var audioTracks []models.SceneAudio
+	if err := db.Where("scene_id IN ?", mergedSceneIDs).Order("scene_id asc, `index` asc").Find(&audioTracks).Error; err != nil {
+		return nil
+	}
+	roles := make([]string, 0, len(audioTracks))
+	seen := map[string]bool{}
+	for _, track := range audioTracks {
+		role := strings.TrimSpace(track.Role)
+		if role == "" || seen[role] {
+			continue
+		}
+		seen[role] = true
+		roles = append(roles, role)
+	}
+	return roles
+}
 
-	roles := map[string]bool{}
-	if len(mergedSceneIDs) > 0 {
-		var audioTracks []models.SceneAudio
-		if err := db.Where("scene_id IN ?", mergedSceneIDs).Find(&audioTracks).Error; err == nil {
-			for _, track := range audioTracks {
-				if role := strings.TrimSpace(track.Role); role != "" {
-					roles[role] = true
-				}
+// animationPromptDraftCharacterLineMarkers LLM 按系统提示在草稿末尾标注出场人物名单的行前缀（兼容常见变体）
+var animationPromptDraftCharacterLineMarkers = []string{"【出场人物】", "出场人物：", "出场人物:"}
+
+// animationPromptDraftCharacterLineContent 判断一行是否为出场人物名单行，是则返回标记后的名单内容
+func animationPromptDraftCharacterLineContent(line string) (string, bool) {
+	trimmed := strings.Trim(strings.TrimSpace(line), "*`- ")
+	for _, marker := range animationPromptDraftCharacterLineMarkers {
+		if !strings.HasPrefix(trimmed, marker) {
+			continue
+		}
+		content := strings.TrimSpace(trimmed[len(marker):])
+		content = strings.TrimPrefix(content, "：")
+		content = strings.TrimPrefix(content, ":")
+		return strings.TrimSpace(content), true
+	}
+	return "", false
+}
+
+// extractAnimationPromptDraftCharacterNames 从草稿文本中解析 LLM 按系统提示标注的出场人物名单行：
+// 返回剔除名单行后的草稿文本与出场人物名列表（保持 LLM 给出的顺序并去重）；
+// 未找到名单行或标注为"无"时返回剔除后的草稿与空列表
+func extractAnimationPromptDraftCharacterNames(draft string) (string, []string) {
+	lines := strings.Split(draft, "\n")
+	names := []string{}
+	seen := map[string]bool{}
+	kept := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		content, ok := animationPromptDraftCharacterLineContent(lines[i])
+		if !ok {
+			kept = append(kept, lines[i])
+			continue
+		}
+		// 标记后内容为空时，LLM 可能把名单写在了下一行（下一行本身也是名单行时不消费）
+		if content == "" && i+1 < len(lines) {
+			if _, nextIsMarker := animationPromptDraftCharacterLineContent(lines[i+1]); !nextIsMarker {
+				content = strings.TrimSpace(lines[i+1])
+				i++
 			}
+		}
+		content = strings.Trim(content, "。.;；")
+		if content == "" || content == "无" || content == "（无）" || content == "(无)" || strings.EqualFold(content, "none") {
+			continue
+		}
+		for _, name := range strings.FieldsFunc(content, func(r rune) bool {
+			return strings.ContainsRune("、，,；;/ \t", r)
+		}) {
+			name = strings.Trim(name, "\"'“”‘’ ")
+			// 去掉 LLM 可能附带的括号补充说明，如 "阿羽（女主）"
+			if idx := strings.IndexAny(name, "（("); idx >= 0 {
+				name = name[:idx]
+			}
+			name = strings.TrimSpace(name)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
 		}
 	}
+	return strings.TrimSpace(strings.Join(kept, "\n")), names
+}
 
-	matched := make([]models.Character, 0, len(characters))
-	seen := map[string]bool{}
+// matchAnimationPromptDraftCharacters 在大纲人设名单中查找 LLM 标注的出场人物：
+// 按名字精确匹配、保持 LLM 给出的出场顺序；重名人物取名单中排位靠前的一位；名单外的人物忽略
+func matchAnimationPromptDraftCharacters(characters []models.Character, names []string) []models.Character {
+	byName := make(map[string]models.Character, len(characters))
 	for _, character := range characters {
 		name := strings.TrimSpace(character.Name)
-		if name == "" || seen[name] {
+		if name == "" {
 			continue
 		}
-		if roles[name] {
-			seen[name] = true
-			matched = append(matched, character)
+		if _, exists := byName[name]; exists {
 			continue
 		}
-		for _, item := range mergedScenes {
-			if strings.Contains(item.Description, name) || strings.Contains(item.Dialogue, name) {
-				seen[name] = true
-				matched = append(matched, character)
-				break
-			}
+		byName[name] = character
+	}
+	matched := make([]models.Character, 0, len(names))
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			continue
 		}
+		character, exists := byName[name]
+		if !exists {
+			continue
+		}
+		seen[name] = true
+		matched = append(matched, character)
 	}
 	return matched
 }
 
-// buildAnimationPromptDraftCharacterContext 组装出场人物人设上下文，让草稿对人物的描述与大纲人设一致
-func buildAnimationPromptDraftCharacterContext(characters []models.Character) string {
+// buildAnimationPromptDraftCharacterContext 组装人物人设名单上下文：LLM 依据名单保持出场人物形象一致，
+// 并在草稿末尾标注本场真实出场的人物（提及不等于出场）；音频轨道角色作为辅助判断信号一并提供
+func buildAnimationPromptDraftCharacterContext(characters []models.Character, audioRoles []string) string {
 	lines := make([]string, 0, len(characters))
 	for _, character := range characters {
 		name := strings.TrimSpace(character.Name)
@@ -2134,10 +2224,14 @@ func buildAnimationPromptDraftCharacterContext(characters []models.Character) st
 	if len(lines) == 0 {
 		return ""
 	}
-	return "【出场人物人设｜来自大纲人设模块；草稿中这些人物的外貌、发型、服装等核心特征必须与设定一致】\n" + strings.Join(lines, "\n")
+	context := "【人物人设名单｜来自大纲人设模块，为本作品全部人物：草稿中出场人物的外貌、发型、服装等核心特征必须与其设定一致；名单中未在本次分镜画面出现的人物禁止写入草稿；草稿最后一行的出场人物名单只能从此名单中挑选】\n" + strings.Join(lines, "\n")
+	if len(audioRoles) > 0 {
+		context += "\n\n【本次合并分镜的音频轨道角色｜这些角色在本次分镜配置了台词音频，仅供判断出场人物参考：有台词不等于画面出场】\n" + strings.Join(audioRoles, "、")
+	}
+	return context
 }
 
-// buildAnimationPromptDraftCharacterReferences 从出场人物中筛选已配置参考图或音色音频的人物，
+// buildAnimationPromptDraftCharacterReferences 从 LLM 判定的出场人物中筛选已配置参考图或音色音频的人物，
 // 生成随草稿返回的人物参考列表（前端据此自动完成等效于手动 @人物 的提及）；图片按槽位优先级取默认一张
 func buildAnimationPromptDraftCharacterReferences(characters []models.Character) []models.AnimationPromptDraftCharacterReference {
 	references := make([]models.AnimationPromptDraftCharacterReference, 0, len(characters))
@@ -2354,7 +2448,9 @@ func (h *AnimationHandler) OptimizePrompt(c *gin.Context) {
 }
 
 // GeneratePromptDraft 根据剧本创作模块的分镜信息（画面描述/台词/运镜/转场）与场景参考图，用 LLM 生成视频提示词草稿；
-// count > 1 时从当前分镜起合并后续连续分镜为一条提示词，用于单次视频生成覆盖多段分镜
+// count > 1 时从当前分镜起合并后续连续分镜为一条提示词，用于单次视频生成覆盖多段分镜。
+// 出场人物由 LLM 生成草稿时自行判断（画面出现才算出场，仅被台词提及不算），在草稿末行标注名单，
+// 后端解析名单并随响应返回人物参考，不再按名字关键词匹配
 func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 	sceneId := c.Param("sceneId")
 
@@ -2467,9 +2563,13 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		return
 	}
 
-	// 大纲人设中的出场人物：生成随草稿返回的人物参考（前端自动附加为 @人物 提及），并把人设文本作为 LLM 上下文
-	draftCharacters := detectAnimationPromptDraftCharacters(db, scene, mergedSceneIDs, mergedScenes)
-	characterReferences := buildAnimationPromptDraftCharacterReferences(draftCharacters)
+	// 人物人设名单与音频轨道角色：作为 LLM 判断本场出场人物的上下文；
+	// 出场人物名单由 LLM 在草稿末行标注，生成后解析（关键词提及不等于画面出场）
+	rosterCharacters := loadAnimationPromptDraftRosterCharacters(db, scene)
+	characterContext := buildAnimationPromptDraftCharacterContext(
+		rosterCharacters,
+		listAnimationPromptDraftAudioRoles(db, mergedSceneIDs),
+	)
 
 	// 组装随请求提供的参考图：按分镜顺序、每分镜内参考图顺序，最多 8 张
 	imageURLs := make([]string, 0, len(allReferences))
@@ -2503,7 +2603,7 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		buildAnimationPromptDraftUserPrompt(
 			draftScenes,
 			buildAnimationPromptDraftNarrativeContext(db, scene, chapterScenes, currentIndex),
-			buildAnimationPromptDraftCharacterContext(draftCharacters),
+			characterContext,
 		),
 		imageURLs,
 	)
@@ -2512,11 +2612,17 @@ func (h *AnimationHandler) GeneratePromptDraft(c *gin.Context) {
 		return
 	}
 
+	// 解析 LLM 标注的出场人物名单，并把名单行从草稿中剔除（不进入最终提示词）
+	draft, appearingNames := extractAnimationPromptDraftCharacterNames(draft)
 	draft = normalizeSeedanceOptimizedPrompt(draft)
 	if draft == "" {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "提示词草稿生成结果为空"})
 		return
 	}
+
+	characterReferences := buildAnimationPromptDraftCharacterReferences(
+		matchAnimationPromptDraftCharacters(rosterCharacters, appearingNames),
+	)
 
 	c.JSON(http.StatusOK, models.GenerateSceneAnimationPromptDraftResponse{
 		Prompt:              draft,
