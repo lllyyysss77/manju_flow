@@ -162,6 +162,21 @@ func isWanAnimationModel(model string) bool {
 	}
 }
 
+// validateAnimationDuration 校验视频生成时长：万相模型额外支持 duration=-1 表示智能时长
+func validateAnimationDuration(model string, duration int) error {
+	if isWanAnimationModel(model) && duration == -1 {
+		return nil
+	}
+	minDuration, maxDuration := 5, 15
+	if isWanAnimationModel(model) {
+		minDuration, maxDuration = 2, 30
+	}
+	if duration < minDuration || duration > maxDuration {
+		return fmt.Errorf("duration must be between %d and %d seconds", minDuration, maxDuration)
+	}
+	return nil
+}
+
 func isAnimationProviderConfigured(model string) bool {
 	if isWanAnimationModel(model) {
 		return strings.TrimSpace(config.Cfg.Wan.APIKey) != "" &&
@@ -2992,14 +3007,9 @@ func (h *AnimationHandler) CreateGenerationTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ratio must be one of: 16:9, 9:16"})
 		return
 	}
-	minDuration, maxDuration := 5, 15
-	if isWanAnimationModel(req.Model) {
-		minDuration, maxDuration = 2, 30
-	}
-	if req.Duration < minDuration || req.Duration > maxDuration {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("duration must be between %d and %d seconds", minDuration, maxDuration),
-		})
+	// 万相模型 duration 支持传 -1，表示智能时长（由模型根据提示词自动决定输出时长）
+	if err := validateAnimationDuration(req.Model, req.Duration); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if _, ok := allowedAnimationModels[req.Model]; !ok {
