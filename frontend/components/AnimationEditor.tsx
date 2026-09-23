@@ -2923,7 +2923,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                                 onClick={handleGeneratePromptDraft}
                                 disabled={generatingPromptDraft}
                                 className="inline-flex items-center gap-1.5 rounded-full border border-blue-300/20 bg-blue-400/10 px-2.5 py-1 text-[11px] font-semibold text-blue-100/90 transition-colors hover:border-blue-200/40 hover:bg-blue-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
-                                title="根据剧本创作的画面描述、台词、运镜、转场与场景参考图，为当前分镜及后续分镜生成一条合并提示词（悬停可调整合并分镜数）"
+                                title="根据剧本创作的画面描述、台词、运镜、转场与场景参考图，为当前分镜及后续分镜生成一条合并提示词；出场人物由 AI 判定并自动附加参考图/音频（悬停可调整合并分镜数）"
                               >
                                 {generatingPromptDraft ? <Loader2 size={12} className="animate-spin" /> : <PenLine size={12} />}
                                 {generatingPromptDraft ? '生成中...' : `生成后续${promptDraftSceneCount}段分镜提示词`}
