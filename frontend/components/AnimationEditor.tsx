@@ -124,6 +124,10 @@ const escapeHtml = (value: string) =>
 const DEFAULT_VIDEO_MODEL: VideoGenerationModel = 'doubao-seedance-2-0-fast-260128';
 const DEFAULT_VIDEO_RATIO: VideoGenerationRatio = '16:9';
 const DEFAULT_VIDEO_DURATION = 8;
+// 万相模型智能时长标记：duration 传 -1 时由模型根据提示词自动决定输出时长
+const SMART_VIDEO_DURATION = -1;
+const formatVideoDurationLabel = (duration: number) =>
+  duration === SMART_VIDEO_DURATION ? '智能' : `${duration}s`;
 
 // 提示词草稿合并分镜数（含当前分镜）：视频模型单次可生成约 30s，可将多段分镜合并为一条提示词
 const PROMPT_DRAFT_SCENE_COUNT_MIN = 1;
@@ -391,6 +395,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
   useEffect(() => {
     setGenerationDuration(current => {
+      // 智能时长（-1）仅万相模型支持，切回其他模型时恢复默认时长
+      if (current === SMART_VIDEO_DURATION) {
+        return isWanVideoModel ? SMART_VIDEO_DURATION : DEFAULT_VIDEO_DURATION;
+      }
       const min = isWanVideoModel ? 2 : 5;
       const max = isWanVideoModel ? 30 : 15;
       return Math.min(Math.max(current, min), max);
@@ -3065,7 +3073,13 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                                     <button
                                       key={option.value}
                                       type="button"
-                                      onClick={() => setGenerationModel(option.value)}
+                                      onClick={() => {
+                                        setGenerationModel(option.value);
+                                        // 切换到万相模型时，时长默认切换为智能时长
+                                        if (!active && option.value.startsWith('wan3.0-video')) {
+                                          setGenerationDuration(SMART_VIDEO_DURATION);
+                                        }
+                                      }}
                                       className={`rounded-xl border p-3 text-left transition-all ${
                                         active
                                           ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.12)]'
@@ -3106,21 +3120,46 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                             <div className="space-y-3 border-t border-white/8 pt-3">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/30">视频时长</div>
-                                <div className="text-sm font-semibold text-white">{generationDuration}s</div>
+                                <div className="flex items-center gap-2">
+                                  {isWanVideoModel && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setGenerationDuration(current =>
+                                          current === SMART_VIDEO_DURATION ? DEFAULT_VIDEO_DURATION : SMART_VIDEO_DURATION
+                                        )
+                                      }
+                                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-all ${
+                                        generationDuration === SMART_VIDEO_DURATION
+                                          ? 'border-blue-500/60 bg-blue-500/15 text-blue-200'
+                                          : 'border-white/10 bg-white/5 text-white/40 hover:border-white/25 hover:text-white/70'
+                                      }`}
+                                    >
+                                      智能时长
+                                    </button>
+                                  )}
+                                  <div className="text-sm font-semibold text-white">{formatVideoDurationLabel(generationDuration)}</div>
+                                </div>
                               </div>
-                              <input
-                                type="range"
-                                min={isWanVideoModel ? 2 : 5}
-                                max={isWanVideoModel ? 30 : 15}
-                                step={1}
-                                value={generationDuration}
-                                onChange={e => setGenerationDuration(Number(e.target.value))}
-                                className="w-full accent-blue-500"
-                              />
-                              <div className="flex items-center justify-between text-[11px] text-white/30">
-                                <span>{isWanVideoModel ? '2s' : '5s'}</span>
-                                <span>{isWanVideoModel ? '30s' : '15s'}</span>
-                              </div>
+                              {generationDuration === SMART_VIDEO_DURATION ? (
+                                <p className="text-[11px] text-white/40">已开启智能时长，万相 3.0 将根据提示词自动决定视频时长。</p>
+                              ) : (
+                                <>
+                                  <input
+                                    type="range"
+                                    min={isWanVideoModel ? 2 : 5}
+                                    max={isWanVideoModel ? 30 : 15}
+                                    step={1}
+                                    value={generationDuration}
+                                    onChange={e => setGenerationDuration(Number(e.target.value))}
+                                    className="w-full accent-blue-500"
+                                  />
+                                  <div className="flex items-center justify-between text-[11px] text-white/30">
+                                    <span>{isWanVideoModel ? '2s' : '5s'}</span>
+                                    <span>{isWanVideoModel ? '30s' : '15s'}</span>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3146,7 +3185,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                               </div>
                               <div className="flex items-center justify-between gap-2">
                                 <span>输出时长</span>
-                                <span>{generationDuration}s</span>
+                                <span>{formatVideoDurationLabel(generationDuration)}</span>
                               </div>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">

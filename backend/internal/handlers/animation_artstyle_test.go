@@ -100,3 +100,36 @@ func TestGenerateSceneAnimationRequestParsesOmittedAppendArtStyle(t *testing.T) 
 		t.Error("omitted appendArtStyle should resolve to enabled")
 	}
 }
+
+func TestValidateAnimationDuration(t *testing.T) {
+	cases := []struct {
+		name          string
+		model         string
+		duration      int
+		expectedError bool
+	}{
+		{name: "wan smart duration", model: "wan3.0-video", duration: -1, expectedError: false},
+		{name: "wan prime smart duration", model: "wan3.0-video-prime", duration: -1, expectedError: false},
+		{name: "wan lower bound", model: "wan3.0-video", duration: 2, expectedError: false},
+		{name: "wan upper bound", model: "wan3.0-video", duration: 30, expectedError: false},
+		{name: "wan below lower bound", model: "wan3.0-video", duration: 1, expectedError: true},
+		{name: "wan above upper bound", model: "wan3.0-video", duration: 31, expectedError: true},
+		{name: "wan other negative rejected", model: "wan3.0-video", duration: -2, expectedError: true},
+		{name: "ark rejects smart duration", model: "doubao-seedance-2-0-260128", duration: -1, expectedError: true},
+		{name: "ark lower bound", model: "doubao-seedance-2-0-fast-260128", duration: 5, expectedError: false},
+		{name: "ark upper bound", model: "doubao-seedance-2-0-fast-260128", duration: 15, expectedError: false},
+		{name: "ark below lower bound", model: "doubao-seedance-2-0-260128", duration: 4, expectedError: true},
+		{name: "ark above upper bound", model: "doubao-seedance-2-0-260128", duration: 16, expectedError: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateAnimationDuration(tc.model, tc.duration)
+			if tc.expectedError && err == nil {
+				t.Errorf("expected error for model=%s duration=%d, got nil", tc.model, tc.duration)
+			}
+			if !tc.expectedError && err != nil {
+				t.Errorf("unexpected error for model=%s duration=%d: %v", tc.model, tc.duration, err)
+			}
+		})
+	}
+}

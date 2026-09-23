@@ -148,7 +148,7 @@ type UploadAnimationRequest struct {
 type GenerateSceneAnimationRequest struct {
 	Text               string   `json:"text" binding:"required"`
 	Ratio              string   `json:"ratio" binding:"required"`
-	Duration           int      `json:"duration" binding:"required"`
+	Duration           int      `json:"duration" binding:"required"` // 时长（秒）；万相模型可传 -1 表示智能时长
 	Model              string   `json:"model" binding:"required"`
 	ReferenceImageKeys []string `json:"referenceImageKeys"`
 	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
