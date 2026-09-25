@@ -741,6 +741,8 @@ export interface GenerateAnimationPayload {
 export interface OptimizeAnimationPromptPayload {
   text: string;
   model?: string;
+  /** 目标视频生成模型：wan3.0-* 万相系列按万相 3.0 官方提示词指南整理为五段结构化请求，其余按电影分镜范式优化 */
+  videoModel?: string;
   referenceImageKeys?: string[];
   referenceAudioKeys?: string[];
   referenceVideoKeys?: string[];

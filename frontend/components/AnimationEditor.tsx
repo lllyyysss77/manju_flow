@@ -1312,8 +1312,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     setOptimizingPrompt(true);
     setAnimationError(null);
     try {
+      // 目标视频模型决定优化方案：万相系列按万相 3.0 官方提示词指南整理，其余按电影分镜范式优化
       const res = await animationApi.optimizePrompt(activeScene.id, {
         text,
+        videoModel: generationModel,
         referenceImageKeys: getReferenceKeys('image'),
         referenceAudioKeys: getReferenceKeys('audio'),
         referenceVideoKeys: getReferenceKeys('video'),
@@ -1325,7 +1327,10 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       // 优化结果中的 图片N/音频N 引用还原为 chip，保留可交互（悬停预览/删除）的人物与素材引用块
       setGenerationPrompt(restoreMentionTokensFromText(nextPrompt, currentPrompt));
       setPromptPicker(prev => ({ ...prev, open: false, category: undefined, parentId: undefined, childId: undefined, activeIndex: 0 }));
-      showToast('提示词已按电影分镜范式优化', 'success');
+      showToast(
+        isWanVideoModel ? '提示词已按万相官方指南整理为五段结构化请求' : '提示词已按电影分镜范式优化',
+        'success'
+      );
     } catch (err) {
       console.error('Optimize animation prompt failed', err);
       const message = err instanceof Error ? err.message : '提示词优化失败，请重试';
@@ -2933,6 +2938,9 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                               type="button"
                               onClick={handleOptimizePrompt}
                               disabled={optimizingPrompt}
+                              title={isWanVideoModel
+                                ? '按万相 3.0 官方提示词指南，把提示词忠实整理为【核心任务】【情节概要】【音频风格】【运镜与核心约束】【负面提示词】五段结构化请求'
+                                : '按电影分镜范式优化提示词：补强镜头语言、动作细节、声音设计与连续性'}
                               className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100/90 transition-colors hover:border-amber-200/40 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
                             >
                               {optimizingPrompt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}

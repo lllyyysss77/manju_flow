@@ -161,7 +161,10 @@ type GenerateSceneAnimationRequest struct {
 // OptimizeSceneAnimationPromptRequest 优化视频提示词请求
 type OptimizeSceneAnimationPromptRequest struct {
 	Text               string   `json:"text" binding:"required"`
-	Model              string   `json:"model"`
+	Model              string   `json:"model"` // 执行优化的 LLM 模型（Ark Agent Plan），留空时取配置中的第一个
+	// VideoModel 目标视频生成模型：wan3.0-* 万相系列按万相 3.0 官方提示词指南整理为五段结构化请求，
+	// 留空或 Seedance 系列沿用电影分镜范式优化
+	VideoModel         string   `json:"videoModel"`
 	ReferenceImageKeys []string `json:"referenceImageKeys"`
 	ReferenceAudioKeys []string `json:"referenceAudioKeys"`
 	ReferenceVideoKeys []string `json:"referenceVideoKeys"`
