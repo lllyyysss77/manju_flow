@@ -37,6 +37,8 @@ const (
 	animationTaskPollBatchSize      = 20
 	animationTaskPollRequestTimeout = 30 * time.Second
 	animationVersionDownloadTimeout = 2 * time.Minute
+
+	HeaderDashScopeAsync = "X-Dashscope-Async"
 )
 
 var (
@@ -363,7 +365,7 @@ func (h *AnimationHandler) buildWanRequest(ctx context.Context, method string, e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(config.Cfg.Wan.APIKey))
 	if method == http.MethodPost {
-		req.Header["X-DashScope-Async"] = []string{"enable"}
+		req.Header[HeaderDashScopeAsync] = []string{"enable"}
 	}
 	return req, nil
 }
@@ -2190,8 +2192,8 @@ func buildAnimationPromptDraftNarrativeContext(db *gorm.DB, scene models.Scene, 
 
 // animationCharacterImageSlot 人物参考图槽位：自动附加时按顺序取第一张已配置的图
 type animationCharacterImageSlot struct {
-	Field string                              // 与前端 Character 图像字段名一致（JSON 字段）
-	Label string                              // 槽位中文名
+	Field string // 与前端 Character 图像字段名一致（JSON 字段）
+	Label string // 槽位中文名
 	Value func(character models.Character) string
 }
 

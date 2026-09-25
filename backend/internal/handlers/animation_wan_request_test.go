@@ -21,8 +21,8 @@ func TestBuildWanRequestPreservesAsyncHeaderCase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWanRequest returned error: %v", err)
 	}
-	if got := req.Header["X-DashScope-Async"]; len(got) != 1 || got[0] != "enable" {
-		t.Fatalf("X-DashScope-Async = %q, want enable", got)
+	if got := req.Header[HeaderDashScopeAsync]; len(got) != 1 || got[0] != "enable" {
+		t.Fatalf("%s = %q, want enable", HeaderDashScopeAsync, got)
 	}
 
 	dump, err := httputil.DumpRequestOut(req, false)
