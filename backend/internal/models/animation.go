@@ -184,19 +184,21 @@ type GenerateSceneAnimationPromptDraftRequest struct {
 
 // GenerateSceneAnimationPromptDraftResponse 生成视频提示词草稿响应
 type GenerateSceneAnimationPromptDraftResponse struct {
-	Prompt              string                                    `json:"prompt"`
-	Model               string                                    `json:"model"`
-	SceneCount          int                                       `json:"sceneCount"` // 实际合并的分镜数量（章节剩余不足时小于请求值）
-	CharacterReferences []AnimationPromptDraftCharacterReference `json:"characterReferences"` // 本场出场人物参考（由 LLM 生成草稿时判定，来自大纲人设），前端据此自动附加 @人物 提及
+	Prompt              string                                   `json:"prompt"`
+	Model               string                                   `json:"model"`
+	SceneCount          int                                      `json:"sceneCount"`          // 实际合并的分镜数量（章节剩余不足时小于请求值）
+	CharacterReferences []AnimationPromptDraftCharacterReference `json:"characterReferences"` // 本场出场/说话人物参考（出场→参考图、说话→音色，二者独立判定；由 LLM 生成草稿时判定，来自大纲人设），前端据此自动附加 @人物 提及
 }
 
-// AnimationPromptDraftCharacterReference 提示词草稿自动附带的人物参考（LLM 判定的本场出场人物）
+// AnimationPromptDraftCharacterReference 提示词草稿自动附带的人物参考（出场/说话两类信号独立判定）
 type AnimationPromptDraftCharacterReference struct {
 	CharacterID    uint   `json:"characterId"`
 	Name           string `json:"name"`
 	CoreFeatures   string `json:"coreFeatures"`
-	ImageKey       string `json:"imageKey"`       // 默认槽位参考图（按槽位优先级取第一张已配置的）
+	Appears        bool   `json:"appears"`        // 人物真实出现在本次分镜画面中（自动附加人物参考图）
+	Speaking       bool   `json:"speaking"`       // 人物在本次分镜有台词/对白/旁白/画外音（自动附加音色音频）
+	ImageKey       string `json:"imageKey"`       // 出场时按槽位优先级取默认一张；未出场或未配置时为空
 	ImageSlot      string `json:"imageSlot"`      // 与前端 Character 图像字段名一致（referenceImageUrl 等）
 	ImageSlotLabel string `json:"imageSlotLabel"` // 槽位中文名（三视图/半身正面/...）
-	VoiceAudioKey  string `json:"voiceAudioKey"`  // 人物音色音频
+	VoiceAudioKey  string `json:"voiceAudioKey"`  // 说话时附加人物音色音频；出场但无对白时为空
 }

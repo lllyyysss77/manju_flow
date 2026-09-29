@@ -92,54 +92,90 @@ func TestLoadAnimationPromptDraftRosterCharacters(t *testing.T) {
 }
 
 func TestExtractAnimationPromptDraftCharacterNames(t *testing.T) {
-	draft := "镜头 1：连瑟在广场啃面包。\n镜头 2：弟子侧目。\n【出场人物】连瑟、归一宗弟子"
-	cleaned, names := extractAnimationPromptDraftCharacterNames(draft)
+	draft := "镜头 1：连瑟在广场啃面包。\n镜头 2：弟子侧目。\n【出场人物】连瑟、归一宗弟子\n【说话人物】连瑟"
+	cleaned, appearing, speaking := extractAnimationPromptDraftCharacterNames(draft)
 	if cleaned != "镜头 1：连瑟在广场啃面包。\n镜头 2：弟子侧目。" {
-		t.Errorf("cleaned draft = %q, want marker line stripped", cleaned)
+		t.Errorf("cleaned draft = %q, want marker lines stripped", cleaned)
 	}
-	if len(names) != 2 || names[0] != "连瑟" || names[1] != "归一宗弟子" {
-		t.Errorf("names = %v, want [连瑟 归一宗弟子]", names)
+	if len(appearing) != 2 || appearing[0] != "连瑟" || appearing[1] != "归一宗弟子" {
+		t.Errorf("appearing = %v, want [连瑟 归一宗弟子]", appearing)
+	}
+	if len(speaking) != 1 || speaking[0] != "连瑟" {
+		t.Errorf("speaking = %v, want [连瑟]", speaking)
+	}
+
+	// 画外音：说话但不出场，两份名单相互独立
+	voiceover := "镜头 1：空镜。\n【出场人物】无\n【说话人物】神秘人"
+	cleaned, appearing, speaking = extractAnimationPromptDraftCharacterNames(voiceover)
+	if len(appearing) != 0 {
+		t.Errorf("appearing = %v, want empty for 无", appearing)
+	}
+	if len(speaking) != 1 || speaking[0] != "神秘人" {
+		t.Errorf("speaking = %v, want [神秘人]", speaking)
+	}
+	if strings.Contains(cleaned, "神秘人") {
+		t.Errorf("speaking list should be stripped from draft, got %q", cleaned)
 	}
 
 	// 标注为无出场人物
-	_, names = extractAnimationPromptDraftCharacterNames("镜头 1：空镜。\n【出场人物】无")
-	if len(names) != 0 {
-		t.Errorf("names = %v, want empty for 无", names)
+	_, appearing, _ = extractAnimationPromptDraftCharacterNames("镜头 1：空镜。\n【出场人物】无")
+	if len(appearing) != 0 {
+		t.Errorf("appearing = %v, want empty for 无", appearing)
 	}
-	_, names = extractAnimationPromptDraftCharacterNames("镜头 1：空镜。\n【出场人物】无。")
-	if len(names) != 0 {
-		t.Errorf("names = %v, want empty for 无。", names)
+	_, appearing, _ = extractAnimationPromptDraftCharacterNames("镜头 1：空镜。\n【出场人物】无。")
+	if len(appearing) != 0 {
+		t.Errorf("appearing = %v, want empty for 无。", appearing)
 	}
 
 	// 未标注名单行：草稿保持原样、名单为空
 	unchanged := "镜头 1：纯画面。"
-	cleaned, names = extractAnimationPromptDraftCharacterNames(unchanged)
-	if cleaned != unchanged || len(names) != 0 {
-		t.Errorf("draft without marker should stay unchanged, got %q / %v", cleaned, names)
+	cleaned, appearing, speaking = extractAnimationPromptDraftCharacterNames(unchanged)
+	if cleaned != unchanged || len(appearing) != 0 || len(speaking) != 0 {
+		t.Errorf("draft without marker should stay unchanged, got %q / %v / %v", cleaned, appearing, speaking)
 	}
 
 	// 标记行变体：无括号带冒号、英文逗号、重复标注去重
-	variant := "镜头 1：开场。\n出场人物：连瑟, 阿羽\n【出场人物】连瑟、阿羽"
-	_, names = extractAnimationPromptDraftCharacterNames(variant)
-	if len(names) != 2 || names[0] != "连瑟" || names[1] != "阿羽" {
-		t.Errorf("variant names = %v, want [连瑟 阿羽]", names)
+	variant := "镜头 1：开场。\n出场人物：连瑟, 阿羽\n【出场人物】连瑟、阿羽\n说话人物：连瑟"
+	_, appearing, speaking = extractAnimationPromptDraftCharacterNames(variant)
+	if len(appearing) != 2 || appearing[0] != "连瑟" || appearing[1] != "阿羽" {
+		t.Errorf("variant appearing = %v, want [连瑟 阿羽]", appearing)
+	}
+	if len(speaking) != 1 || speaking[0] != "连瑟" {
+		t.Errorf("variant speaking = %v, want [连瑟]", speaking)
 	}
 
 	// 名单写在标记行的下一行
-	nextLine := "镜头 1：开场。\n【出场人物】\n连瑟、阿羽"
-	cleaned, names = extractAnimationPromptDraftCharacterNames(nextLine)
-	if len(names) != 2 || names[0] != "连瑟" || names[1] != "阿羽" {
-		t.Errorf("next-line names = %v, want [连瑟 阿羽]", names)
+	nextLine := "镜头 1：开场。\n【出场人物】\n连瑟、阿羽\n【说话人物】\n阿羽"
+	cleaned, appearing, speaking = extractAnimationPromptDraftCharacterNames(nextLine)
+	if len(appearing) != 2 || appearing[0] != "连瑟" || appearing[1] != "阿羽" {
+		t.Errorf("next-line appearing = %v, want [连瑟 阿羽]", appearing)
 	}
-	if strings.Contains(cleaned, "连瑟、阿羽") {
+	if len(speaking) != 1 || speaking[0] != "阿羽" {
+		t.Errorf("next-line speaking = %v, want [阿羽]", speaking)
+	}
+	if strings.Contains(cleaned, "连瑟、阿羽") || strings.Contains(cleaned, "阿羽") {
 		t.Errorf("next-line list should be stripped from draft, got %q", cleaned)
 	}
 
 	// LLM 附带括号补充说明时只取括号前的名字
-	annotated := "镜头 1：开场。\n【出场人物】连瑟（女主）、阿羽"
-	_, names = extractAnimationPromptDraftCharacterNames(annotated)
-	if len(names) != 2 || names[0] != "连瑟" || names[1] != "阿羽" {
-		t.Errorf("annotated names = %v, want [连瑟 阿羽]", names)
+	annotated := "镜头 1：开场。\n【出场人物】连瑟（女主）、阿羽\n【说话人物】阿羽（旁白）"
+	_, appearing, speaking = extractAnimationPromptDraftCharacterNames(annotated)
+	if len(appearing) != 2 || appearing[0] != "连瑟" || appearing[1] != "阿羽" {
+		t.Errorf("annotated appearing = %v, want [连瑟 阿羽]", appearing)
+	}
+	if len(speaking) != 1 || speaking[0] != "阿羽" {
+		t.Errorf("annotated speaking = %v, want [阿羽]", speaking)
+	}
+}
+
+func TestMergeAnimationPromptDraftSpeakingNames(t *testing.T) {
+	// 音频轨道角色兜底并入说话名单：保序、去重
+	merged := mergeAnimationPromptDraftSpeakingNames([]string{"连瑟", "阿羽"}, []string{"阿羽", "旁白", "李雷"})
+	if len(merged) != 4 || merged[0] != "连瑟" || merged[1] != "阿羽" || merged[2] != "旁白" || merged[3] != "李雷" {
+		t.Errorf("merged = %v, want [连瑟 阿羽 旁白 李雷]", merged)
+	}
+	if merged = mergeAnimationPromptDraftSpeakingNames(nil, nil); len(merged) != 0 {
+		t.Errorf("empty inputs should merge to empty, got %v", merged)
 	}
 }
 
@@ -161,12 +197,15 @@ func TestMatchAnimationPromptDraftCharacters(t *testing.T) {
 }
 
 func TestBuildAnimationPromptDraftCharacterReferences(t *testing.T) {
+	// 出场且说话 → 参考图 + 音色
 	slotPriorityCharacter := models.Character{
 		ID: 1, Name: "连瑟", CoreFeatures: "黑长发红瞳",
 		ReferenceImageUrl: "uploads/lianse-sanshi.png", HalfBodyFrontImageUrl: "uploads/lianse-half.png",
 		VoiceAudioUrl: "uploads/lianse-voice.mp3",
 	}
-	references := buildAnimationPromptDraftCharacterReferences([]models.Character{slotPriorityCharacter})
+	references := buildAnimationPromptDraftCharacterReferences(
+		[]models.Character{slotPriorityCharacter}, []models.Character{slotPriorityCharacter},
+	)
 	if len(references) != 1 {
 		t.Fatalf("got %d references, want 1", len(references))
 	}
@@ -180,20 +219,50 @@ func TestBuildAnimationPromptDraftCharacterReferences(t *testing.T) {
 	if reference.VoiceAudioKey != "uploads/lianse-voice.mp3" {
 		t.Errorf("VoiceAudioKey = %q, want uploads/lianse-voice.mp3", reference.VoiceAudioKey)
 	}
-
-	fallbackSlotCharacter := models.Character{ID: 2, Name: "阿羽", HalfBodyFrontImageUrl: "uploads/ayu-half.png"}
-	references = buildAnimationPromptDraftCharacterReferences([]models.Character{fallbackSlotCharacter})
-	if len(references) != 1 || references[0].ImageSlot != "halfBodyFrontImageUrl" {
-		t.Fatalf("fallback slot = %+v, want halfBodyFrontImageUrl", references)
+	if !reference.Appears || !reference.Speaking {
+		t.Errorf("flags = appears:%v speaking:%v, want both true", reference.Appears, reference.Speaking)
 	}
 
-	// 未配置任何参考的人物被过滤
-	unconfigured := models.Character{ID: 3, Name: "路人甲"}
-	if references = buildAnimationPromptDraftCharacterReferences([]models.Character{unconfigured}); len(references) != 0 {
-		t.Errorf("unconfigured character should be skipped, got %+v", references)
+	// 出场但无对白 → 只附加参考图，不附加音色
+	appearingOnly := models.Character{ID: 2, Name: "阿羽", HalfBodyFrontImageUrl: "uploads/ayu-half.png", VoiceAudioUrl: "uploads/ayu-voice.mp3"}
+	references = buildAnimationPromptDraftCharacterReferences([]models.Character{appearingOnly}, nil)
+	if len(references) != 1 {
+		t.Fatalf("got %d references, want 1", len(references))
+	}
+	if references[0].ImageSlot != "halfBodyFrontImageUrl" || references[0].ImageKey != "uploads/ayu-half.png" {
+		t.Fatalf("fallback slot = %+v, want halfBodyFrontImageUrl", references[0])
+	}
+	if references[0].VoiceAudioKey != "" {
+		t.Errorf("VoiceAudioKey = %q, want empty for 出场但无对白", references[0].VoiceAudioKey)
+	}
+	if !references[0].Appears || references[0].Speaking {
+		t.Errorf("flags = appears:%v speaking:%v, want true/false", references[0].Appears, references[0].Speaking)
 	}
 
-	// 超过上限时按大纲顺序截断
+	// 画外音：只说话不出场 → 只附加音色，不附加参考图
+	voiceover := models.Character{ID: 3, Name: "神秘人", VoiceAudioUrl: "uploads/mystery-voice.mp3"}
+	references = buildAnimationPromptDraftCharacterReferences(nil, []models.Character{voiceover})
+	if len(references) != 1 {
+		t.Fatalf("got %d references, want 1", len(references))
+	}
+	if references[0].VoiceAudioKey != "uploads/mystery-voice.mp3" {
+		t.Errorf("VoiceAudioKey = %q, want uploads/mystery-voice.mp3", references[0].VoiceAudioKey)
+	}
+	if references[0].ImageKey != "" {
+		t.Errorf("ImageKey = %q, want empty for 画外音（未出场）", references[0].ImageKey)
+	}
+	if references[0].Appears || !references[0].Speaking {
+		t.Errorf("flags = appears:%v speaking:%v, want false/true", references[0].Appears, references[0].Speaking)
+	}
+
+	// 未配置任何参考的人物被过滤：出场但无图无音色、说话但无音色
+	unconfigured := models.Character{ID: 4, Name: "路人甲"}
+	unvoiced := models.Character{ID: 5, Name: "未配音旁白"}
+	if references = buildAnimationPromptDraftCharacterReferences([]models.Character{unconfigured}, []models.Character{unvoiced}); len(references) != 0 {
+		t.Errorf("unconfigured characters should be skipped, got %+v", references)
+	}
+
+	// 出场超过上限时按出场顺序截断
 	var many []models.Character
 	for i := 0; i < maxAnimationDraftCharacterReferences+2; i++ {
 		many = append(many, models.Character{
@@ -201,8 +270,20 @@ func TestBuildAnimationPromptDraftCharacterReferences(t *testing.T) {
 			ReferenceImageUrl: fmt.Sprintf("uploads/char-%d.png", i),
 		})
 	}
-	if references = buildAnimationPromptDraftCharacterReferences(many); len(references) != maxAnimationDraftCharacterReferences {
+	if references = buildAnimationPromptDraftCharacterReferences(many, nil); len(references) != maxAnimationDraftCharacterReferences {
 		t.Errorf("got %d references, want capped at %d", len(references), maxAnimationDraftCharacterReferences)
+	}
+
+	// 说话人数超过音色上限时按说话顺序截断（仅说话的人物不挤占出场参考位）
+	var speakers []models.Character
+	for i := 0; i < maxAnimationDraftCharacterVoiceReferences+2; i++ {
+		speakers = append(speakers, models.Character{
+			ID: uint(i + 1), Name: fmt.Sprintf("画外音%d", i),
+			VoiceAudioUrl: fmt.Sprintf("uploads/voice-%d.mp3", i),
+		})
+	}
+	if references = buildAnimationPromptDraftCharacterReferences(nil, speakers); len(references) != maxAnimationDraftCharacterVoiceReferences {
+		t.Errorf("got %d references, want voice capped at %d", len(references), maxAnimationDraftCharacterVoiceReferences)
 	}
 }
 
@@ -215,7 +296,7 @@ func TestBuildAnimationPromptDraftCharacterContext(t *testing.T) {
 		{Name: " 连瑟 ", CoreFeatures: " 黑长发红瞳少女 "},
 		{Name: "阿羽", Description: "白发少年剑客，背着长剑"},
 	}, []string{"连瑟", "旁白"})
-	for _, want := range []string{"【人物人设名单", "- 连瑟：黑长发红瞳少女", "- 阿羽：白发少年剑客，背着长剑", "连瑟、旁白"} {
+	for _, want := range []string{"【人物人设名单", "- 连瑟：黑长发红瞳少女", "- 阿羽：白发少年剑客，背着长剑", "连瑟、旁白", "必须列入草稿最后的【说话人物】名单"} {
 		if !strings.Contains(context, want) {
 			t.Errorf("character context missing %q:\n%s", want, context)
 		}
@@ -229,7 +310,10 @@ func TestBuildAnimationPromptDraftCharacterContext(t *testing.T) {
 
 func TestBuildAnimationPromptDraftSystemPromptRequiresCharacterLine(t *testing.T) {
 	prompt := buildAnimationPromptDraftSystemPrompt()
-	for _, want := range []string{"出场人物判断", "【出场人物】人物A、人物B", "提及", "不算出场", "最多 4 位"} {
+	for _, want := range []string{
+		"人物判定", "【出场人物】人物A、人物B", "【说话人物】人物A、人物C",
+		"提及", "不算出场", "画外音", "相互独立", "最多 4 位",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt missing %q", want)
 		}
