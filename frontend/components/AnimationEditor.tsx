@@ -198,7 +198,7 @@ const mergeDraftCharacterReferenceMedia = (
   return merged;
 };
 
-// 统计本次草稿实际附加了参考（图片或音色）的出场人物数
+// 统计本次草稿实际附加了参考（出场→图片、有对白→音色）的人物数
 const countAttachedDraftCharacters = (references: AnimationPromptDraftCharacterReference[]) =>
   new Set(
     references
@@ -992,7 +992,8 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     ) : null;
   };
 
-  // 草稿自动附加出场人物参考：产出与手动 @人物 选择器完全同构的 mention（id/label 一致，便于去重与悬停预览）
+  // 草稿自动附加人物参考：出场人物附加参考图、说话人物附加音色（二者独立，画外音只带音色、
+  // 出场但无对白只带图片）；产出与手动 @人物 选择器完全同构的 mention（id/label 一致，便于去重与悬停预览）
   const buildDraftCharacterMentions = (references: AnimationPromptDraftCharacterReference[]): PromptAssetMention[] => {
     const mentions: PromptAssetMention[] = [];
     references.forEach(reference => {
@@ -1280,7 +1281,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       if (!draft) {
         throw new Error('草稿生成结果为空');
       }
-      // 自动附加出场人物的参考图/音色：等效于用户手动 @人物图片 / @人物音频 的操作
+      // 自动附加人物参考图/音色：出场→参考图、说话→音色（独立判定），等效于用户手动 @人物图片 / @人物音频 的操作
       const characterMentions = buildDraftCharacterMentions(res.characterReferences || []);
       const definitionSegments = characterMentions.map(mention => {
         const characterName = mention.characterName?.trim();
@@ -1302,7 +1303,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
       const mergedCount = res.sceneCount || promptDraftSceneCount;
       const attachedCharacterCount = countAttachedDraftCharacters(res.characterReferences || []);
       const attachSuffix = attachedCharacterCount > 0
-        ? `，并自动附加 ${attachedCharacterCount} 位出场人物的参考图/音频`
+        ? `，并自动附加 ${attachedCharacterCount} 位人物的参考图/音频`
         : '';
       if (mergedCount > 1) {
         showToast(

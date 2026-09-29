@@ -763,12 +763,16 @@ export interface AnimationPromptDraftCharacterReference {
   characterId: number;
   name: string;
   coreFeatures?: string;
+  /** 人物真实出现在本次分镜画面中（自动附加人物参考图） */
+  appears?: boolean;
+  /** 人物在本次分镜有台词/对白/旁白/画外音（自动附加音色音频） */
+  speaking?: boolean;
   /** 默认槽位人物参考图（后端按 三视图→半身正面→全身正面→侧视→后视 顺序取第一张已配置的） */
   imageKey?: string;
   /** 对应前端 Character 图像字段名（referenceImageUrl 等） */
   imageSlot?: string;
   imageSlotLabel?: string;
-  /** 人物音色音频 */
+  /** 人物音色音频（仅在人物于本次分镜有对白时填充） */
   voiceAudioKey?: string;
 }
 
@@ -777,7 +781,7 @@ export interface GenerateAnimationPromptDraftResponse {
   model: string;
   /** 实际合并的分镜数量（章节剩余分镜不足时小于请求值） */
   sceneCount: number;
-  /** 本场出场人物参考（来自大纲人设），前端据此自动附加 @人物 提及 */
+  /** 本场出场/说话人物参考（出场→参考图、说话→音色，独立判定；来自大纲人设），前端据此自动附加 @人物 提及 */
   characterReferences?: AnimationPromptDraftCharacterReference[];
 }
 
