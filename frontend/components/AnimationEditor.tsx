@@ -95,6 +95,12 @@ interface PromptAssetPickerState {
   activeIndex: number;
 }
 
+// @ 场景资产图按「当前分镜 + 后续 n-1 段」范围分组展示：同一资产被多段分镜绑定时合并为一组，sceneNumbers 为分镜在章节内的显示序号（1 起）
+interface PromptPickerSceneAssetGroup {
+  asset: SceneAsset;
+  sceneNumbers: number[];
+}
+
 const REFERENCE_LABELS: Record<ReferenceMediaType, string> = {
   image: '图片参考',
   audio: '音频参考',
@@ -847,7 +853,26 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     () => sortedScenes.slice(activeSceneIndex, activeSceneIndex + 5),
     [activeSceneIndex, sortedScenes]
   );
-  const activeSceneAsset = sceneAssets.find(sceneAsset => sceneAsset.code === activeScene?.sceneAssetCode) || null;
+  // @ 场景资产图的可选范围与「生成后续n段分镜提示词」一致：当前分镜 + 后续 n-1 段分镜绑定的场景资产，按出现顺序去重合并
+  const promptPickerSceneAssetGroups = useMemo<PromptPickerSceneAssetGroup[]>(() => {
+    const rangeScenes = sortedScenes.slice(activeSceneIndex, activeSceneIndex + clampPromptDraftSceneCount(promptDraftSceneCount));
+    const groups: PromptPickerSceneAssetGroup[] = [];
+    const groupByCode = new Map<string, PromptPickerSceneAssetGroup>();
+    rangeScenes.forEach((scene, offset) => {
+      const code = scene.sceneAssetCode?.trim();
+      if (!code) return;
+      let group = groupByCode.get(code);
+      if (!group) {
+        const asset = sceneAssets.find(item => item.code === code);
+        if (!asset) return;
+        group = { asset, sceneNumbers: [] };
+        groupByCode.set(code, group);
+        groups.push(group);
+      }
+      group.sceneNumbers.push(activeSceneIndex + offset + 1);
+    });
+    return groups;
+  }, [activeSceneIndex, promptDraftSceneCount, sceneAssets, sortedScenes]);
   const playbackUrl = displayClipUrl ? getFileUrl(displayClipUrl) || undefined : undefined;
   const canGenerateVideo =
     Boolean(selectedAnimationId) &&
@@ -1357,15 +1382,16 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
     }
 
     if (promptPicker.category === 'scene-image') {
-      const referenceImageUrls = activeSceneAsset?.referenceImageUrls || [];
-      return referenceImageUrls.map((_key, imageIndex) => {
-        const mention = activeSceneAsset ? buildSceneAssetMention(activeSceneAsset, imageIndex) : null;
-        return {
-          key: String(imageIndex),
-          disabled: !mention,
-          select: () => mention && addPromptMention(mention),
-        };
-      });
+      return promptPickerSceneAssetGroups.flatMap(group =>
+        (group.asset.referenceImageUrls || []).map((_key, imageIndex) => {
+          const mention = buildSceneAssetMention(group.asset, imageIndex);
+          return {
+            key: `${group.asset.id}-${imageIndex}`,
+            disabled: !mention,
+            select: () => mention && addPromptMention(mention),
+          };
+        })
+      );
     }
 
     if (promptPicker.category === 'character-audio') {
@@ -1999,44 +2025,55 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
 
         {promptPicker.category === 'scene-image' && (
           <div className="w-72 max-h-[360px] overflow-y-auto p-2">
-            <div className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择场景资产图</div>
-            {activeSceneAsset ? (
-              (activeSceneAsset.referenceImageUrls || []).length > 0 ? (activeSceneAsset.referenceImageUrls || []).map((_key, imageIndex) => {
-                const mention = buildSceneAssetMention(activeSceneAsset, imageIndex);
-                return (
-                  <button
-                    key={imageIndex}
-                    type="button"
-                    disabled={!mention}
-                    onMouseEnter={() => {
-                      const idx = activeOptions.findIndex(option => option.key === String(imageIndex));
-                      setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
-                    }}
-                    onClick={() => mention && addPromptMention(mention)}
-                    className={`mb-2 flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
-                      isActive(String(imageIndex))
-                        ? 'border-blue-400/50 bg-blue-500/10'
-                        : 'border-white/10 bg-white/[0.03] hover:bg-white/5'
-                    } disabled:opacity-30`}
-                  >
-                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black">
-                      {mention?.url ? <img src={mention.url} className="h-full w-full object-cover" /> : null}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-xs font-semibold text-white">
-                        {activeSceneAsset.code} {activeSceneAsset.name}
-                      </div>
-                      <div className="text-[10px] text-white/35">
-                        {mention ? `参考图 ${imageIndex + 1} · 添加到图片参考` : '未上传'}
-                      </div>
-                    </div>
-                  </button>
-                );
-              }) : (
-                <div className="px-3 py-6 text-center text-xs text-white/30">绑定的场景资产暂无参考图</div>
-              )
-            ) : (
-              <div className="px-3 py-6 text-center text-xs text-white/30">当前分镜未绑定场景资产</div>
+            <div className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">选择场景资产图</div>
+            <div className="px-2 pb-2 text-[10px] leading-relaxed text-white/30">
+              当前分镜起 {promptDraftSceneCount} 段分镜内绑定{promptPickerSceneAssetGroups.length > 0 ? `，共 ${promptPickerSceneAssetGroups.length} 个资产` : ''}
+            </div>
+            {promptPickerSceneAssetGroups.length > 0 ? promptPickerSceneAssetGroups.map(group => {
+              const referenceImageUrls = group.asset.referenceImageUrls || [];
+              return (
+                <div key={group.asset.id} className="mb-2">
+                  <div className="flex items-center gap-1.5 px-2 py-1">
+                    <span className="truncate text-[10px] font-bold text-white/60">{group.asset.code} {group.asset.name}</span>
+                    <span className="ml-auto shrink-0 text-[10px] text-white/30">{group.sceneNumbers.map(n => `#${n}`).join('、')}</span>
+                  </div>
+                  {referenceImageUrls.length > 0 ? referenceImageUrls.map((_key, imageIndex) => {
+                    const mention = buildSceneAssetMention(group.asset, imageIndex);
+                    const optionKey = `${group.asset.id}-${imageIndex}`;
+                    return (
+                      <button
+                        key={optionKey}
+                        type="button"
+                        disabled={!mention}
+                        onMouseEnter={() => {
+                          const idx = activeOptions.findIndex(option => option.key === optionKey);
+                          setPromptPicker(prev => ({ ...prev, activeIndex: Math.max(0, idx) }));
+                        }}
+                        onClick={() => mention && addPromptMention(mention)}
+                        className={`mb-1 flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
+                          isActive(optionKey)
+                            ? 'border-blue-400/50 bg-blue-500/10'
+                            : 'border-white/10 bg-white/[0.03] hover:bg-white/5'
+                        } disabled:opacity-30`}
+                      >
+                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black">
+                          {mention?.url ? <img src={mention.url} className="h-full w-full object-cover" /> : null}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-semibold text-white">参考图 {imageIndex + 1}</div>
+                          <div className="text-[10px] text-white/35">
+                            {mention ? '添加到图片参考' : '未上传'}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }) : (
+                    <div className="px-2 pb-1 text-[10px] text-white/30">暂无参考图</div>
+                  )}
+                </div>
+              );
+            }) : (
+              <div className="px-3 py-6 text-center text-xs text-white/30">当前分镜及后续分镜均未绑定场景资产</div>
             )}
           </div>
         )}
@@ -2988,7 +3025,7 @@ export const AnimationEditor: React.FC<AnimationEditorProps> = ({
                           {renderPromptAssetPicker()}
                         </div>
                         <div className="flex items-center justify-between gap-3 text-[11px] text-white/35">
-                          <span>输入 @ 可从当前分镜绑定的场景资产图、人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片1 / 音频1”。</span>
+                          <span>输入 @ 可从当前分镜起 {promptDraftSceneCount} 段分镜绑定的场景资产图、人物图片、人物音频、当前及后四格分镜图中选择；生成时会自动替换为“图片1 / 音频1”。</span>
                           <span>{generationPrompt.trim().length} chars</span>
                         </div>
 
